@@ -46,7 +46,7 @@ html, body {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  padding: clamp(32px, 7.5vmin, 90px) clamp(24px, 6vmin, 72px);
+  padding: clamp(32px, 10vmin, 120px) clamp(24px, 8vmin, 96px);
   opacity: 0; pointer-events: none;
   transition: opacity 0.4s ease;
 }
@@ -106,17 +106,17 @@ html, body {
 
 /* ── Logo / station name ── */
 .station-header {
-  position: absolute; top: clamp(20px, 4.5vmin, 66px); left: 0; right: 0;
+  position: absolute; top: clamp(20px, 6vmin, 88px); left: 0; right: 0;
   display: flex; align-items: center; justify-content: center;
-  gap: clamp(8px, 1.8vmin, 21px);
+  gap: clamp(8px, 2.4vmin, 28px);
 }
 .station-logo {
-  font-size: clamp(10px, 2.25vmin, 24px); font-weight: 700; letter-spacing: 0.2em;
+  font-size: clamp(10px, 3vmin, 32px); font-weight: 700; letter-spacing: 0.2em;
   text-transform: uppercase; color: var(--muted);
   font-family: var(--mono);
 }
 .station-dot {
-  width: clamp(4px, 1.05vmin, 12px); height: clamp(4px, 1.05vmin, 12px); border-radius: 50%;
+  width: clamp(4px, 1.4vmin, 16px); height: clamp(4px, 1.4vmin, 16px); border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 8px var(--accent);
   animation: pulse 2s ease-in-out infinite;
@@ -128,13 +128,13 @@ html, body {
 
 /* ── Icon ring ── */
 .icon-ring {
-  width: clamp(90px, 21vmin, 240px); height: clamp(90px, 21vmin, 240px);
+  width: clamp(90px, 28vmin, 320px); height: clamp(90px, 28vmin, 320px);
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  margin-bottom: clamp(24px, 6vmin, 72px);
+  margin-bottom: clamp(24px, 8vmin, 96px);
   position: relative;
 }
-.icon-ring svg { width: clamp(40px, 9.75vmin, 108px); height: clamp(40px, 9.75vmin, 108px); }
+.icon-ring svg { width: clamp(40px, 13vmin, 144px); height: clamp(40px, 13vmin, 144px); }
 
 .icon-ring.welcome {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
@@ -163,45 +163,45 @@ html, body {
 
 /* ── Heading ── */
 .screen-title {
-  font-size: clamp(28px, 8.25vmin, 84px);
+  font-size: clamp(28px, 11vmin, 112px);
   font-weight: 800; line-height: 1.1;
   text-align: center;
   letter-spacing: -0.02em;
-  margin-bottom: clamp(10px, 2.7vmin, 30px);
+  margin-bottom: clamp(10px, 3.6vmin, 40px);
 }
 .screen-subtitle {
-  font-size: clamp(13px, 3vmin, 33px);
+  font-size: clamp(13px, 4vmin, 44px);
   font-weight: 400; color: var(--muted);
   text-align: center; line-height: 1.5;
-  max-width: clamp(300px, 90vmin, 840px);
+  max-width: clamp(300px, 120vmin, 1120px);
 }
 
 /* ── Guest name card (success / already) ── */
 .guest-card {
-  margin-top: clamp(28px, 6.75vmin, 84px);
+  margin-top: clamp(28px, 9vmin, 112px);
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.08);
-  border-radius: clamp(14px, 3vmin, 36px);
-  padding: clamp(20px, 5.25vmin, 60px) clamp(28px, 7.5vmin, 90px);
+  border-radius: clamp(14px, 4vmin, 48px);
+  padding: clamp(20px, 7vmin, 80px) clamp(28px, 10vmin, 120px);
   text-align: center;
   backdrop-filter: blur(8px);
-  min-width: clamp(260px, 75vmin, 630px);
+  min-width: clamp(260px, 100vmin, 840px);
 }
 .guest-name {
-  font-size: clamp(22px, 6vmin, 72px);
+  font-size: clamp(22px, 8vmin, 96px);
   font-weight: 700; line-height: 1.1;
   letter-spacing: -0.02em;
-  margin-bottom: clamp(4px, 1.2vmin, 15px);
+  margin-bottom: clamp(4px, 1.6vmin, 20px);
 }
 .guest-company {
-  font-size: clamp(12px, 2.7vmin, 30px);
+  font-size: clamp(12px, 3.6vmin, 40px);
   color: var(--muted); font-weight: 400;
 }
 .guest-badge-label {
   display: inline-block;
-  margin-top: clamp(10px, 2.25vmin, 30px);
-  padding: clamp(3px, 0.9vmin, 10px) clamp(10px, 2.25vmin, 27px); border-radius: 100px;
-  font-size: clamp(10px, 1.8vmin, 21px); font-weight: 600; letter-spacing: 0.08em;
+  margin-top: clamp(10px, 3vmin, 40px);
+  padding: clamp(3px, 1.2vmin, 13px) clamp(10px, 3vmin, 36px); border-radius: 100px;
+  font-size: clamp(10px, 2.4vmin, 28px); font-weight: 600; letter-spacing: 0.08em;
   font-family: var(--mono); text-transform: uppercase;
 }
 .badge-success { background: rgba(34,197,94,0.15); color: #4ade80; }
@@ -209,11 +209,11 @@ html, body {
 
 /* ── Scan prompt (welcome) ── */
 .scan-prompt {
-  margin-top: clamp(32px, 8.25vmin, 102px);
-  display: flex; flex-direction: column; align-items: center; gap: clamp(8px, 2.1vmin, 27px);
+  margin-top: clamp(32px, 11vmin, 136px);
+  display: flex; flex-direction: column; align-items: center; gap: clamp(8px, 2.8vmin, 36px);
 }
 .scan-bar {
-  width: clamp(140px, 33vmin, 360px); height: 3px; border-radius: 2px;
+  width: clamp(140px, 44vmin, 480px); height: 3px; border-radius: 2px;
   background: rgba(255,255,255,0.08);
   overflow: hidden;
 }
@@ -229,13 +229,13 @@ html, body {
   100% { transform: translateX(-100%); }
 }
 .scan-hint {
-  font-size: clamp(10px, 2.1vmin, 22px); color: var(--muted);
+  font-size: clamp(10px, 2.8vmin, 29px); color: var(--muted);
   font-family: var(--mono); letter-spacing: 0.04em;
 }
 
 /* ── Auto-return countdown ── */
 .return-bar {
-  position: absolute; bottom: clamp(20px, 5.25vmin, 72px); left: clamp(20px, 5.25vmin, 72px); right: clamp(20px, 5.25vmin, 72px);
+  position: absolute; bottom: clamp(20px, 7vmin, 96px); left: clamp(20px, 7vmin, 96px); right: clamp(20px, 7vmin, 96px);
   display: flex; flex-direction: column; align-items: center; gap: 10px;
 }
 .return-track {
@@ -248,18 +248,18 @@ html, body {
   transition: width 0.1s linear;
 }
 .return-label {
-  font-size: clamp(10px, 1.8vmin, 21px); color: var(--muted);
+  font-size: clamp(10px, 2.4vmin, 28px); color: var(--muted);
   font-family: var(--mono); letter-spacing: 0.05em;
 }
 
 /* ── Processing spinner ── */
 #screen-processing .spin {
-  width: clamp(48px, 10.5vmin, 126px); height: clamp(48px, 10.5vmin, 126px);
+  width: clamp(48px, 14vmin, 168px); height: clamp(48px, 14vmin, 168px);
   border: 3px solid rgba(255,255,255,0.08);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-  margin-bottom: clamp(20px, 5.25vmin, 60px);
+  margin-bottom: clamp(20px, 7vmin, 80px);
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
