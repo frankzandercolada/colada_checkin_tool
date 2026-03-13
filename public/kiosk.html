@@ -701,7 +701,20 @@ async function init() {
     return;
   }
 
-  applyStation(station);
+  // If no logoText configured, build a default from the event title + station name
+  let resolvedLogoText = null;
+  if (!station.logoText) {
+    try {
+      const cfg = await fetch('/api/config').then(r => r.json());
+      if (cfg.eventId) {
+        const ev = await fetch(`/api/event/${cfg.eventId}`).then(r => r.json()).catch(() => null);
+        const eventTitle = ev?.title || ev?.name || null;
+        if (eventTitle) resolvedLogoText = `${eventTitle} · ${station.name}`;
+      }
+    } catch(e) { /* non-critical — fall back to station name */ }
+  }
+
+  applyStation(station, resolvedLogoText);
   setupScanInput();
   startHeartbeat();
   applyWelcomeBg();
@@ -729,9 +742,9 @@ function applyScreenBg(screenCfg) {
   }
 }
 
-function applyStation(s) {
+function applyStation(s, resolvedLogoText) {
   applyTheme({ accentColor: s.accentColor, bgColor: s.bgColor });
-  const logoText = s.logoText || s.name || 'Check-in';
+  const logoText = s.logoText || resolvedLogoText || s.name || 'Check-in';
 
   // Apply font size overrides
   const applyScreen = (key, screenId) => {
@@ -1224,7 +1237,20 @@ async function saveConfig() {
   history.replaceState(null, '', `/kiosk/${stationId}`);
   document.getElementById('config-overlay').classList.remove('open');
   document.getElementById('station-selector').classList.remove('open');
-  applyStation(station);
+  // If no logoText configured, build a default from the event title + station name
+  let resolvedLogoText = null;
+  if (!station.logoText) {
+    try {
+      const cfg = await fetch('/api/config').then(r => r.json());
+      if (cfg.eventId) {
+        const ev = await fetch(`/api/event/${cfg.eventId}`).then(r => r.json()).catch(() => null);
+        const eventTitle = ev?.title || ev?.name || null;
+        if (eventTitle) resolvedLogoText = `${eventTitle} · ${station.name}`;
+      }
+    } catch(e) { /* non-critical — fall back to station name */ }
+  }
+
+  applyStation(station, resolvedLogoText);
   setupScanInput();
   startHeartbeat();
   applyWelcomeBg();
