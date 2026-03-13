@@ -1127,12 +1127,18 @@ async function printKioskBadge(data) {
 
   const endpoint = station?.printEndpoint;
   if (endpoint) {
-    pdfMake.createPdf(dd).getBlob(async (blob) => {
+    // Use getBase64() instead of getBlob() + raw binary PUT.
+    // Node-RED's HTTP-in node parses incoming bodies as UTF-8 strings by default,
+    // which corrupts high bytes (0xFF, 0xFE etc) in binary PDF data before any
+    // function node can recover them. Base64 uses only ASCII (0-127) so it
+    // survives UTF-8 parsing intact. The Node-RED function node then decodes it
+    // with Buffer.from(msg.payload, 'base64') before writing the file.
+    pdfMake.createPdf(dd).getBase64(async (b64) => {
       try {
         const res = await fetch(endpoint, {
           method: 'PUT',
-          headers: { 'Content-Type': 'application/pdf' },
-          body: blob,
+          headers: { 'Content-Type': 'application/pdf', 'X-Encoding': 'base64' },
+          body: b64,
         });
         if (!res.ok) console.error('Print endpoint returned', res.status);
       } catch(e) {
