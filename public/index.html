@@ -2302,9 +2302,13 @@ function printBadge() {
   const dd = {
     pageSize:    { width: pageW, height: pageH },
     pageMargins: [0, 0, 0, 0],
+    images:      {},
     content,
   };
-  if (bgImage) dd.background = { image: bgImage, alignment: 'center', width: pageW };
+  if (bgImage) {
+    dd.images['badgeBg'] = bgImage;
+    dd.background = { image: 'badgeBg', alignment: 'center', width: pageW };
+  }
 
   addLog(`Printing: ${attrs.contact_firstName||''} ${attrs.contact_lastName||''} → ${tpl.name}${bgImage ? '' : ' (no bg)'}`, 'ok');
   toast(`⎙ Printing badge: "${tpl.name}"`, 'info', 3000);

@@ -6,7 +6,7 @@
 <title>Check-in Station</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"/>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800;900&family=JetBrains+Mono:wght@400;500&family=Roboto:wght@400;700&display=swap" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
 <style>
@@ -1022,6 +1022,12 @@ async function printKioskBadge(data) {
   const { guest, badgeConfig } = data;
   if (!guest || !badgeConfig) return;
 
+  // Ensure Roboto is loaded in the browser before measuring text widths.
+  // measureSvgText uses the browser DOM to measure — if Roboto isn't ready
+  // it falls back to a system font, causing width mismatches vs pdfMake's
+  // embedded Roboto. document.fonts.load() resolves quickly if already cached.
+  try { await document.fonts.load('16px Roboto'); } catch(e) {}
+
   const attrs = guest.attributes || {};
   const templates = badgeConfig.templates || [];
   const tplKey = selectTemplate(guest, badgeConfig.rules, badgeConfig.fallback);
@@ -1041,7 +1047,7 @@ async function printKioskBadge(data) {
       const svg = document.createElementNS(ns, 'svg');
       svg.style.cssText = 'position:absolute;visibility:hidden;top:-9999px;left:-9999px';
       const t = document.createElementNS(ns, 'text');
-      t.setAttribute('font-family', 'Helvetica,Arial,sans-serif');
+      t.setAttribute('font-family', 'Roboto, Arial, sans-serif'); // match pdfMake's embedded font
       t.setAttribute('font-size', fontSize);
       if (bold) t.setAttribute('font-weight', 'bold');
       t.textContent = text;
@@ -1083,7 +1089,7 @@ async function printKioskBadge(data) {
     const cx = pageW / 2, cy = slotH / 2;
     const textY = cy + fs * 0.35;
     const rotate = mirrored ? ` transform="rotate(180,${cx.toFixed(2)},${cy.toFixed(2)})"` : '';
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${pageW}" height="${slotH}"><text x="${cx.toFixed(2)}" y="${textY.toFixed(2)}" font-family="Helvetica,Arial,sans-serif" font-size="${fs}" ${bold?'font-weight="bold" ':''}fill="${escSvg(color)}" text-anchor="middle"${rotate}>${escSvg(text)}</text></svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${pageW}" height="${slotH}"><text x="${cx.toFixed(2)}" y="${textY.toFixed(2)}" font-family="Roboto" font-size="${fs}" ${bold?'font-weight="bold" ':''}fill="${escSvg(color)}" text-anchor="middle"${rotate}>${escSvg(text)}</text></svg>`;
   }
 
   const svgItems = [];
@@ -1107,19 +1113,26 @@ async function printKioskBadge(data) {
   const dd = {
     pageSize:    { width: pageW, height: pageH },
     pageMargins: [0, 0, 0, 0],
+    images:      {},
     content: [{ text:'', fontSize:0.01, margin:[0,0,0,0] }, ...svgItems],
   };
-  if (bgImage) dd.background = { image: bgImage, alignment:'center', width: pageW };
+  // Declare background in dd.images so pdfMake's realImageSrc() properly strips
+  // the 'base64,' prefix and embeds raw bytes — rather than passing the data: URL
+  // string directly, which relies on browser atob() and may not embed correctly
+  // in the binary PDF sent to the print endpoint.
+  if (bgImage) {
+    dd.images['badgeBg'] = bgImage;
+    dd.background = { image: 'badgeBg', alignment: 'center', width: pageW };
+  }
 
   const endpoint = station?.printEndpoint;
   if (endpoint) {
-    // Send PDF as binary PUT to the configured print endpoint
-    pdfMake.createPdf(dd).getBuffer(async (buffer) => {
+    pdfMake.createPdf(dd).getBlob(async (blob) => {
       try {
         const res = await fetch(endpoint, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/pdf' },
-          body: buffer,
+          body: blob,
         });
         if (!res.ok) console.error('Print endpoint returned', res.status);
       } catch(e) {
