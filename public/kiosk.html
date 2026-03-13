@@ -977,15 +977,16 @@ function refocusScanInput() {
 
 // ── Badge printing ────────────────────────────────────────────────────────────
 function evalCondition(c, attrs) {
-  const val = String(attrs[c.attr] ?? '');
-  const cv  = String(c.value ?? '');
+  const rawVal = attrs[c.attr];
+  const strVal = String(rawVal ?? '').toLowerCase();
+  const condVal = String(c.value ?? '').toLowerCase();
   switch(c.op) {
-    case 'eq':       return val === cv || (cv === 'true' && attrs[c.attr] === true) || (cv === 'false' && attrs[c.attr] === false);
-    case 'neq':      return val !== cv;
-    case 'contains': return val.toLowerCase().includes(cv.toLowerCase());
-    case 'exists':   return attrs[c.attr] !== undefined && attrs[c.attr] !== null && attrs[c.attr] !== '';
-    case 'true':     return attrs[c.attr] === true || val === 'true';
-    case 'false':    return attrs[c.attr] === false || val === 'false';
+    case 'eq':       return strVal === condVal;
+    case 'neq':      return strVal !== condVal;
+    case 'contains': return strVal.includes(condVal);
+    case 'exists':   return rawVal !== undefined && rawVal !== null && rawVal !== '';
+    case 'true':     return rawVal === true || strVal === 'true';
+    case 'false':    return rawVal === false || strVal === 'false';
     default:         return false;
   }
 }
@@ -1055,41 +1056,51 @@ async function printKioskBadge(data) {
     return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
-  const LINE_H = (r) => (r.fontSize || 20) * 1.2;
+  const LINE_H = (fs) => (fs || 20) * 1.2;
+
+  // Pre-compute scaled font sizes so slotH matches the actual rendered size.
+  // Without this, heavily-scaled rows leave dead space and push subsequent
+  // rows further down than intended — matching the fix already in the admin UI.
+  const scaledFontSizes = rows.map(row => {
+    const text = resolveField(row.field, attrs);
+    const fs = row.fontSize || 20;
+    const measuredW = measureSvgText(text, fs, !!row.bold) / 0.82;
+    const maxW = pageW * 0.95;
+    return measuredW > maxW ? +(fs * maxW / measuredW).toFixed(3) : fs;
+  });
+
   let cursorY = 0;
-  const topSlots = rows.map(row => {
+  const topSlots = rows.map((row, i) => {
     cursorY += (row.marginTop || 0);
     const slotTop = cursorY;
-    const slotH   = LINE_H(row);
+    const slotH   = LINE_H(scaledFontSizes[i]); // use scaled size, not original
     cursorY += slotH;
-    return { row, slotTop, slotH };
+    return { row, slotTop, slotH, scaledFs: scaledFontSizes[i] };
   });
 
   function makeRowSvg(text, fs, bold, slotH, mirrored) {
-    const measuredW = measureSvgText(text, fs, bold) / 0.82;
-    const maxW      = pageW * 0.95;
-    const scaledFs  = measuredW > maxW ? +(fs * maxW / measuredW).toFixed(3) : fs;
+    // fs is already the pre-scaled value — just use it directly
     const cx = pageW / 2, cy = slotH / 2;
-    const textY = cy + scaledFs * 0.35;
+    const textY = cy + fs * 0.35;
     const rotate = mirrored ? ` transform="rotate(180,${cx.toFixed(2)},${cy.toFixed(2)})"` : '';
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${pageW}" height="${slotH}"><text x="${cx.toFixed(2)}" y="${textY.toFixed(2)}" font-family="Helvetica,Arial,sans-serif" font-size="${scaledFs}" ${bold?'font-weight="bold" ':''}fill="${escSvg(color)}" text-anchor="middle"${rotate}>${escSvg(text)}</text></svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${pageW}" height="${slotH}"><text x="${cx.toFixed(2)}" y="${textY.toFixed(2)}" font-family="Helvetica,Arial,sans-serif" font-size="${fs}" ${bold?'font-weight="bold" ':''}fill="${escSvg(color)}" text-anchor="middle"${rotate}>${escSvg(text)}</text></svg>`;
   }
 
   const svgItems = [];
-  topSlots.forEach(({ row, slotTop, slotH }) => {
+  topSlots.forEach(({ row, slotTop, slotH, scaledFs }) => {
     const text = resolveField(row.field, attrs);
-    svgItems.push({ svg: makeRowSvg(text, row.fontSize||20, !!row.bold, slotH, false), width: pageW, absolutePosition: { x:0, y:slotTop } });
+    svgItems.push({ svg: makeRowSvg(text, scaledFs, !!row.bold, slotH, false), width: pageW, absolutePosition: { x:0, y:slotTop } });
   });
 
   if (tpl.mirror) {
     let y = pageH - mirrorOffset;
-    topSlots.forEach(({ row, slotH }, i) => {
+    topSlots.forEach(({ row, slotH, scaledFs }, i) => {
       const gap = i === 0 ? 0 : (row.marginTop || 0);
       const slotBot = y - gap;
       const slotTop = slotBot - slotH;
       y = slotTop;
       const text = resolveField(row.field, attrs);
-      svgItems.push({ svg: makeRowSvg(text, row.fontSize||20, !!row.bold, slotH, true), width: pageW, absolutePosition: { x:0, y:slotTop } });
+      svgItems.push({ svg: makeRowSvg(text, scaledFs, !!row.bold, slotH, true), width: pageW, absolutePosition: { x:0, y:slotTop } });
     });
   }
 
