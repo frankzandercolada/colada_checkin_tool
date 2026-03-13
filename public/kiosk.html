@@ -834,13 +834,15 @@ function setupScanInput() {
     }, SCAN_DEBOUNCE_MS);
   });
 
-  // Enter key triggers immediately
+  // Enter key triggers immediately.
+  // keydown fires before the browser's 'input' event, so we must flush
+  // input.value into scanBuffer ourselves before reading it.
   input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
+      if (input.value) { scanBuffer += input.value; input.value = ''; }
       clearTimeout(scanTimer);
       const val = scanBuffer.trim();
       scanBuffer = '';
-      input.value = '';
       if (val) handleScan(val);
     }
   });

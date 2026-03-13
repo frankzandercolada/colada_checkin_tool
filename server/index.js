@@ -559,12 +559,12 @@ app.get('/api/kiosk/stations', (req, res) => {
 app.post('/api/kiosk/stations', (req, res) => {
   const id = getActiveProjectId();
   if (!id) return res.status(400).json({ error: 'no active project' });
-  const { name, welcome, success, notFound, alreadyCheckedIn, accentColor, bgColor, logoText } = req.body;
+  const { name, welcome, success, notFound, alreadyCheckedIn, accentColor, bgColor, logoText, printEndpoint } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name required' });
   const stations = loadKioskStations(id);
   const stationId = req.body.id || uuidv4();
   const existing = stations.findIndex(s => s.id === stationId);
-  const station = { id: stationId, name: name.trim(), welcome: welcome || {}, success: success || {}, notFound: notFound || {}, alreadyCheckedIn: alreadyCheckedIn || {}, accentColor: accentColor || '#d3222a', bgColor: bgColor || '#0a0a0a', logoText: logoText || '' };
+  const station = { id: stationId, name: name.trim(), welcome: welcome || {}, success: success || {}, notFound: notFound || {}, alreadyCheckedIn: alreadyCheckedIn || {}, accentColor: accentColor || '#d3222a', bgColor: bgColor || '#0a0a0a', logoText: logoText || '', printEndpoint: printEndpoint || null };
   if (existing >= 0) stations[existing] = station; else stations.push(station);
   saveKioskStations(id, stations);
   res.json({ ok: true, station });
