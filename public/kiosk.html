@@ -1,0 +1,1275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
+<title>Check-in Station</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800;900&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --accent: #d3222a;
+  --bg: #0a0a0a;
+  --surface: #111;
+  --text: #fff;
+  --muted: rgba(255,255,255,0.45);
+  --font: 'Outfit', sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+}
+
+html, body {
+  width: 100%; height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* ── Screen container ── */
+#kiosk {
+  width: 100vw; height: 100vh;
+  position: relative;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+}
+
+/* ── Screens ── */
+.screen {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  padding: 48px 40px;
+  opacity: 0; pointer-events: none;
+  transition: opacity 0.4s ease;
+}
+.screen.active {
+  opacity: 1; pointer-events: auto;
+}
+
+/* ── Scan input (invisible, keeps focus) ── */
+#scan-input {
+  position: absolute;
+  left: -9999px; top: -9999px;
+  width: 1px; height: 1px;
+  opacity: 0;
+}
+
+/* ── Background patterns ── */
+.screen::before {
+  content: '';
+  position: absolute; inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Welcome screen */
+#screen-welcome::before {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, color-mix(in srgb, var(--accent) 18%, transparent), transparent),
+    radial-gradient(ellipse 60% 40% at 50% 110%, color-mix(in srgb, var(--accent) 10%, transparent), transparent);
+}
+
+/* Success screen */
+#screen-success::before {
+  background:
+    radial-gradient(ellipse 90% 60% at 50% -5%, rgba(34,197,94,0.22), transparent),
+    radial-gradient(ellipse 50% 50% at 50% 105%, rgba(34,197,94,0.08), transparent);
+}
+
+/* Not found / invalid status */
+#screen-notfound::before {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(245,158,11,0.20), transparent);
+}
+
+/* Already checked in */
+#screen-already::before {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(99,102,241,0.22), transparent);
+}
+
+/* Error */
+#screen-error::before {
+  background:
+    radial-gradient(ellipse 80% 50% at 50% -10%, rgba(239,68,68,0.18), transparent);
+}
+
+.screen > * { position: relative; z-index: 1; }
+
+/* ── Logo / station name ── */
+.station-header {
+  position: absolute; top: 36px; left: 0; right: 0;
+  display: flex; align-items: center; justify-content: center;
+  gap: 12px;
+}
+.station-logo {
+  font-size: 13px; font-weight: 700; letter-spacing: 0.2em;
+  text-transform: uppercase; color: var(--muted);
+  font-family: var(--mono);
+}
+.station-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse 2s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 8px var(--accent); }
+  50% { opacity: 0.5; box-shadow: 0 0 3px var(--accent); }
+}
+
+/* ── Icon ring ── */
+.icon-ring {
+  width: 140px; height: 140px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 40px;
+  position: relative;
+}
+.icon-ring svg { width: 64px; height: 64px; }
+
+.icon-ring.welcome {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 1.5px solid color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: 0 0 60px color-mix(in srgb, var(--accent) 15%, transparent);
+}
+.icon-ring.success {
+  background: rgba(34,197,94,0.12);
+  border: 1.5px solid rgba(34,197,94,0.3);
+  box-shadow: 0 0 60px rgba(34,197,94,0.15);
+}
+.icon-ring.warn {
+  background: rgba(245,158,11,0.12);
+  border: 1.5px solid rgba(245,158,11,0.3);
+  box-shadow: 0 0 60px rgba(245,158,11,0.15);
+}
+.icon-ring.info {
+  background: rgba(99,102,241,0.12);
+  border: 1.5px solid rgba(99,102,241,0.3);
+  box-shadow: 0 0 60px rgba(99,102,241,0.15);
+}
+.icon-ring.danger {
+  background: rgba(239,68,68,0.12);
+  border: 1.5px solid rgba(239,68,68,0.3);
+}
+
+/* ── Heading ── */
+.screen-title {
+  font-size: clamp(32px, 5vw, 52px);
+  font-weight: 800; line-height: 1.1;
+  text-align: center;
+  letter-spacing: -0.02em;
+  margin-bottom: 16px;
+}
+.screen-subtitle {
+  font-size: clamp(15px, 2.2vw, 20px);
+  font-weight: 400; color: var(--muted);
+  text-align: center; line-height: 1.5;
+  max-width: 480px;
+}
+
+/* ── Guest name card (success / already) ── */
+.guest-card {
+  margin-top: 48px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 20px;
+  padding: 32px 48px;
+  text-align: center;
+  backdrop-filter: blur(8px);
+  min-width: 340px;
+}
+.guest-name {
+  font-size: clamp(28px, 4vw, 42px);
+  font-weight: 700; line-height: 1.1;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+.guest-company {
+  font-size: clamp(14px, 2vw, 18px);
+  color: var(--muted); font-weight: 400;
+}
+.guest-badge-label {
+  display: inline-block;
+  margin-top: 16px;
+  padding: 5px 14px; border-radius: 100px;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
+  font-family: var(--mono); text-transform: uppercase;
+}
+.badge-success { background: rgba(34,197,94,0.15); color: #4ade80; }
+.badge-info    { background: rgba(99,102,241,0.15); color: #a5b4fc; }
+
+/* ── Scan prompt (welcome) ── */
+.scan-prompt {
+  margin-top: 56px;
+  display: flex; flex-direction: column; align-items: center; gap: 14px;
+}
+.scan-bar {
+  width: 200px; height: 3px; border-radius: 2px;
+  background: rgba(255,255,255,0.08);
+  overflow: hidden;
+}
+.scan-bar-fill {
+  height: 100%; width: 40%;
+  background: var(--accent);
+  border-radius: 2px;
+  animation: scan-slide 1.8s ease-in-out infinite;
+}
+@keyframes scan-slide {
+  0%   { transform: translateX(-100%); }
+  50%  { transform: translateX(250%); }
+  100% { transform: translateX(-100%); }
+}
+.scan-hint {
+  font-size: 13px; color: var(--muted);
+  font-family: var(--mono); letter-spacing: 0.04em;
+}
+
+/* ── Auto-return countdown ── */
+.return-bar {
+  position: absolute; bottom: 40px; left: 40px; right: 40px;
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
+.return-track {
+  width: 100%; height: 3px; border-radius: 2px;
+  background: rgba(255,255,255,0.08); overflow: hidden;
+}
+.return-fill {
+  height: 100%; border-radius: 2px;
+  background: var(--muted);
+  transition: width 0.1s linear;
+}
+.return-label {
+  font-size: 12px; color: var(--muted);
+  font-family: var(--mono); letter-spacing: 0.05em;
+}
+
+/* ── Processing spinner ── */
+#screen-processing .spin {
+  width: 72px; height: 72px;
+  border: 3px solid rgba(255,255,255,0.08);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 32px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Success icon animation ── */
+.check-anim {
+  stroke-dasharray: 80;
+  stroke-dashoffset: 80;
+  animation: draw-check 0.5s ease forwards 0.1s;
+}
+@keyframes draw-check {
+  to { stroke-dashoffset: 0; }
+}
+
+/* ── Screen entrance animations ── */
+.screen.active .icon-ring    { animation: pop-in 0.4s cubic-bezier(0.34,1.56,0.64,1) both 0.05s; }
+.screen.active .screen-title { animation: fade-up 0.4s ease both 0.1s; }
+.screen.active .screen-subtitle { animation: fade-up 0.4s ease both 0.15s; }
+.screen.active .guest-card   { animation: fade-up 0.4s ease both 0.2s; }
+.screen.active .scan-prompt  { animation: fade-up 0.4s ease both 0.2s; }
+
+@keyframes pop-in {
+  from { transform: scale(0.5); opacity: 0; }
+  to   { transform: scale(1);   opacity: 1; }
+}
+@keyframes fade-up {
+  from { transform: translateY(20px); opacity: 0; }
+  to   { transform: translateY(0);    opacity: 1; }
+}
+
+/* ── Config overlay (admin) ── */
+#config-overlay {
+  display: none; position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,0.85); backdrop-filter: blur(12px);
+  align-items: center; justify-content: center;
+}
+#config-overlay.open { display: flex; }
+.config-panel {
+  background: #141414; border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 20px; padding: 40px; width: min(500px, 90vw);
+  max-height: 90vh; overflow-y: auto;
+}
+.config-panel h2 { font-size: 22px; font-weight: 700; margin-bottom: 24px; }
+.cfg-row { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+.cfg-row label { font-size: 12px; color: var(--muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; }
+.cfg-row input, .cfg-row textarea {
+  background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+  border-radius: 10px; padding: 10px 14px; color: #fff; font-family: var(--font);
+  font-size: 15px; width: 100%; outline: none; resize: vertical;
+}
+.cfg-row input:focus, .cfg-row textarea:focus { border-color: var(--accent); }
+.cfg-row textarea { min-height: 72px; }
+.cfg-section-title {
+  font-size: 11px; color: var(--muted); font-family: var(--mono);
+  text-transform: uppercase; letter-spacing: 0.1em;
+  margin: 24px 0 12px; padding-bottom: 8px;
+  border-bottom: 1px solid rgba(255,255,255,0.08);
+}
+.cfg-btns { display: flex; gap: 10px; margin-top: 28px; justify-content: flex-end; }
+.cfg-btn {
+  padding: 10px 22px; border-radius: 10px; font-family: var(--font);
+  font-size: 14px; font-weight: 600; cursor: pointer; border: none;
+  transition: opacity 0.15s;
+}
+.cfg-btn:hover { opacity: 0.85; }
+.cfg-btn.primary { background: var(--accent); color: #fff; }
+.cfg-btn.secondary { background: rgba(255,255,255,0.08); color: #fff; }
+
+/* ── Station selector (first load) ── */
+#station-selector {
+  display: none; position: fixed; inset: 0; z-index: 200;
+  background: var(--bg); align-items: center; justify-content: center;
+  flex-direction: column; gap: 24px; padding: 40px;
+}
+#station-selector.open { display: flex; }
+#station-selector h1 { font-size: 28px; font-weight: 800; }
+#station-selector p { color: var(--muted); font-size: 15px; text-align: center; }
+.station-list { display: flex; flex-direction: column; gap: 10px; width: 100%; max-width: 400px; }
+.station-item {
+  padding: 18px 24px; background: rgba(255,255,255,0.05);
+  border: 1px solid rgba(255,255,255,0.1); border-radius: 14px;
+  cursor: pointer; font-size: 16px; font-weight: 600;
+  transition: background 0.15s, border-color 0.15s;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.station-item:hover { background: rgba(255,255,255,0.1); border-color: var(--accent); }
+.station-item small { font-size: 12px; color: var(--muted); font-family: var(--mono); font-weight: 400; }
+.station-new-btn {
+  padding: 14px 28px; background: var(--accent); color: #fff;
+  border: none; border-radius: 12px; font-family: var(--font);
+  font-size: 15px; font-weight: 700; cursor: pointer;
+  transition: opacity 0.15s;
+}
+.station-new-btn:hover { opacity: 0.85; }
+</style>
+</head>
+<body>
+
+<!-- ── Station selector (shown if no stationId or station not found) ── -->
+<div id="station-selector">
+  <h1>Check-in Kiosk</h1>
+  <p>Select a station to launch, or create a new one</p>
+  <div class="station-list" id="station-list"></div>
+  <button class="station-new-btn" onclick="openConfig(true)">+ New Station</button>
+</div>
+
+<!-- ── Config overlay ── -->
+<div id="config-overlay">
+  <div class="config-panel">
+    <h2>⚙ Station Settings</h2>
+
+    <div class="cfg-row">
+      <label>Station Name</label>
+      <input id="cfg-name" type="text" placeholder="e.g. Entrance A"/>
+    </div>
+    <div class="cfg-row">
+      <label>Logo / Event Text</label>
+      <input id="cfg-logo" type="text" placeholder="e.g. AWF 2025"/>
+    </div>
+    <div class="cfg-row">
+      <label>Accent Color</label>
+      <input id="cfg-accent" type="color" value="#d3222a"/>
+    </div>
+    <div class="cfg-row">
+      <label>Background Color</label>
+      <input id="cfg-bg" type="color" value="#0a0a0a"/>
+    </div>
+
+    <div class="cfg-row" style="flex-direction:column;align-items:flex-start;gap:6px;">
+      <label class="cfg-label">Print Endpoint <span style="opacity:0.5;font-size:11px;">(optional)</span></label>
+      <input id="cfg-print-endpoint" type="url" placeholder="http://printer-host/print" style="background:var(--surface2);border:1px solid var(--border);color:var(--text);font-family:var(--font-mono);font-size:12px;padding:8px 12px;border-radius:6px;width:100%;box-sizing:border-box;"/>
+      <div style="font-size:11px;color:var(--muted);">If set, badge PDF will be PUT to this URL instead of opening the browser print dialog.</div>
+    </div>
+
+    <div class="cfg-section-title">Welcome Screen</div>
+    <div class="cfg-row">
+      <label>Heading</label>
+      <input id="cfg-welcome-title" type="text" placeholder="Welcome"/>
+    </div>
+    <div class="cfg-row">
+      <label>Subtitle</label>
+      <textarea id="cfg-welcome-sub" placeholder="Please scan your QR code to check in."></textarea>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="cfg-row"><label>Heading size (px)</label><input id="cfg-welcome-title-size" type="number" min="20" max="120" placeholder="default"/></div>
+      <div class="cfg-row"><label>Subtitle size (px)</label><input id="cfg-welcome-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
+    </div>
+    <div class="cfg-row">
+      <label>Background Image</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <label style="flex:1;padding:8px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-size:13px;color:rgba(255,255,255,0.5);text-align:center;">
+          <span id="cfg-welcome-bg-label">Upload image…</span>
+          <input type="file" id="cfg-welcome-bg-file" accept="image/*" style="display:none;" onchange="loadKioskScreenBg(this,'welcome')"/>
+        </label>
+        <button class="cfg-btn secondary" id="cfg-welcome-bg-clear" onclick="clearKioskScreenBg('welcome')" style="display:none;padding:7px 12px;font-size:12px;">✕</button>
+      </div>
+      <input type="hidden" id="cfg-welcome-bg-data"/>
+    </div>
+    <div class="cfg-row">
+      <label>Auto-return delay (seconds)</label>
+      <input id="cfg-welcome-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/>
+    </div>
+
+    <div class="cfg-section-title">Success Screen</div>
+    <div class="cfg-row">
+      <label>Heading</label>
+      <input id="cfg-success-title" type="text" placeholder="Checked In!"/>
+    </div>
+    <div class="cfg-row">
+      <label>Subtitle</label>
+      <textarea id="cfg-success-sub" placeholder="Your badge is printing. Welcome!"></textarea>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="cfg-row"><label>Heading size (px)</label><input id="cfg-success-title-size" type="number" min="20" max="120" placeholder="default"/></div>
+      <div class="cfg-row"><label>Subtitle size (px)</label><input id="cfg-success-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
+    </div>
+    <div class="cfg-row">
+      <label style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="cfg-success-hide-card" style="width:16px;height:16px;accent-color:var(--accent);"/>
+        Hide guest name card
+      </label>
+    </div>
+    <div class="cfg-row">
+      <label>Background Image</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <label style="flex:1;padding:8px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-size:13px;color:rgba(255,255,255,0.5);text-align:center;">
+          <span id="cfg-success-bg-label">Upload image…</span>
+          <input type="file" id="cfg-success-bg-file" accept="image/*" style="display:none;" onchange="loadKioskScreenBg(this,'success')"/>
+        </label>
+        <button class="cfg-btn secondary" id="cfg-success-bg-clear" onclick="clearKioskScreenBg('success')" style="display:none;padding:7px 12px;font-size:12px;">✕</button>
+      </div>
+      <input type="hidden" id="cfg-success-bg-data"/>
+    </div>
+    <div class="cfg-row">
+      <label>Auto-return delay (seconds)</label>
+      <input id="cfg-success-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/>
+    </div>
+
+    <div class="cfg-section-title">Not Found / Invalid Status</div>
+    <div class="cfg-row">
+      <label>Heading</label>
+      <input id="cfg-notfound-title" type="text" placeholder="Guest Not Found"/>
+    </div>
+    <div class="cfg-row">
+      <label>Subtitle</label>
+      <textarea id="cfg-notfound-sub" placeholder="Please see the registration desk for assistance."></textarea>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="cfg-row"><label>Heading size (px)</label><input id="cfg-notfound-title-size" type="number" min="20" max="120" placeholder="default"/></div>
+      <div class="cfg-row"><label>Subtitle size (px)</label><input id="cfg-notfound-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
+    </div>
+    <div class="cfg-row">
+      <label>Background Image</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <label style="flex:1;padding:8px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-size:13px;color:rgba(255,255,255,0.5);text-align:center;">
+          <span id="cfg-notfound-bg-label">Upload image…</span>
+          <input type="file" id="cfg-notfound-bg-file" accept="image/*" style="display:none;" onchange="loadKioskScreenBg(this,'notfound')"/>
+        </label>
+        <button class="cfg-btn secondary" id="cfg-notfound-bg-clear" onclick="clearKioskScreenBg('notfound')" style="display:none;padding:7px 12px;font-size:12px;">✕</button>
+      </div>
+      <input type="hidden" id="cfg-notfound-bg-data"/>
+    </div>
+    <div class="cfg-row">
+      <label>Auto-return delay (seconds)</label>
+      <input id="cfg-notfound-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/>
+    </div>
+
+    <div class="cfg-section-title">Already Checked In</div>
+    <div class="cfg-row">
+      <label>Heading</label>
+      <input id="cfg-already-title" type="text" placeholder="Already Checked In"/>
+    </div>
+    <div class="cfg-row">
+      <label>Subtitle</label>
+      <textarea id="cfg-already-sub" placeholder="Your badge was already printed. See the desk if you need a reprint."></textarea>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+      <div class="cfg-row"><label>Heading size (px)</label><input id="cfg-already-title-size" type="number" min="20" max="120" placeholder="default"/></div>
+      <div class="cfg-row"><label>Subtitle size (px)</label><input id="cfg-already-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
+    </div>
+    <div class="cfg-row">
+      <label style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="cfg-already-hide-card" style="width:16px;height:16px;accent-color:var(--accent);"/>
+        Hide guest name card
+      </label>
+    </div>
+    <div class="cfg-row">
+      <label>Background Image</label>
+      <div style="display:flex;gap:8px;align-items:center;">
+        <label style="flex:1;padding:8px 12px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);border-radius:10px;cursor:pointer;font-size:13px;color:rgba(255,255,255,0.5);text-align:center;">
+          <span id="cfg-already-bg-label">Upload image…</span>
+          <input type="file" id="cfg-already-bg-file" accept="image/*" style="display:none;" onchange="loadKioskScreenBg(this,'already')"/>
+        </label>
+        <button class="cfg-btn secondary" id="cfg-already-bg-clear" onclick="clearKioskScreenBg('already')" style="display:none;padding:7px 12px;font-size:12px;">✕</button>
+      </div>
+      <input type="hidden" id="cfg-already-bg-data"/>
+    </div>
+    <div class="cfg-row">
+      <label>Auto-return delay (seconds)</label>
+      <input id="cfg-already-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/>
+    </div>
+
+    <div class="cfg-btns">
+      <button class="cfg-btn secondary" onclick="closeConfig()">Cancel</button>
+      <button class="cfg-btn primary" onclick="saveConfig()">Save &amp; Launch</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Main kiosk ── -->
+<div id="kiosk">
+  <input id="scan-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+
+  <!-- Welcome -->
+  <div class="screen active" id="screen-welcome">
+    <div class="station-header">
+      <div class="station-dot"></div>
+      <div class="station-logo" id="welcome-logo">Check-in</div>
+    </div>
+    <div class="icon-ring welcome">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <!-- QR code icon -->
+        <rect x="8" y="8" width="20" height="20" rx="2" stroke="currentColor" stroke-width="2.5" fill="none"/>
+        <rect x="13" y="13" width="10" height="10" rx="1" fill="currentColor"/>
+        <rect x="36" y="8" width="20" height="20" rx="2" stroke="currentColor" stroke-width="2.5" fill="none"/>
+        <rect x="41" y="13" width="10" height="10" rx="1" fill="currentColor"/>
+        <rect x="8" y="36" width="20" height="20" rx="2" stroke="currentColor" stroke-width="2.5" fill="none"/>
+        <rect x="13" y="41" width="10" height="10" rx="1" fill="currentColor"/>
+        <rect x="36" y="36" width="6" height="6" rx="1" fill="currentColor"/>
+        <rect x="46" y="36" width="10" height="6" rx="1" fill="currentColor"/>
+        <rect x="36" y="46" width="10" height="6" rx="1" fill="currentColor"/>
+        <rect x="50" y="46" width="6" height="10" rx="1" fill="currentColor"/>
+      </svg>
+    </div>
+    <div class="screen-title" id="welcome-title">Welcome</div>
+    <div class="screen-subtitle" id="welcome-sub">Please scan your QR code to check in.</div>
+    <div class="scan-prompt">
+      <div class="scan-bar"><div class="scan-bar-fill"></div></div>
+      <div class="scan-hint">Waiting for scan…</div>
+    </div>
+    <!-- Long-press bottom-right corner to open config -->
+    <div style="position:absolute;bottom:0;right:0;width:60px;height:60px;cursor:default;"
+         onmousedown="startAdminHold()" onmouseup="cancelAdminHold()" onmouseleave="cancelAdminHold()"
+         ontouchstart="startAdminHold()" ontouchend="cancelAdminHold()"></div>
+  </div>
+
+  <!-- Processing -->
+  <div class="screen" id="screen-processing">
+    <div class="spin"></div>
+    <div class="screen-title" style="font-size:28px;font-weight:600;">Checking in…</div>
+  </div>
+
+  <!-- Success -->
+  <div class="screen" id="screen-success">
+    <div class="station-header">
+      <div class="station-dot" style="background:#4ade80;box-shadow:0 0 8px #4ade80;animation:none;"></div>
+      <div class="station-logo" id="success-logo">Check-in</div>
+    </div>
+    <div class="icon-ring success">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="32" cy="32" r="22" stroke="#4ade80" stroke-width="2.5"/>
+        <polyline class="check-anim" points="20,33 28,41 44,23" stroke="#4ade80" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+    <div class="screen-title" id="success-title">Checked In!</div>
+    <div class="screen-subtitle" id="success-sub">Your badge is printing. Welcome!</div>
+    <div class="guest-card" id="success-guest">
+      <div class="guest-name" id="success-name">—</div>
+      <div class="guest-company" id="success-company">—</div>
+      <span class="guest-badge-label badge-success">✓ Badge printing</span>
+    </div>
+    <div class="return-bar" id="success-return">
+      <div class="return-track"><div class="return-fill" id="success-fill" style="width:100%"></div></div>
+      <div class="return-label" id="success-timer">Returning in 8s</div>
+    </div>
+  </div>
+
+  <!-- Not Found / Invalid Status -->
+  <div class="screen" id="screen-notfound">
+    <div class="station-header">
+      <div class="station-dot" style="background:#fbbf24;box-shadow:0 0 8px #fbbf24;animation:none;"></div>
+      <div class="station-logo" id="notfound-logo">Check-in</div>
+    </div>
+    <div class="icon-ring warn">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M32 10 L56 52 H8 Z" stroke="#fbbf24" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+        <line x1="32" y1="26" x2="32" y2="38" stroke="#fbbf24" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="32" cy="44" r="1.5" fill="#fbbf24"/>
+      </svg>
+    </div>
+    <div class="screen-title" id="notfound-title">Guest Not Found</div>
+    <div class="screen-subtitle" id="notfound-sub">Please see the registration desk for assistance.</div>
+    <div class="return-bar" id="notfound-return">
+      <div class="return-track"><div class="return-fill" id="notfound-fill" style="width:100%"></div></div>
+      <div class="return-label" id="notfound-timer">Returning in 8s</div>
+    </div>
+  </div>
+
+  <!-- Already Checked In -->
+  <div class="screen" id="screen-already">
+    <div class="station-header">
+      <div class="station-dot" style="background:#818cf8;box-shadow:0 0 8px #818cf8;animation:none;"></div>
+      <div class="station-logo" id="already-logo">Check-in</div>
+    </div>
+    <div class="icon-ring info">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="32" cy="32" r="22" stroke="#818cf8" stroke-width="2.5"/>
+        <line x1="32" y1="28" x2="32" y2="44" stroke="#818cf8" stroke-width="2.5" stroke-linecap="round"/>
+        <circle cx="32" cy="22" r="2" fill="#818cf8"/>
+      </svg>
+    </div>
+    <div class="screen-title" id="already-title">Already Checked In</div>
+    <div class="screen-subtitle" id="already-sub">Your badge was already printed. See the desk if you need a reprint.</div>
+    <div class="guest-card" id="already-guest">
+      <div class="guest-name" id="already-name">—</div>
+      <div class="guest-company" id="already-company">—</div>
+      <span class="guest-badge-label badge-info" id="already-date">Checked in</span>
+    </div>
+    <div class="return-bar" id="already-return">
+      <div class="return-track"><div class="return-fill" id="already-fill" style="width:100%"></div></div>
+      <div class="return-label" id="already-timer">Returning in 8s</div>
+    </div>
+  </div>
+
+  <!-- Error -->
+  <div class="screen" id="screen-error">
+    <div class="icon-ring danger">
+      <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="32" cy="32" r="22" stroke="#f87171" stroke-width="2.5"/>
+        <line x1="24" y1="24" x2="40" y2="40" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+        <line x1="40" y1="24" x2="24" y2="40" stroke="#f87171" stroke-width="2.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="screen-title">Error</div>
+    <div class="screen-subtitle" id="error-msg">Something went wrong. Please try again.</div>
+    <div class="return-bar">
+      <div class="return-track"><div class="return-fill" id="error-fill" style="width:100%"></div></div>
+      <div class="return-label" id="error-timer">Returning in 8s</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── State ─────────────────────────────────────────────────────────────────────
+let station = null;         // loaded station config
+let stationId = null;       // from URL
+let scanBuffer = '';
+let scanTimer = null;
+let returnTimer = null;
+let returnInterval = null;
+let badgeImages = {};       // key -> dataUrl cache
+let isProcessing = false;
+
+const DEFAULT_RETURN_SECS = 8;
+function getReturnSecs(screenCfg) {
+  const v = screenCfg?.returnSecs;
+  return (v && parseInt(v)) ? parseInt(v) : DEFAULT_RETURN_SECS;
+}
+const SCAN_DEBOUNCE_MS = 120;
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+async function init() {
+  // Extract stationId from URL path /kiosk/:stationId
+  const parts = location.pathname.split('/');
+  stationId = parts[parts.length - 1] || null;
+
+  applyTheme({ accentColor: '#d3222a', bgColor: '#0a0a0a' });
+
+  if (!stationId || stationId === 'kiosk') {
+    await showStationSelector();
+    return;
+  }
+
+  // Load stations from API
+  const stations = await fetch('/api/kiosk/stations').then(r => r.json()).catch(() => []);
+  station = stations.find(s => s.id === stationId);
+
+  if (!station) {
+    await showStationSelector();
+    return;
+  }
+
+  applyStation(station);
+  setupScanInput();
+  startHeartbeat();
+  applyWelcomeBg();
+  showScreen('welcome');
+}
+
+// ── Theme ─────────────────────────────────────────────────────────────────────
+function applyTheme({ accentColor, bgColor }) {
+  const root = document.documentElement;
+  if (accentColor) root.style.setProperty('--accent', accentColor);
+  if (bgColor)     root.style.setProperty('--bg', bgColor);
+}
+
+// Apply background image to the kiosk container for a given screen config
+function applyScreenBg(screenCfg) {
+  const kiosk = document.getElementById('kiosk');
+  const img = screenCfg?.bgImage || null;
+  if (img) {
+    kiosk.style.backgroundImage = `url(${img})`;
+    kiosk.style.backgroundSize = 'cover';
+    kiosk.style.backgroundPosition = 'center';
+    kiosk.style.backgroundRepeat = 'no-repeat';
+  } else {
+    kiosk.style.backgroundImage = '';
+  }
+}
+
+function applyStation(s) {
+  applyTheme({ accentColor: s.accentColor, bgColor: s.bgColor });
+  const logoText = s.logoText || s.name || 'Check-in';
+
+  // Apply font size overrides
+  const applyScreen = (key, screenId) => {
+    const cfg = s[key] || {};
+    const titleEl = document.getElementById(screenId + '-title');
+    const subEl   = document.getElementById(screenId + '-sub');
+    if (titleEl && cfg.titleSize) titleEl.style.fontSize = cfg.titleSize + 'px';
+    if (subEl   && cfg.subSize)   subEl.style.fontSize   = cfg.subSize   + 'px';
+  };
+  applyScreen('welcome',          'welcome');
+  applyScreen('success',          'success');
+  applyScreen('notFound',         'notfound');
+  applyScreen('alreadyCheckedIn', 'already');
+
+  // Show/hide guest card on success/already screens
+  const successCard = document.getElementById('success-guest');
+  const alreadyCard = document.getElementById('already-guest');
+  if (successCard) successCard.style.display = s.success?.hideGuestCard ? 'none' : '';
+  if (alreadyCard) alreadyCard.style.display = s.alreadyCheckedIn?.hideGuestCard ? 'none' : '';
+
+  // Apply all logo labels
+  ['welcome','success','notfound','already'].forEach(k => {
+    const el = document.getElementById(k + '-logo');
+    if (el) el.textContent = logoText;
+  });
+
+  // Welcome
+  setText('welcome-title', s.welcome?.title || 'Welcome');
+  setText('welcome-sub',   s.welcome?.subtitle || 'Please scan your QR code to check in.');
+
+  // Success
+  setText('success-title', s.success?.title || 'Checked In!');
+  setText('success-sub',   s.success?.subtitle || 'Your badge is printing. Welcome!');
+
+  // Not found
+  setText('notfound-title', s.notFound?.title || 'Guest Not Found');
+  setText('notfound-sub',   s.notFound?.subtitle || 'Please see the registration desk for assistance.');
+
+  // Already
+  setText('already-title', s.alreadyCheckedIn?.title || 'Already Checked In');
+  setText('already-sub',   s.alreadyCheckedIn?.subtitle || 'Your badge was already printed. See the desk if you need a reprint.');
+}
+
+function setText(id, val) {
+  const el = document.getElementById(id);
+  if (el && val) el.textContent = val;
+}
+
+// ── Screen management ─────────────────────────────────────────────────────────
+function showScreen(name) {
+  document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
+  const el = document.getElementById('screen-' + name);
+  if (el) {
+    // Re-trigger animations by cloning + replacing
+    const clone = el.cloneNode(true);
+    el.parentNode.replaceChild(clone, el);
+    clone.classList.add('active');
+  }
+}
+
+// ── Scan input ────────────────────────────────────────────────────────────────
+function applyWelcomeBg() {
+  if (station) applyScreenBg(station.welcome);
+}
+
+function setupScanInput() {
+  const input = document.getElementById('scan-input');
+
+  // Keep focus on the hidden input always
+  function reFocus() {
+    if (!isProcessing) input.focus();
+  }
+  document.addEventListener('click', reFocus);
+  document.addEventListener('touchend', reFocus);
+  input.addEventListener('blur', () => setTimeout(reFocus, 80));
+  reFocus();
+
+  // Accumulate keyboard input (scanner sends Enter at end)
+  input.addEventListener('input', () => {
+    scanBuffer += input.value;
+    input.value = '';
+    clearTimeout(scanTimer);
+    scanTimer = setTimeout(() => {
+      const val = scanBuffer.trim();
+      scanBuffer = '';
+      if (val) handleScan(val);
+    }, SCAN_DEBOUNCE_MS);
+  });
+
+  // Enter key triggers immediately
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      clearTimeout(scanTimer);
+      const val = scanBuffer.trim();
+      scanBuffer = '';
+      input.value = '';
+      if (val) handleScan(val);
+    }
+  });
+}
+
+// ── Scan handler ──────────────────────────────────────────────────────────────
+async function handleScan(raw) {
+  if (isProcessing) return;
+  isProcessing = true;
+  cancelReturn();
+  showScreen('processing');
+
+  try {
+    const res = await fetch('/api/kiosk/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scan: raw })
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      showError(data.error);
+      return;
+    }
+
+    switch (data.result) {
+      case 'success':
+        await handleSuccess(data);
+        break;
+      case 'already_checked_in':
+        handleAlready(data);
+        break;
+      case 'not_found':
+        handleNotFound('Guest not found for this QR code.');
+        break;
+      case 'invalid_status':
+        handleNotFound(`Status: ${data.status || 'not eligible'}`);
+        break;
+      default:
+        showError('Unexpected response.');
+    }
+  } catch(e) {
+    showError(e.message || 'Network error');
+  } finally {
+    isProcessing = false;
+    refocusScanInput();
+  }
+}
+
+// ── Result handlers ───────────────────────────────────────────────────────────
+async function handleSuccess(data) {
+  const g = data.guest || {};
+  setText('success-name', [g.firstName, g.lastName].filter(Boolean).join(' ') || '—');
+  setText('success-company', g.company || '');
+  showScreen('success');
+
+  // Print badge
+  try {
+    await printKioskBadge(data);
+  } catch(e) {
+    console.warn('Badge print error:', e);
+  }
+
+  applyScreenBg(station?.success);
+  startReturn('success', getReturnSecs(station?.success));
+}
+
+function handleAlready(data) {
+  const g = data.guest || {};
+  setText('already-name', [g.firstName, g.lastName].filter(Boolean).join(' ') || '—');
+  setText('already-company', g.company || '');
+  const dateEl = document.getElementById('already-date');
+  if (dateEl) dateEl.textContent = g.checkedInAt ? `Checked in ${g.checkedInAt}` : 'Already checked in';
+  showScreen('already');
+  applyScreenBg(station?.alreadyCheckedIn);
+  startReturn('already', getReturnSecs(station?.alreadyCheckedIn));
+}
+
+function handleNotFound(msg) {
+  const subEl = document.getElementById('notfound-sub');
+  if (subEl && msg) subEl.textContent = station?.notFound?.subtitle || msg;
+  showScreen('notfound');
+  applyScreenBg(station?.notFound);
+  startReturn('notfound', getReturnSecs(station?.notFound));
+}
+
+function showError(msg) {
+  setText('error-msg', msg);
+  showScreen('error');
+  applyScreenBg(null);
+  startReturn('error', getReturnSecs(null));
+}
+
+// ── Auto-return countdown ─────────────────────────────────────────────────────
+function startReturn(screen, secs) {
+  cancelReturn();
+  const fillEl  = document.getElementById(screen + '-fill');
+  const timerEl = document.getElementById(screen + '-timer');
+  let remaining = secs;
+
+  function update() {
+    const pct = (remaining / secs) * 100;
+    if (fillEl)  fillEl.style.width = pct + '%';
+    if (timerEl) timerEl.textContent = `Returning in ${remaining}s`;
+  }
+  update();
+
+  returnInterval = setInterval(() => {
+    remaining--;
+    update();
+    if (remaining <= 0) {
+      cancelReturn();
+      showScreen('welcome');
+      applyWelcomeBg();
+      refocusScanInput();
+    }
+  }, 1000);
+}
+
+function cancelReturn() {
+  clearInterval(returnInterval);
+  clearTimeout(returnTimer);
+  returnInterval = null;
+}
+
+function refocusScanInput() {
+  setTimeout(() => {
+    const input = document.getElementById('scan-input');
+    if (input) { input.value = ''; input.focus(); }
+  }, 100);
+}
+
+// ── Badge printing ────────────────────────────────────────────────────────────
+function evalCondition(c, attrs) {
+  const val = String(attrs[c.attr] ?? '');
+  const cv  = String(c.value ?? '');
+  switch(c.op) {
+    case 'eq':       return val === cv || (cv === 'true' && attrs[c.attr] === true) || (cv === 'false' && attrs[c.attr] === false);
+    case 'neq':      return val !== cv;
+    case 'contains': return val.toLowerCase().includes(cv.toLowerCase());
+    case 'exists':   return attrs[c.attr] !== undefined && attrs[c.attr] !== null && attrs[c.attr] !== '';
+    case 'true':     return attrs[c.attr] === true || val === 'true';
+    case 'false':    return attrs[c.attr] === false || val === 'false';
+    default:         return false;
+  }
+}
+
+function selectTemplate(guest, rules, fallback) {
+  const attrs = guest.attributes || {};
+  for (const rule of (rules || [])) {
+    const results = rule.conditions.map(c => evalCondition(c, attrs));
+    const match = rule.logic === 'OR' ? results.some(Boolean) : results.every(Boolean);
+    if (match) return rule.template;
+  }
+  return fallback || (rules?.[0]?.template) || null;
+}
+
+function resolveField(fieldSpec, attrs) {
+  if (!fieldSpec) return '';
+  if (fieldSpec.startsWith('text:')) return fieldSpec.slice(5);
+  return fieldSpec.split(' ').map(f => attrs[f.trim()] || '').join(' ').trim();
+}
+
+async function getBadgeImg(key) {
+  if (badgeImages[key] !== undefined) return badgeImages[key];
+  try {
+    const r = await fetch(`/api/kiosk/badge-image/${encodeURIComponent(key)}`);
+    if (!r.ok) { badgeImages[key] = null; return null; }
+    const d = await r.json();
+    badgeImages[key] = d.dataUrl || null;
+    return badgeImages[key];
+  } catch(e) { badgeImages[key] = null; return null; }
+}
+
+async function printKioskBadge(data) {
+  const { guest, badgeConfig } = data;
+  if (!guest || !badgeConfig) return;
+
+  const attrs = guest.attributes || {};
+  const templates = badgeConfig.templates || [];
+  const tplKey = selectTemplate(guest, badgeConfig.rules, badgeConfig.fallback);
+  const tpl = templates.find(t => t.key === tplKey) || templates[0];
+  if (!tpl) { console.warn('No badge template found'); return; }
+
+  const bgImage      = await getBadgeImg(tpl.key);
+  const pageW        = tpl.width  || 580.83;
+  const pageH        = tpl.height || 990.24;
+  const color        = tpl.color  || '#d3222a';
+  const rows         = tpl.rows   || [];
+  const mirrorOffset = tpl.mirrorOffset != null ? tpl.mirrorOffset : 90;
+
+  function measureSvgText(text, fontSize, bold) {
+    try {
+      const ns = 'http://www.w3.org/2000/svg';
+      const svg = document.createElementNS(ns, 'svg');
+      svg.style.cssText = 'position:absolute;visibility:hidden;top:-9999px;left:-9999px';
+      const t = document.createElementNS(ns, 'text');
+      t.setAttribute('font-family', 'Helvetica,Arial,sans-serif');
+      t.setAttribute('font-size', fontSize);
+      if (bold) t.setAttribute('font-weight', 'bold');
+      t.textContent = text;
+      svg.appendChild(t); document.body.appendChild(svg);
+      const w = t.getComputedTextLength();
+      document.body.removeChild(svg);
+      return w || text.length * fontSize * 0.55;
+    } catch(e) { return text.length * fontSize * 0.55; }
+  }
+
+  function escSvg(str) {
+    return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  const LINE_H = (r) => (r.fontSize || 20) * 1.2;
+  let cursorY = 0;
+  const topSlots = rows.map(row => {
+    cursorY += (row.marginTop || 0);
+    const slotTop = cursorY;
+    const slotH   = LINE_H(row);
+    cursorY += slotH;
+    return { row, slotTop, slotH };
+  });
+
+  function makeRowSvg(text, fs, bold, slotH, mirrored) {
+    const measuredW = measureSvgText(text, fs, bold) / 0.82;
+    const maxW      = pageW * 0.95;
+    const scaledFs  = measuredW > maxW ? +(fs * maxW / measuredW).toFixed(3) : fs;
+    const cx = pageW / 2, cy = slotH / 2;
+    const textY = cy + scaledFs * 0.35;
+    const rotate = mirrored ? ` transform="rotate(180,${cx.toFixed(2)},${cy.toFixed(2)})"` : '';
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${pageW}" height="${slotH}"><text x="${cx.toFixed(2)}" y="${textY.toFixed(2)}" font-family="Helvetica,Arial,sans-serif" font-size="${scaledFs}" ${bold?'font-weight="bold" ':''}fill="${escSvg(color)}" text-anchor="middle"${rotate}>${escSvg(text)}</text></svg>`;
+  }
+
+  const svgItems = [];
+  topSlots.forEach(({ row, slotTop, slotH }) => {
+    const text = resolveField(row.field, attrs);
+    svgItems.push({ svg: makeRowSvg(text, row.fontSize||20, !!row.bold, slotH, false), width: pageW, absolutePosition: { x:0, y:slotTop } });
+  });
+
+  if (tpl.mirror) {
+    let y = pageH - mirrorOffset;
+    topSlots.forEach(({ row, slotH }, i) => {
+      const gap = i === 0 ? 0 : (row.marginTop || 0);
+      const slotBot = y - gap;
+      const slotTop = slotBot - slotH;
+      y = slotTop;
+      const text = resolveField(row.field, attrs);
+      svgItems.push({ svg: makeRowSvg(text, row.fontSize||20, !!row.bold, slotH, true), width: pageW, absolutePosition: { x:0, y:slotTop } });
+    });
+  }
+
+  const dd = {
+    pageSize:    { width: pageW, height: pageH },
+    pageMargins: [0, 0, 0, 0],
+    content: [{ text:'', fontSize:0.01, margin:[0,0,0,0] }, ...svgItems],
+  };
+  if (bgImage) dd.background = { image: bgImage, alignment:'center', width: pageW };
+
+  const endpoint = station?.printEndpoint;
+  if (endpoint) {
+    // Send PDF as binary PUT to the configured print endpoint
+    pdfMake.createPdf(dd).getBuffer(async (buffer) => {
+      try {
+        const res = await fetch(endpoint, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/pdf' },
+          body: buffer,
+        });
+        if (!res.ok) console.error('Print endpoint returned', res.status);
+      } catch(e) {
+        console.error('Print endpoint error:', e);
+      }
+    });
+  } else {
+    pdfMake.createPdf(dd).print();
+  }
+}
+
+// ── Admin: long-press corner to open config ───────────────────────────────────
+let adminHoldTimer = null;
+function startAdminHold() {
+  adminHoldTimer = setTimeout(() => openConfig(false), 2500);
+}
+function cancelAdminHold() {
+  clearTimeout(adminHoldTimer);
+}
+
+// ── Station selector ──────────────────────────────────────────────────────────
+async function showStationSelector() {
+  const stations = await fetch('/api/kiosk/stations').then(r => r.json()).catch(() => []);
+  const list = document.getElementById('station-list');
+  list.innerHTML = '';
+
+  if (stations.length === 0) {
+    list.innerHTML = '<p style="color:var(--muted);font-size:14px;text-align:center;">No stations yet. Create one below.</p>';
+  } else {
+    stations.forEach(s => {
+      const item = document.createElement('div');
+      item.className = 'station-item';
+      item.innerHTML = `<span>${s.name}</span><small>${s.id.slice(0,8)}…</small>`;
+      item.onclick = () => {
+        history.replaceState(null, '', `/kiosk/${s.id}`);
+        stationId = s.id;
+        station = s;
+        document.getElementById('station-selector').classList.remove('open');
+        applyStation(station);
+        setupScanInput();
+        startHeartbeat();
+        applyWelcomeBg();
+        showScreen('welcome');
+      };
+      list.appendChild(item);
+    });
+  }
+
+  document.getElementById('station-selector').classList.add('open');
+}
+
+// ── Config panel ──────────────────────────────────────────────────────────────
+let _configIsNew = false;
+
+function openConfig(isNew) {
+  _configIsNew = isNew;
+  const s = (!isNew && station) ? station : {};
+  document.getElementById('cfg-name').value           = s.name || '';
+  document.getElementById('cfg-logo').value           = s.logoText || '';
+  document.getElementById('cfg-accent').value         = s.accentColor || '#d3222a';
+  document.getElementById('cfg-bg').value             = s.bgColor || '#0a0a0a';
+  document.getElementById('cfg-print-endpoint').value = s.printEndpoint || '';
+  document.getElementById('cfg-welcome-title').value  = s.welcome?.title || '';
+  document.getElementById('cfg-welcome-sub').value    = s.welcome?.subtitle || '';
+  document.getElementById('cfg-success-title').value  = s.success?.title || '';
+  document.getElementById('cfg-success-sub').value    = s.success?.subtitle || '';
+  document.getElementById('cfg-notfound-title').value = s.notFound?.title || '';
+  document.getElementById('cfg-notfound-sub').value   = s.notFound?.subtitle || '';
+  document.getElementById('cfg-already-title').value  = s.alreadyCheckedIn?.title || '';
+  document.getElementById('cfg-already-sub').value    = s.alreadyCheckedIn?.subtitle || '';
+  // font sizes
+  const fs = (screen, key) => s[screen]?.[key] || '';
+  document.getElementById('cfg-welcome-title-size').value  = fs('welcome', 'titleSize');
+  document.getElementById('cfg-welcome-sub-size').value    = fs('welcome', 'subSize');
+  document.getElementById('cfg-success-title-size').value  = fs('success', 'titleSize');
+  document.getElementById('cfg-success-sub-size').value    = fs('success', 'subSize');
+  document.getElementById('cfg-notfound-title-size').value = fs('notFound', 'titleSize');
+  document.getElementById('cfg-notfound-sub-size').value   = fs('notFound', 'subSize');
+  document.getElementById('cfg-already-title-size').value  = fs('alreadyCheckedIn', 'titleSize');
+  document.getElementById('cfg-already-sub-size').value    = fs('alreadyCheckedIn', 'subSize');
+  // hide cards
+  document.getElementById('cfg-success-hide-card').checked = s.success?.hideGuestCard || false;
+  document.getElementById('cfg-already-hide-card').checked = s.alreadyCheckedIn?.hideGuestCard || false;
+  // per-screen bg images + return secs
+  [['welcome','welcome'],['success','success'],['notfound','notFound'],['already','alreadyCheckedIn']].forEach(([domKey, dataKey]) => {
+    const scr = s[dataKey] || {};
+    const img = scr.bgImage || '';
+    document.getElementById('cfg-' + domKey + '-bg-data').value = img;
+    document.getElementById('cfg-' + domKey + '-bg-label').textContent = img ? '✓ Image set' : 'Upload image…';
+    document.getElementById('cfg-' + domKey + '-bg-clear').style.display = img ? 'flex' : 'none';
+    document.getElementById('cfg-' + domKey + '-return-secs').value = scr.returnSecs || '';
+  });
+  document.getElementById('config-overlay').classList.add('open');
+}
+
+function closeConfig() {
+  document.getElementById('config-overlay').classList.remove('open');
+  if (_configIsNew) showStationSelector();
+}
+
+async function saveConfig() {
+  const gv = id => document.getElementById(id)?.value || '';
+  const gvn = id => parseInt(document.getElementById(id)?.value) || null;
+  const gvc = id => document.getElementById(id)?.checked || false;
+  const payload = {
+    id:            (!_configIsNew && station?.id) ? station.id : undefined,
+    name:          gv('cfg-name'),
+    logoText:      gv('cfg-logo'),
+    accentColor:   gv('cfg-accent'),
+    bgColor:       gv('cfg-bg'),
+    printEndpoint: gv('cfg-print-endpoint') || null,
+    welcome:          { title: gv('cfg-welcome-title'),  subtitle: gv('cfg-welcome-sub'),  titleSize: gvn('cfg-welcome-title-size'),  subSize: gvn('cfg-welcome-sub-size'),  bgImage: gv('cfg-welcome-bg-data')||null,  returnSecs: gvn('cfg-welcome-return-secs') },
+    success:          { title: gv('cfg-success-title'),  subtitle: gv('cfg-success-sub'),  titleSize: gvn('cfg-success-title-size'),  subSize: gvn('cfg-success-sub-size'),  bgImage: gv('cfg-success-bg-data')||null,  returnSecs: gvn('cfg-success-return-secs'),  hideGuestCard: gvc('cfg-success-hide-card') },
+    notFound:         { title: gv('cfg-notfound-title'), subtitle: gv('cfg-notfound-sub'), titleSize: gvn('cfg-notfound-title-size'), subSize: gvn('cfg-notfound-sub-size'), bgImage: gv('cfg-notfound-bg-data')||null, returnSecs: gvn('cfg-notfound-return-secs') },
+    alreadyCheckedIn: { title: gv('cfg-already-title'),  subtitle: gv('cfg-already-sub'),  titleSize: gvn('cfg-already-title-size'),  subSize: gvn('cfg-already-sub-size'),  bgImage: gv('cfg-already-bg-data')||null,  returnSecs: gvn('cfg-already-return-secs'),  hideGuestCard: gvc('cfg-already-hide-card') },
+  };
+  if (!payload.name) { alert('Station name is required.'); return; }
+
+  const res = await fetch('/api/kiosk/stations', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json();
+  if (!data.ok) { alert('Save failed: ' + (data.error || 'unknown')); return; }
+
+  station = data.station;
+  stationId = station.id;
+  history.replaceState(null, '', `/kiosk/${stationId}`);
+  document.getElementById('config-overlay').classList.remove('open');
+  document.getElementById('station-selector').classList.remove('open');
+  applyStation(station);
+  setupScanInput();
+  startHeartbeat();
+  applyWelcomeBg();
+  showScreen('welcome');
+}
+
+
+// ── Heartbeat — tell the server this station is alive ────────────────────────
+function sendHeartbeat() {
+  if (!stationId) return;
+  fetch('/api/kiosk/heartbeat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ stationId })
+  }).catch(() => {}); // silent — don't crash on network blip
+}
+
+function startHeartbeat() {
+  sendHeartbeat(); // immediate on load
+  setInterval(sendHeartbeat, 20000); // every 20s
+}
+
+
+// ── Kiosk per-screen bg image helpers ────────────────────────────────────────
+function loadKioskScreenBg(input, screenKey) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('cfg-' + screenKey + '-bg-data').value = e.target.result;
+    document.getElementById('cfg-' + screenKey + '-bg-label').textContent = '✓ ' + file.name;
+    document.getElementById('cfg-' + screenKey + '-bg-clear').style.display = 'flex';
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearKioskScreenBg(screenKey) {
+  document.getElementById('cfg-' + screenKey + '-bg-data').value = '';
+  document.getElementById('cfg-' + screenKey + '-bg-label').textContent = 'Upload image…';
+  document.getElementById('cfg-' + screenKey + '-bg-clear').style.display = 'none';
+  document.getElementById('cfg-' + screenKey + '-bg-file').value = '';
+}
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>
