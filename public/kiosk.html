@@ -46,7 +46,7 @@ html, body {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  padding: 48px 40px;
+  padding: clamp(32px, 5vmin, 60px) clamp(24px, 4vmin, 48px);
   opacity: 0; pointer-events: none;
   transition: opacity 0.4s ease;
 }
@@ -106,17 +106,17 @@ html, body {
 
 /* ── Logo / station name ── */
 .station-header {
-  position: absolute; top: 36px; left: 0; right: 0;
+  position: absolute; top: clamp(20px, 3vmin, 44px); left: 0; right: 0;
   display: flex; align-items: center; justify-content: center;
-  gap: 12px;
+  gap: clamp(8px, 1.2vmin, 14px);
 }
 .station-logo {
-  font-size: 13px; font-weight: 700; letter-spacing: 0.2em;
+  font-size: clamp(10px, 1.5vmin, 16px); font-weight: 700; letter-spacing: 0.2em;
   text-transform: uppercase; color: var(--muted);
   font-family: var(--mono);
 }
 .station-dot {
-  width: 6px; height: 6px; border-radius: 50%;
+  width: clamp(4px, 0.7vmin, 8px); height: clamp(4px, 0.7vmin, 8px); border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 8px var(--accent);
   animation: pulse 2s ease-in-out infinite;
@@ -128,13 +128,13 @@ html, body {
 
 /* ── Icon ring ── */
 .icon-ring {
-  width: 140px; height: 140px;
+  width: clamp(90px, 14vmin, 160px); height: clamp(90px, 14vmin, 160px);
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  margin-bottom: 40px;
+  margin-bottom: clamp(24px, 4vmin, 48px);
   position: relative;
 }
-.icon-ring svg { width: 64px; height: 64px; }
+.icon-ring svg { width: clamp(40px, 6.5vmin, 72px); height: clamp(40px, 6.5vmin, 72px); }
 
 .icon-ring.welcome {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
@@ -163,45 +163,45 @@ html, body {
 
 /* ── Heading ── */
 .screen-title {
-  font-size: clamp(32px, 5vw, 52px);
+  font-size: clamp(28px, 5.5vmin, 56px);
   font-weight: 800; line-height: 1.1;
   text-align: center;
   letter-spacing: -0.02em;
-  margin-bottom: 16px;
+  margin-bottom: clamp(10px, 1.8vmin, 20px);
 }
 .screen-subtitle {
-  font-size: clamp(15px, 2.2vw, 20px);
+  font-size: clamp(13px, 2vmin, 22px);
   font-weight: 400; color: var(--muted);
   text-align: center; line-height: 1.5;
-  max-width: 480px;
+  max-width: clamp(300px, 60vmin, 560px);
 }
 
 /* ── Guest name card (success / already) ── */
 .guest-card {
-  margin-top: 48px;
+  margin-top: clamp(28px, 4.5vmin, 56px);
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 20px;
-  padding: 32px 48px;
+  border-radius: clamp(14px, 2vmin, 24px);
+  padding: clamp(20px, 3.5vmin, 40px) clamp(28px, 5vmin, 60px);
   text-align: center;
   backdrop-filter: blur(8px);
-  min-width: 340px;
+  min-width: clamp(260px, 50vmin, 420px);
 }
 .guest-name {
-  font-size: clamp(28px, 4vw, 42px);
+  font-size: clamp(22px, 4vmin, 48px);
   font-weight: 700; line-height: 1.1;
   letter-spacing: -0.02em;
-  margin-bottom: 8px;
+  margin-bottom: clamp(4px, 0.8vmin, 10px);
 }
 .guest-company {
-  font-size: clamp(14px, 2vw, 18px);
+  font-size: clamp(12px, 1.8vmin, 20px);
   color: var(--muted); font-weight: 400;
 }
 .guest-badge-label {
   display: inline-block;
-  margin-top: 16px;
-  padding: 5px 14px; border-radius: 100px;
-  font-size: 12px; font-weight: 600; letter-spacing: 0.08em;
+  margin-top: clamp(10px, 1.5vmin, 20px);
+  padding: clamp(3px, 0.6vmin, 7px) clamp(10px, 1.5vmin, 18px); border-radius: 100px;
+  font-size: clamp(10px, 1.2vmin, 14px); font-weight: 600; letter-spacing: 0.08em;
   font-family: var(--mono); text-transform: uppercase;
 }
 .badge-success { background: rgba(34,197,94,0.15); color: #4ade80; }
@@ -209,11 +209,11 @@ html, body {
 
 /* ── Scan prompt (welcome) ── */
 .scan-prompt {
-  margin-top: 56px;
-  display: flex; flex-direction: column; align-items: center; gap: 14px;
+  margin-top: clamp(32px, 5.5vmin, 68px);
+  display: flex; flex-direction: column; align-items: center; gap: clamp(8px, 1.4vmin, 18px);
 }
 .scan-bar {
-  width: 200px; height: 3px; border-radius: 2px;
+  width: clamp(140px, 22vmin, 240px); height: 3px; border-radius: 2px;
   background: rgba(255,255,255,0.08);
   overflow: hidden;
 }
@@ -229,13 +229,13 @@ html, body {
   100% { transform: translateX(-100%); }
 }
 .scan-hint {
-  font-size: 13px; color: var(--muted);
+  font-size: clamp(10px, 1.4vmin, 15px); color: var(--muted);
   font-family: var(--mono); letter-spacing: 0.04em;
 }
 
 /* ── Auto-return countdown ── */
 .return-bar {
-  position: absolute; bottom: 40px; left: 40px; right: 40px;
+  position: absolute; bottom: clamp(20px, 3.5vmin, 48px); left: clamp(20px, 3.5vmin, 48px); right: clamp(20px, 3.5vmin, 48px);
   display: flex; flex-direction: column; align-items: center; gap: 10px;
 }
 .return-track {
@@ -248,18 +248,18 @@ html, body {
   transition: width 0.1s linear;
 }
 .return-label {
-  font-size: 12px; color: var(--muted);
+  font-size: clamp(10px, 1.2vmin, 14px); color: var(--muted);
   font-family: var(--mono); letter-spacing: 0.05em;
 }
 
 /* ── Processing spinner ── */
 #screen-processing .spin {
-  width: 72px; height: 72px;
+  width: clamp(48px, 7vmin, 84px); height: clamp(48px, 7vmin, 84px);
   border: 3px solid rgba(255,255,255,0.08);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
-  margin-bottom: 32px;
+  margin-bottom: clamp(20px, 3.5vmin, 40px);
 }
 @keyframes spin { to { transform: rotate(360deg); } }
 
