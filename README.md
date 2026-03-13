@@ -21,7 +21,7 @@ A self-hosted event check-in and badge printing system for Colada365 events. It 
 
 # clone repository
 
-git clone https: https://github.com/frankzandercolada/colada_checkin_tool.git
+git clone https://github.com/frankzandercolada/colada_checkin_tool.git
 
 cd colada_checkin_tool/
 ```bash
@@ -40,6 +40,23 @@ node index.js
 # 4. Open the admin UI
 open http://localhost:3000
 ```
+
+# 1. Install PM2 globally
+npm install -g pm2
+
+# 2. Start the app
+pm2 start /path/to/server/index.js --name colada365
+
+# 3. Save the process list
+pm2 save
+
+# 4. Register PM2 to start on boot (run the command it outputs)
+pm2 startup
+
+pm2 status          # see if it's running
+pm2 logs colada365  # live logs
+pm2 restart colada365
+pm2 stop colada365
 
 ---
 
