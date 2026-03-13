@@ -101,22 +101,32 @@ function getEffectiveCredentials(projectId) {
 
 async function getToken(projectId) {
   const key = projectId || 'global';
-  if (!tokenCaches[key]) tokenCaches[key] = { token:null, expires:0 };
+  if (!tokenCaches[key]) tokenCaches[key] = { token:null, expires:0, inflight:null };
   const cache = tokenCaches[key];
   const now = Date.now();
   if (cache.token && cache.expires > now+10000) return cache.token;
-  const creds = getEffectiveCredentials(projectId);
-  const params = new URLSearchParams();
-  params.append('grant_type','client_credentials');
-  params.append('client_id', creds.clientId);
-  params.append('client_secret', creds.clientSecret);
-  params.append('scope','email profile');
-  const res = await fetch(creds.tokenUrl, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:params });
-  if (!res.ok) throw new Error(`Token fetch failed (${res.status}): ${await res.text()}`);
-  const data = await res.json();
-  cache.token = data.access_token;
-  cache.expires = now + (data.expires_in||300)*1000;
-  return cache.token;
+  // Deduplicate concurrent refresh requests — if one is already in flight,
+  // all callers await the same promise instead of firing N OAuth requests.
+  if (cache.inflight) return cache.inflight;
+  cache.inflight = (async () => {
+    try {
+      const creds = getEffectiveCredentials(projectId);
+      const params = new URLSearchParams();
+      params.append('grant_type','client_credentials');
+      params.append('client_id', creds.clientId);
+      params.append('client_secret', creds.clientSecret);
+      params.append('scope','email profile');
+      const res = await fetch(creds.tokenUrl, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:params });
+      if (!res.ok) throw new Error(`Token fetch failed (${res.status}): ${await res.text()}`);
+      const data = await res.json();
+      cache.token = data.access_token;
+      cache.expires = Date.now() + (data.expires_in||300)*1000;
+      return cache.token;
+    } finally {
+      cache.inflight = null;
+    }
+  })();
+  return cache.inflight;
 }
 
 function compensateQwerty(input) {
@@ -653,6 +663,9 @@ app.get('/api/kiosk/badge-image/:key', (req, res) => {
   try { res.json({ dataUrl: fs.readFileSync(file, 'utf-8') }); } catch(e) { res.status(500).end(); }
 });
 
+app.get('/kiosk', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/kiosk.html'));
+});
 app.get('/kiosk/:stationId', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/kiosk.html'));
 });
