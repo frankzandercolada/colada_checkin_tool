@@ -211,21 +211,25 @@ html, body {
 .camera-wrap {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  z-index: 2;
+  z-index: 0;  /* behind screen content which is z-index 1 */
 }
 #camera-video {
+  position: absolute; inset: 0;
   width: 100%; height: 100%;
   object-fit: cover;
-  opacity: 0.18;
+  opacity: 0.55;  /* visible but not distracting */
 }
 .camera-viewfinder {
-  position: absolute;
+  position: fixed;  /* fixed so it always centres on viewport regardless of stacking */
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
   width: clamp(160px, 40vmin, 320px); height: clamp(160px, 40vmin, 320px);
   border: 2px solid var(--accent);
   border-radius: 16px;
   box-shadow: 0 0 0 9999px rgba(0,0,0,0.45),
               0 0 40px color-mix(in srgb, var(--accent) 30%, transparent);
   pointer-events: none;
+  z-index: 10;
 }
 .camera-viewfinder::before,
 .camera-viewfinder::after {
@@ -244,6 +248,7 @@ html, body {
   box-shadow: 0 0 8px var(--accent);
   border-radius: 2px;
   animation: cam-scan 2s ease-in-out infinite;
+  z-index: 11;
 }
 @keyframes cam-scan {
   0%   { top: 8px; }
