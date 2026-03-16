@@ -899,7 +899,14 @@ async function startCamera() {
       video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
     });
     video.srcObject = cameraStream;
-    await video.play();
+    try {
+      await video.play();
+    } catch(playErr) {
+      // Autoplay blocked — retry on first user interaction (touch/click)
+      console.warn('Camera autoplay blocked, waiting for interaction:', playErr.name);
+      const retry = () => { video.play().catch(()=>{}); document.removeEventListener('pointerdown', retry); };
+      document.addEventListener('pointerdown', retry, { once: true });
+    }
     scheduleCameraFrame(video, canvas);
   } catch(e) {
     console.error('Camera error:', e);
@@ -1102,6 +1109,7 @@ function startReturn(screen, secs) {
       showScreen('welcome');
       applyWelcomeBg();
       refocusScanInput();
+      if (station?.cameraMode) startCamera();
     }
   }, 1000);
 }
