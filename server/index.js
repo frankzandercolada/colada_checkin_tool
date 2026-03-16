@@ -574,7 +574,51 @@ app.post('/api/kiosk/stations', (req, res) => {
   const stations = loadKioskStations(id);
   const stationId = req.body.id || uuidv4();
   const existing = stations.findIndex(s => s.id === stationId);
-  const station = { id: stationId, name: name.trim(), welcome: welcome || {}, success: success || {}, notFound: notFound || {}, alreadyCheckedIn: alreadyCheckedIn || {}, accentColor: accentColor || '#d3222a', bgColor: bgColor || '#0a0a0a', logoText: logoText || '', printEndpoint: printEndpoint || null, cameraMode: cameraMode || false };
+
+  // Extract bgImage data URLs from each screen and save them as separate image files.
+  // This keeps kiosk-stations.json small — only a bgImageKey is stored, not the full base64.
+  // bgImage === data URL  → save file, store key
+  // bgImage === ''        → client explicitly cleared — delete file and key
+  // bgImage === null      → unchanged — preserve existing bgImageKey from current station
+  const existingStation = stations.find(s => s.id === stationId) || {};
+  function extractScreenBg(screenObj, screenKey, existingScreen) {
+    if (!screenObj) return {};
+    const s = { ...screenObj };
+    const imgKey = `kiosk-${stationId}-${screenKey}`;
+    const imgPath = path.join(projectImagesDir(id), `${imgKey}.txt`);
+
+    if (s.bgImage && s.bgImage.startsWith('data:')) {
+      // New upload — save to disk
+      ensureProjectDirs(id);
+      fs.writeFileSync(imgPath, s.bgImage, 'utf-8');
+      s.bgImageKey = imgKey;
+    } else if (s.bgImage === '') {
+      // Explicitly cleared — delete file
+      if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
+      delete s.bgImageKey;
+    } else {
+      // null = unchanged — preserve existing key
+      const existingKey = existingScreen?.bgImageKey;
+      if (existingKey) s.bgImageKey = existingKey;
+      else delete s.bgImageKey;
+    }
+    delete s.bgImage;
+    return s;
+  }
+
+  const station = {
+    id: stationId,
+    name: name.trim(),
+    welcome:          extractScreenBg(welcome,          'welcome',  existingStation.welcome),
+    success:          extractScreenBg(success,          'success',  existingStation.success),
+    notFound:         extractScreenBg(notFound,         'notfound', existingStation.notFound),
+    alreadyCheckedIn: extractScreenBg(alreadyCheckedIn, 'already',  existingStation.alreadyCheckedIn),
+    accentColor:  accentColor  || '#d3222a',
+    bgColor:      bgColor      || '#0a0a0a',
+    logoText:     logoText     || '',
+    printEndpoint: printEndpoint || null,
+    cameraMode:   cameraMode   || false,
+  };
   if (existing >= 0) stations[existing] = station; else stations.push(station);
   saveKioskStations(id, stations);
   res.json({ ok: true, station });

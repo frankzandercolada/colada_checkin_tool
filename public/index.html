@@ -2838,12 +2838,16 @@ function editKioskStation(stationId) {
   document.getElementById('ks-success-hide-card').checked = s.success?.hideGuestCard || false;
   document.getElementById('ks-already-hide-card').checked = s.alreadyCheckedIn?.hideGuestCard || false;
   // per-screen bg + return secs
+  // bgImage may be a full data URL (new upload) or null (use bgImageKey already on server)
   [['welcome','welcome'],['success','success'],['notfound','notFound'],['already','alreadyCheckedIn']].forEach(([domKey, dataKey]) => {
     const scr = s[dataKey] || {};
-    const img = scr.bgImage || '';
+    const img = scr.bgImage || '';         // full data URL if present
+    const hasKey = !!scr.bgImageKey;       // image already stored on server
     document.getElementById('ks-' + domKey + '-bg-data').value = img;
-    document.getElementById('ks-' + domKey + '-bg-label').textContent = img ? '✓ Image set' : 'Upload image…';
-    document.getElementById('ks-' + domKey + '-bg-clear').style.display = img ? 'inline-flex' : 'none';
+    document.getElementById('ks-' + domKey + '-bg-label').textContent = (img || hasKey) ? '✓ Image set' : 'Upload image…';
+    document.getElementById('ks-' + domKey + '-bg-clear').style.display = (img || hasKey) ? 'inline-flex' : 'none';
+    // Store whether a server-side key exists so clear knows to signal deletion
+    document.getElementById('ks-' + domKey + '-bg-clear').dataset.hasKey = hasKey ? '1' : '';
     document.getElementById('ks-' + domKey + '-return-secs').value = scr.returnSecs || '';
   });
   document.getElementById('kiosk-modal').style.display = 'flex';
@@ -2851,6 +2855,25 @@ function editKioskStation(stationId) {
 
 function closeKioskModal() {
   document.getElementById('kiosk-modal').style.display = 'none';
+}
+
+// Build a screen payload for saveKioskStation.
+// bgImage: full data URL if a new image was uploaded, null if unchanged (server keeps key),
+// empty string '' signals the backend to clear the image.
+function ksScreen(domKey, extra = {}) {
+  const g = id => document.getElementById(id);
+  const bgData  = g('ks-' + domKey + '-bg-data').value;    // new upload or ''
+  const hasKey  = g('ks-' + domKey + '-bg-clear').dataset.hasKey === '1';
+  const cleared = g('ks-' + domKey + '-bg-clear').style.display === 'none' && hasKey;
+  return {
+    title:     g('ks-' + domKey + '-title').value,
+    subtitle:  g('ks-' + domKey + '-sub').value,
+    titleSize: parseInt(g('ks-' + domKey + '-title-size').value) || null,
+    subSize:   parseInt(g('ks-' + domKey + '-sub-size').value)   || null,
+    // Send data URL if newly uploaded, '' if explicitly cleared, null if unchanged
+    bgImage:   bgData ? bgData : (cleared ? '' : null),
+    ...extra,
+  };
 }
 
 async function saveKioskStation() {
@@ -2864,10 +2887,10 @@ async function saveKioskStation() {
     bgColor:        document.getElementById('ks-bg').value,
     printEndpoint:  document.getElementById('ks-print-endpoint').value.trim() || null,
     cameraMode:     document.getElementById('ks-camera-mode').checked,
-    welcome:          { title: document.getElementById('ks-welcome-title').value,  subtitle: document.getElementById('ks-welcome-sub').value,  titleSize: parseInt(document.getElementById('ks-welcome-title-size').value)||null,  subSize: parseInt(document.getElementById('ks-welcome-sub-size').value)||null,  bgImage: document.getElementById('ks-welcome-bg-data').value||null,  returnSecs: parseInt(document.getElementById('ks-welcome-return-secs').value)||null },
-    success:          { title: document.getElementById('ks-success-title').value,  subtitle: document.getElementById('ks-success-sub').value,  titleSize: parseInt(document.getElementById('ks-success-title-size').value)||null,  subSize: parseInt(document.getElementById('ks-success-sub-size').value)||null,  bgImage: document.getElementById('ks-success-bg-data').value||null,  returnSecs: parseInt(document.getElementById('ks-success-return-secs').value)||null,  hideGuestCard: document.getElementById('ks-success-hide-card').checked },
-    notFound:         { title: document.getElementById('ks-notfound-title').value, subtitle: document.getElementById('ks-notfound-sub').value, titleSize: parseInt(document.getElementById('ks-notfound-title-size').value)||null, subSize: parseInt(document.getElementById('ks-notfound-sub-size').value)||null, bgImage: document.getElementById('ks-notfound-bg-data').value||null, returnSecs: parseInt(document.getElementById('ks-notfound-return-secs').value)||null },
-    alreadyCheckedIn: { title: document.getElementById('ks-already-title').value,  subtitle: document.getElementById('ks-already-sub').value,  titleSize: parseInt(document.getElementById('ks-already-title-size').value)||null,  subSize: parseInt(document.getElementById('ks-already-sub-size').value)||null,  bgImage: document.getElementById('ks-already-bg-data').value||null,  returnSecs: parseInt(document.getElementById('ks-already-return-secs').value)||null,  hideGuestCard: document.getElementById('ks-already-hide-card').checked },
+    welcome:          ksScreen('welcome',  { returnSecs: parseInt(document.getElementById('ks-welcome-return-secs').value)||null }),
+    success:          ksScreen('success',  { returnSecs: parseInt(document.getElementById('ks-success-return-secs').value)||null,  hideGuestCard: document.getElementById('ks-success-hide-card').checked }),
+    notFound:         ksScreen('notfound', { returnSecs: parseInt(document.getElementById('ks-notfound-return-secs').value)||null }),
+    alreadyCheckedIn: ksScreen('already',  { returnSecs: parseInt(document.getElementById('ks-already-return-secs').value)||null,  hideGuestCard: document.getElementById('ks-already-hide-card').checked }),
   };
   try {
     const res = await fetch('/api/kiosk/stations', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
@@ -2894,7 +2917,9 @@ function loadKioskAdminScreenBg(input, screenKey) {
 function clearKioskAdminScreenBg(screenKey) {
   document.getElementById('ks-' + screenKey + '-bg-data').value = '';
   document.getElementById('ks-' + screenKey + '-bg-label').textContent = 'Upload image…';
-  document.getElementById('ks-' + screenKey + '-bg-clear').style.display = 'none';
+  const clearBtn = document.getElementById('ks-' + screenKey + '-bg-clear');
+  clearBtn.style.display = 'none';
+  clearBtn.dataset.hasKey = '';  // signal to ksScreen() that image was explicitly cleared
   document.getElementById('ks-' + screenKey + '-bg-file').value = '';
 }
 

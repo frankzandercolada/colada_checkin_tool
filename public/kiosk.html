@@ -801,9 +801,28 @@ function applyTheme({ accentColor, bgColor }) {
 }
 
 // Apply background image to the kiosk container for a given screen config
-function applyScreenBg(screenCfg) {
+// Screen background image cache — keyed by bgImageKey
+const _screenBgCache = {};
+
+async function resolveScreenBg(screenCfg) {
+  if (!screenCfg) return null;
+  // Prefer inline data URL (from kiosk on-device config), then server key
+  if (screenCfg.bgImage) return screenCfg.bgImage;
+  const key = screenCfg.bgImageKey;
+  if (!key) return null;
+  if (_screenBgCache[key] !== undefined) return _screenBgCache[key];
+  try {
+    const r = await fetch(`/api/kiosk/badge-image/${encodeURIComponent(key)}`);
+    if (!r.ok) { _screenBgCache[key] = null; return null; }
+    const d = await r.json();
+    _screenBgCache[key] = d.dataUrl || null;
+    return _screenBgCache[key];
+  } catch(e) { _screenBgCache[key] = null; return null; }
+}
+
+async function applyScreenBg(screenCfg) {
   const kiosk = document.getElementById('kiosk');
-  const img = screenCfg?.bgImage || null;
+  const img = await resolveScreenBg(screenCfg);
   if (img) {
     kiosk.style.backgroundImage = `url(${img})`;
     kiosk.style.backgroundSize = 'cover';
@@ -882,8 +901,8 @@ function showScreen(name) {
 }
 
 // ── Scan input ────────────────────────────────────────────────────────────────
-function applyWelcomeBg() {
-  if (station) applyScreenBg(station.welcome);
+async function applyWelcomeBg() {
+  if (station) await applyScreenBg(station.welcome);
 }
 
 // ── Camera QR scanning ───────────────────────────────────────────────────────
@@ -1107,7 +1126,7 @@ function handleAlready(data) {
   const dateEl = document.getElementById('already-date');
   if (dateEl) dateEl.textContent = g.checkedInAt ? `Checked in ${g.checkedInAt}` : 'Already checked in';
   showScreen('already');
-  applyScreenBg(station?.alreadyCheckedIn);
+  applyScreenBg(station?.alreadyCheckedIn);  // fire-and-forget async
   startReturn('already', getReturnSecs(station?.alreadyCheckedIn));
 }
 
@@ -1115,7 +1134,7 @@ function handleNotFound(msg) {
   const subEl = document.getElementById('notfound-sub');
   if (subEl && msg) subEl.textContent = station?.notFound?.subtitle || msg;
   showScreen('notfound');
-  applyScreenBg(station?.notFound);
+  applyScreenBg(station?.notFound);  // fire-and-forget async
   startReturn('notfound', getReturnSecs(station?.notFound));
 }
 
@@ -1419,9 +1438,10 @@ function openConfig(isNew) {
   [['welcome','welcome'],['success','success'],['notfound','notFound'],['already','alreadyCheckedIn']].forEach(([domKey, dataKey]) => {
     const scr = s[dataKey] || {};
     const img = scr.bgImage || '';
+    const hasKey = !!scr.bgImageKey;
     document.getElementById('cfg-' + domKey + '-bg-data').value = img;
-    document.getElementById('cfg-' + domKey + '-bg-label').textContent = img ? '✓ Image set' : 'Upload image…';
-    document.getElementById('cfg-' + domKey + '-bg-clear').style.display = img ? 'flex' : 'none';
+    document.getElementById('cfg-' + domKey + '-bg-label').textContent = (img || hasKey) ? '✓ Image set' : 'Upload image…';
+    document.getElementById('cfg-' + domKey + '-bg-clear').style.display = (img || hasKey) ? 'flex' : 'none';
     document.getElementById('cfg-' + domKey + '-return-secs').value = scr.returnSecs || '';
   });
   document.getElementById('config-overlay').classList.add('open');
