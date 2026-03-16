@@ -522,11 +522,10 @@
               <div class="form-label" style="margin-bottom:2px;">Camera Scan Mode</div>
               <div style="font-size:11px; color:var(--muted);">Enable QR scanning via device camera (iPad / iPhone)</div>
             </div>
-            <label style="position:relative; width:44px; height:24px; flex-shrink:0;">
-              <input type="checkbox" id="ks-camera-mode" style="opacity:0; width:0; height:0; position:absolute;"/>
-              <span id="ks-camera-slider" onclick="document.getElementById('ks-camera-mode').click(); this.style.background = document.getElementById('ks-camera-mode').checked ? 'var(--accent)' : 'rgba(255,255,255,0.12)';"
-                style="position:absolute; inset:0; background:rgba(255,255,255,0.12); border-radius:24px; cursor:pointer; transition:background 0.2s;">
-                <span id="ks-camera-knob" style="position:absolute; width:18px; height:18px; border-radius:50%; background:#fff; left:3px; top:3px; transition:transform 0.2s; pointer-events:none;"></span>
+            <label class="ks-toggle-wrap">
+              <input type="checkbox" id="ks-camera-mode"/>
+              <span class="ks-toggle-track">
+                <span class="ks-toggle-knob"></span>
               </span>
             </label>
           </div>
@@ -2789,8 +2788,6 @@ function openKioskStationModal() {
   document.getElementById('kiosk-modal-title').textContent = 'New Station';
   document.getElementById('ks-print-endpoint').value = '';
   document.getElementById('ks-camera-mode').checked = false;
-  document.getElementById('ks-camera-slider').style.background = 'rgba(255,255,255,0.12)';
-  document.getElementById('ks-camera-knob').style.transform = 'translateX(0)';
   ['ks-name','ks-logo','ks-welcome-title','ks-welcome-sub','ks-success-title','ks-success-sub','ks-notfound-title','ks-notfound-sub','ks-already-title','ks-already-sub',
    'ks-welcome-title-size','ks-welcome-sub-size','ks-success-title-size','ks-success-sub-size',
    'ks-notfound-title-size','ks-notfound-sub-size','ks-already-title-size','ks-already-sub-size'].forEach(id => {
@@ -2818,10 +2815,7 @@ function editKioskStation(stationId) {
   document.getElementById('ks-logo').value           = s.logoText || '';
   document.getElementById('ks-accent').value         = s.accentColor || '#d3222a';
   document.getElementById('ks-print-endpoint').value = s.printEndpoint || '';
-  const camChecked = s.cameraMode || false;
-  document.getElementById('ks-camera-mode').checked = camChecked;
-  document.getElementById('ks-camera-slider').style.background = camChecked ? 'var(--accent)' : 'rgba(255,255,255,0.12)';
-  document.getElementById('ks-camera-knob').style.transform = camChecked ? 'translateX(20px)' : 'translateX(0)';
+  document.getElementById('ks-camera-mode').checked = s.cameraMode || false;
   document.getElementById('ks-bg').value     = s.bgColor || '#0a0a0a';
   document.getElementById('ks-welcome-title').value  = s.welcome?.title || '';
   document.getElementById('ks-welcome-sub').value    = s.welcome?.subtitle || '';
@@ -2884,15 +2878,6 @@ async function saveKioskStation() {
     toast('Station "' + name + '" saved', 'ok');
   } catch(e) { toast('Save failed: ' + e.message, 'error'); }
 }
-
-// Sync camera toggle knob visual when checkbox state changes
-document.addEventListener('DOMContentLoaded', () => {
-  const cb = document.getElementById('ks-camera-mode');
-  if (cb) cb.addEventListener('change', () => {
-    document.getElementById('ks-camera-slider').style.background = cb.checked ? 'var(--accent)' : 'rgba(255,255,255,0.12)';
-    document.getElementById('ks-camera-knob').style.transform = cb.checked ? 'translateX(20px)' : 'translateX(0)';
-  });
-});
 
 function loadKioskAdminScreenBg(input, screenKey) {
   const file = input.files[0];
