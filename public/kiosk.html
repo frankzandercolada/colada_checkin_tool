@@ -866,11 +866,10 @@ function setText(id, val) {
 
 // ── Screen management ─────────────────────────────────────────────────────────
 function showScreen(name) {
-  // Start camera when showing welcome (if enabled), stop on all other screens
-  if (station?.cameraMode) {
-    if (name === 'welcome') startCamera();
-    else stopCamera();
-  }
+  // Stop camera whenever leaving the welcome screen.
+  // startCamera() is called explicitly after station load — NOT here,
+  // to avoid double-calling which stops the stream immediately.
+  if (name !== 'welcome') stopCamera();
   document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
   const el = document.getElementById('screen-' + name);
   if (el) {
