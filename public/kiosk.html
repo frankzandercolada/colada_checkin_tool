@@ -825,8 +825,8 @@ async function applyScreenBg(screenCfg) {
   const img = await resolveScreenBg(screenCfg);
   if (img) {
     kiosk.style.backgroundImage = `url(${img})`;
-    kiosk.style.backgroundSize = 'cover';
-    kiosk.style.backgroundPosition = 'center';
+    kiosk.style.backgroundSize = 'contain';
+    kiosk.style.backgroundPosition = 'center top';
     kiosk.style.backgroundRepeat = 'no-repeat';
   } else {
     kiosk.style.backgroundImage = '';
