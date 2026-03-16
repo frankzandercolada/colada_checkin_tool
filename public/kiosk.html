@@ -790,6 +790,7 @@ async function init() {
   startHeartbeat();
   applyWelcomeBg();
   showScreen('welcome');
+  if (station?.cameraMode) startCamera();
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -1372,6 +1373,7 @@ async function showStationSelector() {
         startHeartbeat();
         applyWelcomeBg();
         showScreen('welcome');
+        if (station?.cameraMode) startCamera();
       };
       list.appendChild(item);
     });
@@ -1478,6 +1480,7 @@ async function saveConfig() {
   startHeartbeat();
   applyWelcomeBg();
   showScreen('welcome');
+  if (station?.cameraMode) startCamera();
 }
 
 
