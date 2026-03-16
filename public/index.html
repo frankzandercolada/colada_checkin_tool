@@ -2809,7 +2809,8 @@ function openKioskStationModal() {
    'ks-welcome-title-size','ks-welcome-sub-size','ks-success-title-size','ks-success-sub-size',
    'ks-notfound-title-size','ks-notfound-sub-size','ks-already-title-size','ks-already-sub-size'].forEach(id => {
     const el = document.getElementById(id);
-  ['ks-welcome-bg-top','ks-success-bg-top','ks-notfound-bg-top','ks-already-bg-top'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; }); if (el) el.value = '';
+  ['ks-welcome-bg-top','ks-success-bg-top','ks-notfound-bg-top','ks-already-bg-top'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
+  ['welcome','success','notfound','already'].forEach(k => { const b = document.getElementById('ks-'+k+'-bg-clear'); if(b) { b.dataset.hasKey=''; b.dataset.cleared=''; } }); if (el) el.value = '';
   });
   document.getElementById('ks-accent').value = '#d3222a';
   document.getElementById('ks-bg').value = '#0a0a0a';
@@ -2867,6 +2868,7 @@ function editKioskStation(stationId) {
     document.getElementById('ks-' + domKey + '-bg-clear').style.display = (img || hasKey) ? 'inline-flex' : 'none';
     // Store whether a server-side key exists so clear knows to signal deletion
     document.getElementById('ks-' + domKey + '-bg-clear').dataset.hasKey = hasKey ? '1' : '';
+    document.getElementById('ks-' + domKey + '-bg-clear').dataset.cleared = '';  // reset on open
     document.getElementById('ks-' + domKey + '-return-secs').value = scr.returnSecs || '';
     document.getElementById('ks-' + domKey + '-bg-top').value = scr.bgImageTop != null ? scr.bgImageTop : '';
   });
@@ -2883,14 +2885,14 @@ function closeKioskModal() {
 function ksScreen(domKey, extra = {}) {
   const g = id => document.getElementById(id);
   const bgData  = g('ks-' + domKey + '-bg-data').value;
-  const hasKey  = g('ks-' + domKey + '-bg-clear').dataset.hasKey === '1';
-  const cleared = g('ks-' + domKey + '-bg-clear').style.display === 'none' && hasKey;
+  const cleared = g('ks-' + domKey + '-bg-clear').dataset.cleared === '1';
   const bgTop   = parseInt(g('ks-' + domKey + '-bg-top')?.value);
   return {
     title:     g('ks-' + domKey + '-title').value,
     subtitle:  g('ks-' + domKey + '-sub').value,
     titleSize: parseInt(g('ks-' + domKey + '-title-size').value) || null,
     subSize:   parseInt(g('ks-' + domKey + '-sub-size').value)   || null,
+    // data URL if new upload, '' if explicitly cleared, null if unchanged
     bgImage:   bgData ? bgData : (cleared ? '' : null),
     bgImageTop: isNaN(bgTop) ? null : bgTop,
     ...extra,
@@ -2941,7 +2943,8 @@ function clearKioskAdminScreenBg(screenKey) {
   document.getElementById('ks-' + screenKey + '-bg-label').textContent = 'Upload image…';
   const clearBtn = document.getElementById('ks-' + screenKey + '-bg-clear');
   clearBtn.style.display = 'none';
-  clearBtn.dataset.hasKey = '';  // signal to ksScreen() that image was explicitly cleared
+  clearBtn.dataset.hasKey = '';
+  clearBtn.dataset.cleared = '1';  // explicit clear signal — survives hasKey being wiped
   document.getElementById('ks-' + screenKey + '-bg-file').value = '';
 }
 
