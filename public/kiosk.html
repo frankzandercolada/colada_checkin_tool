@@ -1370,22 +1370,20 @@ async function printKioskBadge(data) {
 
   const endpoint = station?.printEndpoint;
   if (endpoint) {
-    // Use getBase64() instead of getBlob() + raw binary PUT.
-    // Node-RED's HTTP-in node parses incoming bodies as UTF-8 strings by default,
-    // which corrupts high bytes (0xFF, 0xFE etc) in binary PDF data before any
-    // function node can recover them. Base64 uses only ASCII (0-127) so it
-    // survives UTF-8 parsing intact. The Node-RED function node then decodes it
-    // with Buffer.from(msg.payload, 'base64') before writing the file.
+    // POST to the server-side print proxy instead of calling the print endpoint
+    // directly. Direct HTTP fetch from an HTTPS page is blocked by iOS Safari
+    // (mixed content). The proxy at /api/kiosk/print forwards to the endpoint
+    // server-side where mixed content rules don't apply.
     pdfMake.createPdf(dd).getBase64(async (b64) => {
       try {
-        const res = await fetch(endpoint, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/pdf', 'X-Encoding': 'base64' },
+        const res = await fetch(`/api/kiosk/print?stationId=${encodeURIComponent(stationId)}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'text/plain' },
           body: b64,
         });
-        if (!res.ok) console.error('Print endpoint returned', res.status);
+        if (!res.ok) console.error('Print proxy returned', res.status);
       } catch(e) {
-        console.error('Print endpoint error:', e);
+        console.error('Print proxy error:', e);
       }
     });
   } else {

@@ -714,6 +714,35 @@ app.get('/api/kiosk/badge-image/:key', (req, res) => {
 app.get('/kiosk', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/kiosk.html'));
 });
+// ─── Print proxy ──────────────────────────────────────────────────────────────
+// Forwards base64-encoded PDF from the kiosk to the configured print endpoint.
+// This avoids mixed-content blocking on iOS Safari — the kiosk posts to HTTPS
+// here, and this server forwards to the (potentially HTTP) print endpoint.
+app.post('/api/kiosk/print', express.text({ limit: '20mb' }), async (req, res) => {
+  const { stationId } = req.query;
+  const pid = getActiveProjectId();
+  if (!pid) return res.status(400).json({ error: 'no active project' });
+  const stations = loadKioskStations(pid);
+  const station = stations.find(s => s.id === stationId);
+  if (!station?.printEndpoint) return res.status(400).json({ error: 'no print endpoint configured' });
+
+  const b64 = req.body;
+  if (!b64) return res.status(400).json({ error: 'no body' });
+
+  try {
+    const pr = await fetch(station.printEndpoint, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/pdf', 'X-Encoding': 'base64' },
+      body: b64,
+    });
+    if (!pr.ok) throw new Error(`Print endpoint returned ${pr.status}`);
+    res.json({ ok: true });
+  } catch(e) {
+    console.error('[print proxy]', e.message);
+    res.status(502).json({ error: e.message });
+  }
+});
+
 app.get('/kiosk/:stationId', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/kiosk.html'));
 });
