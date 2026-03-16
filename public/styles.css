@@ -755,9 +755,10 @@ html, body {
 .ks-toggle-knob {
   position: absolute;
   width: 18px; height: 18px; border-radius: 50%;
-  background: #fff; top: 3px; left: 3px;
-  transition: transform 0.2s;
+  background: rgba(255,255,255,0.35); top: 3px; left: 3px;
+  transition: transform 0.2s, background 0.2s;
   pointer-events: none;
 }
+.ks-toggle-wrap input:checked + .ks-toggle-track .ks-toggle-knob { background: #fff; }
 .ks-toggle-wrap input:checked + .ks-toggle-track { background: var(--accent); }
 .ks-toggle-wrap input:checked + .ks-toggle-track .ks-toggle-knob { transform: translateX(20px); }
