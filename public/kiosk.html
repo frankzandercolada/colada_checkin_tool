@@ -207,29 +207,31 @@ html, body {
 }
 .badge-success { background: rgba(34,197,94,0.15); color: #4ade80; }
 
-/* ── Camera scan overlay ── */
-.camera-wrap {
-  position: absolute; inset: 0;
-  display: flex; align-items: center; justify-content: center;
-  z-index: 0;  /* behind screen content which is z-index 1 */
-}
+/* ── Camera scan mode ── */
+/* Video: fullscreen background, sits behind all screen content (z-index 0) */
 #camera-video {
   position: absolute; inset: 0;
   width: 100%; height: 100%;
   object-fit: cover;
-  opacity: 0.55;  /* visible but not distracting */
+  opacity: 0.75;
+  z-index: 0;
+  display: none;
 }
+/* Viewfinder: sits in the flex flow in place of the icon ring */
 .camera-viewfinder {
-  position: fixed;  /* fixed so it always centres on viewport regardless of stacking */
-  top: 50%; left: 50%;
-  transform: translate(-50%, -50%);
-  width: clamp(160px, 40vmin, 320px); height: clamp(160px, 40vmin, 320px);
+  width: clamp(90px, 21vmin, 240px);
+  height: clamp(90px, 21vmin, 240px);
   border: 2px solid var(--accent);
   border-radius: 16px;
-  box-shadow: 0 0 0 9999px rgba(0,0,0,0.45),
-              0 0 40px color-mix(in srgb, var(--accent) 30%, transparent);
+  box-shadow: 0 0 40px color-mix(in srgb, var(--accent) 30%, transparent);
   pointer-events: none;
-  z-index: 10;
+  position: relative;
+  z-index: 1;
+  margin-bottom: clamp(24px, 6vmin, 72px);
+  flex-shrink: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
 }
 .camera-viewfinder::before,
 .camera-viewfinder::after {
@@ -248,7 +250,6 @@ html, body {
   box-shadow: 0 0 8px var(--accent);
   border-radius: 2px;
   animation: cam-scan 2s ease-in-out infinite;
-  z-index: 11;
 }
 @keyframes cam-scan {
   0%   { top: 8px; }
@@ -589,7 +590,7 @@ html, body {
       <div class="station-dot"></div>
       <div class="station-logo" id="welcome-logo">Check-in</div>
     </div>
-    <div class="icon-ring welcome">
+    <div class="icon-ring welcome" id="welcome-icon-ring">
       <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
         <!-- QR code icon -->
         <rect x="8" y="8" width="20" height="20" rx="2" stroke="currentColor" stroke-width="2.5" fill="none"/>
@@ -604,20 +605,19 @@ html, body {
         <rect x="50" y="46" width="6" height="10" rx="1" fill="currentColor"/>
       </svg>
     </div>
+    <!-- Viewfinder: shown instead of icon ring in camera mode -->
+    <div class="camera-viewfinder" id="camera-viewfinder">
+      <div class="camera-scan-line"></div>
+    </div>
     <div class="screen-title" id="welcome-title">Welcome</div>
     <div class="screen-subtitle" id="welcome-sub">Please scan your QR code to check in.</div>
     <div class="scan-prompt">
       <div class="scan-bar"><div class="scan-bar-fill"></div></div>
       <div class="scan-hint">Waiting for scan…</div>
     </div>
-    <!-- Camera overlay (shown in camera mode) -->
-    <div class="camera-wrap" id="camera-wrap" style="display:none;">
-      <video id="camera-video" autoplay playsinline muted></video>
-      <div class="camera-viewfinder">
-        <div class="camera-scan-line"></div>
-      </div>
-      <canvas id="camera-canvas" style="display:none;"></canvas>
-    </div>
+    <!-- Camera: fullscreen video background + canvas for QR decoding -->
+    <video id="camera-video" autoplay playsinline muted></video>
+    <canvas id="camera-canvas" style="display:none;"></canvas>
     <!-- Long-press bottom-right corner to open config -->
     <div style="position:absolute;bottom:0;right:0;width:60px;height:60px;cursor:default;"
          onmousedown="startAdminHold()" onmouseup="cancelAdminHold()" onmouseleave="cancelAdminHold()"
@@ -881,15 +881,18 @@ let lastQrScan     = 0;  // throttle: ignore repeated detections of same code
 let lastQrValue    = '';
 
 async function startCamera() {
-  const wrap   = document.getElementById('camera-wrap');
-  const video  = document.getElementById('camera-video');
-  const canvas = document.getElementById('camera-canvas');
-  if (!wrap || !video) return;
+  const video      = document.getElementById('camera-video');
+  const canvas     = document.getElementById('camera-canvas');
+  const iconRing   = document.getElementById('welcome-icon-ring');
+  const viewfinder = document.getElementById('camera-viewfinder');
+  const prompt     = document.querySelector('.scan-prompt');
+  if (!video) return;
 
-  // Show overlay, hide default scan prompt
-  wrap.style.display = 'flex';
-  const prompt = document.querySelector('.scan-prompt');
-  if (prompt) prompt.style.visibility = 'hidden';
+  // Swap icon ring → viewfinder, hide scan bar prompt, show video background
+  if (iconRing)   iconRing.style.display   = 'none';
+  if (viewfinder) viewfinder.style.display = 'flex';
+  if (prompt)     prompt.style.display     = 'none';
+  video.style.display = 'block';
 
   try {
     cameraStream = await navigator.mediaDevices.getUserMedia({
@@ -900,18 +903,25 @@ async function startCamera() {
     scheduleCameraFrame(video, canvas);
   } catch(e) {
     console.error('Camera error:', e);
-    wrap.style.display = 'none';
-    if (prompt) prompt.style.visibility = '';
+    // Revert on failure
+    if (iconRing)   iconRing.style.display   = '';
+    if (viewfinder) viewfinder.style.display = 'none';
+    if (prompt)     prompt.style.display     = '';
+    video.style.display = 'none';
   }
 }
 
 function stopCamera() {
   if (cameraRafId) { cancelAnimationFrame(cameraRafId); cameraRafId = null; }
   if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
-  const wrap = document.getElementById('camera-wrap');
-  if (wrap) wrap.style.display = 'none';
-  const prompt = document.querySelector('.scan-prompt');
-  if (prompt) prompt.style.visibility = '';
+  const video      = document.getElementById('camera-video');
+  const iconRing   = document.getElementById('welcome-icon-ring');
+  const viewfinder = document.getElementById('camera-viewfinder');
+  const prompt     = document.querySelector('.scan-prompt');
+  if (video)      video.style.display      = 'none';
+  if (iconRing)   iconRing.style.display   = '';
+  if (viewfinder) viewfinder.style.display = 'none';
+  if (prompt)     prompt.style.display     = '';
 }
 
 function scheduleCameraFrame(video, canvas) {
