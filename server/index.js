@@ -603,9 +603,12 @@ app.post('/api/kiosk/stations', (req, res) => {
       else delete s.bgImageKey;
     }
     delete s.bgImage;
+    // bgImageTop is a plain number — pass through as-is
+    if (s.bgImageTop == null) delete s.bgImageTop;
     return s;
   }
 
+  const { lightMode } = req.body;
   const station = {
     id: stationId,
     name: name.trim(),
@@ -613,11 +616,12 @@ app.post('/api/kiosk/stations', (req, res) => {
     success:          extractScreenBg(success,          'success',  existingStation.success),
     notFound:         extractScreenBg(notFound,         'notfound', existingStation.notFound),
     alreadyCheckedIn: extractScreenBg(alreadyCheckedIn, 'already',  existingStation.alreadyCheckedIn),
-    accentColor:  accentColor  || '#d3222a',
-    bgColor:      bgColor      || '#0a0a0a',
-    logoText:     logoText     || '',
+    accentColor:   accentColor  || '#d3222a',
+    bgColor:       bgColor      || '#0a0a0a',
+    logoText:      logoText     || '',
     printEndpoint: printEndpoint || null,
-    cameraMode:   cameraMode   || false,
+    cameraMode:    cameraMode   || false,
+    lightMode:     lightMode    || false,
   };
   if (existing >= 0) stations[existing] = station; else stations.push(station);
   saveKioskStations(id, stations);

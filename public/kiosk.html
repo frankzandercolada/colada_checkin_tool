@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no"/>
@@ -21,6 +21,20 @@
   --muted: rgba(255,255,255,0.45);
   --font: 'Outfit', sans-serif;
   --mono: 'JetBrains Mono', monospace;
+  /* Semi-transparent surface tints — flipped in light mode */
+  --surface-tint:  rgba(255,255,255,0.04);
+  --border-tint:   rgba(255,255,255,0.08);
+  --subtle-tint:   rgba(255,255,255,0.05);
+}
+/* Light mode overrides — applied via data-theme="light" on <html> */
+[data-theme="light"] {
+  --bg: #f0f0f0;
+  --surface: #fff;
+  --text: #111;
+  --muted: rgba(0,0,0,0.5);
+  --surface-tint:  rgba(0,0,0,0.04);
+  --border-tint:   rgba(0,0,0,0.1);
+  --subtle-tint:   rgba(0,0,0,0.03);
 }
 
 html, body {
@@ -180,8 +194,8 @@ html, body {
 /* ── Guest name card (success / already) ── */
 .guest-card {
   margin-top: clamp(28px, 9vmin, 112px);
-  background: rgba(255,255,255,0.04);
-  border: 1px solid rgba(255,255,255,0.08);
+  background: var(--surface-tint);
+  border: 1px solid var(--border-tint);
   border-radius: clamp(14px, 4vmin, 48px);
   padding: clamp(20px, 7vmin, 80px) clamp(28px, 10vmin, 120px);
   text-align: center;
@@ -269,7 +283,7 @@ html, body {
 }
 .scan-bar {
   width: clamp(140px, 44vmin, 480px); height: 3px; border-radius: 2px;
-  background: rgba(255,255,255,0.08);
+  background: var(--border-tint);
   overflow: hidden;
 }
 .scan-bar-fill {
@@ -295,7 +309,7 @@ html, body {
 }
 .return-track {
   width: 100%; height: 3px; border-radius: 2px;
-  background: rgba(255,255,255,0.08); overflow: hidden;
+  background: var(--border-tint); overflow: hidden;
 }
 .return-fill {
   height: 100%; border-radius: 2px;
@@ -310,7 +324,7 @@ html, body {
 /* ── Processing spinner ── */
 #screen-processing .spin {
   width: clamp(48px, 14vmin, 168px); height: clamp(48px, 14vmin, 168px);
-  border: 3px solid rgba(255,255,255,0.08);
+  border: 3px solid var(--border-tint);
   border-top-color: var(--accent);
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
@@ -475,6 +489,7 @@ html, body {
     <div class="cfg-row">
       <label>Auto-return delay (seconds)</label>
       <input id="cfg-welcome-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/>
+    <div class="cfg-row"><label>Background image top offset (px)</label><input id="cfg-welcome-bg-top" type="number" min="-2000" max="2000" placeholder="0" style="width:140px;"/></div>
     </div>
 
     <div class="cfg-section-title">Success Screen</div>
@@ -510,6 +525,7 @@ html, body {
     <div class="cfg-row">
       <label>Auto-return delay (seconds)</label>
       <input id="cfg-success-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/>
+    <div class="cfg-row"><label>Background image top offset (px)</label><input id="cfg-success-bg-top" type="number" min="-2000" max="2000" placeholder="0" style="width:140px;"/></div>
     </div>
 
     <div class="cfg-section-title">Not Found / Invalid Status</div>
@@ -539,6 +555,7 @@ html, body {
     <div class="cfg-row">
       <label>Auto-return delay (seconds)</label>
       <input id="cfg-notfound-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/>
+    <div class="cfg-row"><label>Background image top offset (px)</label><input id="cfg-notfound-bg-top" type="number" min="-2000" max="2000" placeholder="0" style="width:140px;"/></div>
     </div>
 
     <div class="cfg-section-title">Already Checked In</div>
@@ -574,6 +591,7 @@ html, body {
     <div class="cfg-row">
       <label>Auto-return delay (seconds)</label>
       <input id="cfg-already-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/>
+    <div class="cfg-row"><label>Background image top offset (px)</label><input id="cfg-already-bg-top" type="number" min="-2000" max="2000" placeholder="0" style="width:140px;"/></div>
     </div>
 
     <div class="cfg-btns">
@@ -794,10 +812,12 @@ async function init() {
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
-function applyTheme({ accentColor, bgColor }) {
+function applyTheme({ accentColor, bgColor, lightMode }) {
   const root = document.documentElement;
   if (accentColor) root.style.setProperty('--accent', accentColor);
   if (bgColor)     root.style.setProperty('--bg', bgColor);
+  // Light mode: switch CSS variable set and override body bg
+  root.setAttribute('data-theme', lightMode ? 'light' : 'dark');
 }
 
 // Apply background image to the kiosk container for a given screen config
@@ -826,15 +846,17 @@ async function applyScreenBg(screenCfg) {
   if (img) {
     kiosk.style.backgroundImage = `url(${img})`;
     kiosk.style.backgroundSize = 'contain';
-    kiosk.style.backgroundPosition = 'center top';
+    const topOffset = screenCfg?.bgImageTop != null ? `${screenCfg.bgImageTop}px` : '0px';
+    kiosk.style.backgroundPosition = `center ${topOffset}`;
     kiosk.style.backgroundRepeat = 'no-repeat';
   } else {
     kiosk.style.backgroundImage = '';
+    kiosk.style.backgroundPosition = '';
   }
 }
 
 function applyStation(s, resolvedLogoText) {
-  applyTheme({ accentColor: s.accentColor, bgColor: s.bgColor });
+  applyTheme({ accentColor: s.accentColor, bgColor: s.bgColor, lightMode: s.lightMode });
   const logoText = s.logoText || resolvedLogoText || s.name || 'Check-in';
 
   // Apply font size overrides
@@ -1443,6 +1465,7 @@ function openConfig(isNew) {
     document.getElementById('cfg-' + domKey + '-bg-label').textContent = (img || hasKey) ? '✓ Image set' : 'Upload image…';
     document.getElementById('cfg-' + domKey + '-bg-clear').style.display = (img || hasKey) ? 'flex' : 'none';
     document.getElementById('cfg-' + domKey + '-return-secs').value = scr.returnSecs || '';
+    document.getElementById('cfg-' + domKey + '-bg-top').value = scr.bgImageTop != null ? scr.bgImageTop : '';
   });
   document.getElementById('config-overlay').classList.add('open');
 }
@@ -1463,10 +1486,10 @@ async function saveConfig() {
     accentColor:   gv('cfg-accent'),
     bgColor:       gv('cfg-bg'),
     printEndpoint: gv('cfg-print-endpoint') || null,
-    welcome:          { title: gv('cfg-welcome-title'),  subtitle: gv('cfg-welcome-sub'),  titleSize: gvn('cfg-welcome-title-size'),  subSize: gvn('cfg-welcome-sub-size'),  bgImage: gv('cfg-welcome-bg-data')||null,  returnSecs: gvn('cfg-welcome-return-secs') },
-    success:          { title: gv('cfg-success-title'),  subtitle: gv('cfg-success-sub'),  titleSize: gvn('cfg-success-title-size'),  subSize: gvn('cfg-success-sub-size'),  bgImage: gv('cfg-success-bg-data')||null,  returnSecs: gvn('cfg-success-return-secs'),  hideGuestCard: gvc('cfg-success-hide-card') },
-    notFound:         { title: gv('cfg-notfound-title'), subtitle: gv('cfg-notfound-sub'), titleSize: gvn('cfg-notfound-title-size'), subSize: gvn('cfg-notfound-sub-size'), bgImage: gv('cfg-notfound-bg-data')||null, returnSecs: gvn('cfg-notfound-return-secs') },
-    alreadyCheckedIn: { title: gv('cfg-already-title'),  subtitle: gv('cfg-already-sub'),  titleSize: gvn('cfg-already-title-size'),  subSize: gvn('cfg-already-sub-size'),  bgImage: gv('cfg-already-bg-data')||null,  returnSecs: gvn('cfg-already-return-secs'),  hideGuestCard: gvc('cfg-already-hide-card') },
+    welcome:          { title: gv('cfg-welcome-title'),  subtitle: gv('cfg-welcome-sub'),  titleSize: gvn('cfg-welcome-title-size'),  subSize: gvn('cfg-welcome-sub-size'),  bgImage: gv('cfg-welcome-bg-data')||null,  returnSecs: gvn('cfg-welcome-return-secs'),  bgImageTop: gvn('cfg-welcome-bg-top') },
+    success:          { title: gv('cfg-success-title'),  subtitle: gv('cfg-success-sub'),  titleSize: gvn('cfg-success-title-size'),  subSize: gvn('cfg-success-sub-size'),  bgImage: gv('cfg-success-bg-data')||null,  returnSecs: gvn('cfg-success-return-secs'),  bgImageTop: gvn('cfg-success-bg-top'),  hideGuestCard: gvc('cfg-success-hide-card') },
+    notFound:         { title: gv('cfg-notfound-title'), subtitle: gv('cfg-notfound-sub'), titleSize: gvn('cfg-notfound-title-size'), subSize: gvn('cfg-notfound-sub-size'), bgImage: gv('cfg-notfound-bg-data')||null, returnSecs: gvn('cfg-notfound-return-secs'), bgImageTop: gvn('cfg-notfound-bg-top') },
+    alreadyCheckedIn: { title: gv('cfg-already-title'),  subtitle: gv('cfg-already-sub'),  titleSize: gvn('cfg-already-title-size'),  subSize: gvn('cfg-already-sub-size'),  bgImage: gv('cfg-already-bg-data')||null,  returnSecs: gvn('cfg-already-return-secs'),  bgImageTop: gvn('cfg-already-bg-top'),  hideGuestCard: gvc('cfg-already-hide-card') },
   };
   if (!payload.name) { alert('Station name is required.'); return; }
 

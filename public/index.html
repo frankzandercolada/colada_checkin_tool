@@ -529,6 +529,18 @@
               </span>
             </label>
           </div>
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 0;">
+            <div>
+              <div class="form-label" style="margin-bottom:2px;">Light Mode</div>
+              <div style="font-size:11px; color:var(--muted);">Switch kiosk to light colour scheme</div>
+            </div>
+            <label class="ks-toggle-wrap">
+              <input type="checkbox" id="ks-light-mode"/>
+              <span class="ks-toggle-track">
+                <span class="ks-toggle-knob"></span>
+              </span>
+            </label>
+          </div>
 
           <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:8px; padding-bottom:8px; border-bottom:1px solid var(--border);">Welcome Screen</div>
           <div><label class="form-label">Heading</label><input class="form-input" id="ks-welcome-title" placeholder="Welcome"/></div>
@@ -549,6 +561,7 @@
             <input type="hidden" id="ks-welcome-bg-data"/>
           </div>
           <div><label class="form-label">Auto-return delay (seconds)</label><input class="form-input" id="ks-welcome-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/></div>
+          <div><label class="form-label">Background image top offset (px)</label><input class="form-input" id="ks-welcome-bg-top" type="number" min="-2000" max="2000" placeholder="0" style="width:160px;"/></div>
 
           <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:4px; padding-bottom:8px; border-bottom:1px solid var(--border);">Success Screen</div>
           <div><label class="form-label">Heading</label><input class="form-input" id="ks-success-title" placeholder="Checked In!"/></div>
@@ -570,6 +583,7 @@
             <input type="hidden" id="ks-success-bg-data"/>
           </div>
           <div><label class="form-label">Auto-return delay (seconds)</label><input class="form-input" id="ks-success-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/></div>
+          <div><label class="form-label">Background image top offset (px)</label><input class="form-input" id="ks-success-bg-top" type="number" min="-2000" max="2000" placeholder="0" style="width:160px;"/></div>
 
           <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:4px; padding-bottom:8px; border-bottom:1px solid var(--border);">Not Found / Invalid Status</div>
           <div><label class="form-label">Heading</label><input class="form-input" id="ks-notfound-title" placeholder="Guest Not Found"/></div>
@@ -590,6 +604,7 @@
             <input type="hidden" id="ks-notfound-bg-data"/>
           </div>
           <div><label class="form-label">Auto-return delay (seconds)</label><input class="form-input" id="ks-notfound-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/></div>
+          <div><label class="form-label">Background image top offset (px)</label><input class="form-input" id="ks-notfound-bg-top" type="number" min="-2000" max="2000" placeholder="0" style="width:160px;"/></div>
 
           <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:4px; padding-bottom:8px; border-bottom:1px solid var(--border);">Already Checked In</div>
           <div><label class="form-label">Heading</label><input class="form-input" id="ks-already-title" placeholder="Already Checked In"/></div>
@@ -611,6 +626,7 @@
             <input type="hidden" id="ks-already-bg-data"/>
           </div>
           <div><label class="form-label">Auto-return delay (seconds)</label><input class="form-input" id="ks-already-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/></div>
+          <div><label class="form-label">Background image top offset (px)</label><input class="form-input" id="ks-already-bg-top" type="number" min="-2000" max="2000" placeholder="0" style="width:160px;"/></div>
         </div>
 
         <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:24px;">
@@ -2788,10 +2804,12 @@ function openKioskStationModal() {
   document.getElementById('kiosk-modal-title').textContent = 'New Station';
   document.getElementById('ks-print-endpoint').value = '';
   document.getElementById('ks-camera-mode').checked = false;
+  document.getElementById('ks-light-mode').checked  = false;
   ['ks-name','ks-logo','ks-welcome-title','ks-welcome-sub','ks-success-title','ks-success-sub','ks-notfound-title','ks-notfound-sub','ks-already-title','ks-already-sub',
    'ks-welcome-title-size','ks-welcome-sub-size','ks-success-title-size','ks-success-sub-size',
    'ks-notfound-title-size','ks-notfound-sub-size','ks-already-title-size','ks-already-sub-size'].forEach(id => {
-    const el = document.getElementById(id); if (el) el.value = '';
+    const el = document.getElementById(id);
+  ['ks-welcome-bg-top','ks-success-bg-top','ks-notfound-bg-top','ks-already-bg-top'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; }); if (el) el.value = '';
   });
   document.getElementById('ks-accent').value = '#d3222a';
   document.getElementById('ks-bg').value = '#0a0a0a';
@@ -2816,6 +2834,7 @@ function editKioskStation(stationId) {
   document.getElementById('ks-accent').value         = s.accentColor || '#d3222a';
   document.getElementById('ks-print-endpoint').value = s.printEndpoint || '';
   document.getElementById('ks-camera-mode').checked = s.cameraMode || false;
+  document.getElementById('ks-light-mode').checked  = s.lightMode  || false;
   document.getElementById('ks-bg').value     = s.bgColor || '#0a0a0a';
   document.getElementById('ks-welcome-title').value  = s.welcome?.title || '';
   document.getElementById('ks-welcome-sub').value    = s.welcome?.subtitle || '';
@@ -2849,6 +2868,7 @@ function editKioskStation(stationId) {
     // Store whether a server-side key exists so clear knows to signal deletion
     document.getElementById('ks-' + domKey + '-bg-clear').dataset.hasKey = hasKey ? '1' : '';
     document.getElementById('ks-' + domKey + '-return-secs').value = scr.returnSecs || '';
+    document.getElementById('ks-' + domKey + '-bg-top').value = scr.bgImageTop != null ? scr.bgImageTop : '';
   });
   document.getElementById('kiosk-modal').style.display = 'flex';
 }
@@ -2862,16 +2882,17 @@ function closeKioskModal() {
 // empty string '' signals the backend to clear the image.
 function ksScreen(domKey, extra = {}) {
   const g = id => document.getElementById(id);
-  const bgData  = g('ks-' + domKey + '-bg-data').value;    // new upload or ''
+  const bgData  = g('ks-' + domKey + '-bg-data').value;
   const hasKey  = g('ks-' + domKey + '-bg-clear').dataset.hasKey === '1';
   const cleared = g('ks-' + domKey + '-bg-clear').style.display === 'none' && hasKey;
+  const bgTop   = parseInt(g('ks-' + domKey + '-bg-top')?.value);
   return {
     title:     g('ks-' + domKey + '-title').value,
     subtitle:  g('ks-' + domKey + '-sub').value,
     titleSize: parseInt(g('ks-' + domKey + '-title-size').value) || null,
     subSize:   parseInt(g('ks-' + domKey + '-sub-size').value)   || null,
-    // Send data URL if newly uploaded, '' if explicitly cleared, null if unchanged
     bgImage:   bgData ? bgData : (cleared ? '' : null),
+    bgImageTop: isNaN(bgTop) ? null : bgTop,
     ...extra,
   };
 }
@@ -2887,6 +2908,7 @@ async function saveKioskStation() {
     bgColor:        document.getElementById('ks-bg').value,
     printEndpoint:  document.getElementById('ks-print-endpoint').value.trim() || null,
     cameraMode:     document.getElementById('ks-camera-mode').checked,
+    lightMode:      document.getElementById('ks-light-mode').checked,
     welcome:          ksScreen('welcome',  { returnSecs: parseInt(document.getElementById('ks-welcome-return-secs').value)||null }),
     success:          ksScreen('success',  { returnSecs: parseInt(document.getElementById('ks-success-return-secs').value)||null,  hideGuestCard: document.getElementById('ks-success-hide-card').checked }),
     notFound:         ksScreen('notfound', { returnSecs: parseInt(document.getElementById('ks-notfound-return-secs').value)||null }),
