@@ -9,6 +9,7 @@
 <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800;900&family=JetBrains+Mono:wght@400;500&family=Roboto:wght@400;700&display=swap" rel="stylesheet"/>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -205,6 +206,73 @@ html, body {
   font-family: var(--mono); text-transform: uppercase;
 }
 .badge-success { background: rgba(34,197,94,0.15); color: #4ade80; }
+
+/* ── Camera scan overlay ── */
+.camera-wrap {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  z-index: 2;
+}
+#camera-video {
+  width: 100%; height: 100%;
+  object-fit: cover;
+  opacity: 0.18;
+}
+.camera-viewfinder {
+  position: absolute;
+  width: clamp(160px, 40vmin, 320px); height: clamp(160px, 40vmin, 320px);
+  border: 2px solid var(--accent);
+  border-radius: 16px;
+  box-shadow: 0 0 0 9999px rgba(0,0,0,0.45),
+              0 0 40px color-mix(in srgb, var(--accent) 30%, transparent);
+  pointer-events: none;
+}
+.camera-viewfinder::before,
+.camera-viewfinder::after {
+  content: '';
+  position: absolute;
+  width: 28px; height: 28px;
+  border-color: var(--accent);
+  border-style: solid;
+}
+.camera-viewfinder::before { top: -2px; left: -2px; border-width: 3px 0 0 3px; border-radius: 14px 0 0 0; }
+.camera-viewfinder::after  { bottom: -2px; right: -2px; border-width: 0 3px 3px 0; border-radius: 0 0 14px 0; }
+.camera-scan-line {
+  position: absolute;
+  left: 8px; right: 8px; height: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  border-radius: 2px;
+  animation: cam-scan 2s ease-in-out infinite;
+}
+@keyframes cam-scan {
+  0%   { top: 8px; }
+  50%  { top: calc(100% - 10px); }
+  100% { top: 8px; }
+}
+/* cfg toggle row */
+.cfg-toggle-row {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 18px;
+}
+.cfg-toggle-row label { font-size: 12px; color: var(--muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.08em; }
+.cfg-toggle {
+  position: relative; width: 44px; height: 24px;
+}
+.cfg-toggle input { opacity: 0; width: 0; height: 0; }
+.cfg-toggle-slider {
+  position: absolute; inset: 0;
+  background: rgba(255,255,255,0.12); border-radius: 24px;
+  cursor: pointer; transition: background 0.2s;
+}
+.cfg-toggle-slider::before {
+  content: ''; position: absolute;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #fff; left: 3px; top: 3px;
+  transition: transform 0.2s;
+}
+.cfg-toggle input:checked + .cfg-toggle-slider { background: var(--accent); }
+.cfg-toggle input:checked + .cfg-toggle-slider::before { transform: translateX(20px); }
 .badge-info    { background: rgba(99,102,241,0.15); color: #a5b4fc; }
 
 /* ── Scan prompt (welcome) ── */
@@ -393,6 +461,14 @@ html, body {
       <div style="font-size:11px;color:var(--muted);">If set, badge PDF will be PUT to this URL instead of opening the browser print dialog.</div>
     </div>
 
+    <div class="cfg-toggle-row">
+      <label>Camera Scan Mode <span style="opacity:0.5;font-size:11px;">(iPad / iPhone)</span></label>
+      <label class="cfg-toggle">
+        <input type="checkbox" id="cfg-camera-mode"/>
+        <span class="cfg-toggle-slider"></span>
+      </label>
+    </div>
+
     <div class="cfg-section-title">Welcome Screen</div>
     <div class="cfg-row">
       <label>Heading</label>
@@ -558,6 +634,14 @@ html, body {
     <div class="scan-prompt">
       <div class="scan-bar"><div class="scan-bar-fill"></div></div>
       <div class="scan-hint">Waiting for scan…</div>
+    </div>
+    <!-- Camera overlay (shown in camera mode) -->
+    <div class="camera-wrap" id="camera-wrap" style="display:none;">
+      <video id="camera-video" autoplay playsinline muted></video>
+      <div class="camera-viewfinder">
+        <div class="camera-scan-line"></div>
+      </div>
+      <canvas id="camera-canvas" style="display:none;"></canvas>
     </div>
     <!-- Long-press bottom-right corner to open config -->
     <div style="position:absolute;bottom:0;right:0;width:60px;height:60px;cursor:default;"
@@ -795,6 +879,11 @@ function setText(id, val) {
 
 // ── Screen management ─────────────────────────────────────────────────────────
 function showScreen(name) {
+  // Start camera when showing welcome (if enabled), stop on all other screens
+  if (station?.cameraMode) {
+    if (name === 'welcome') startCamera();
+    else stopCamera();
+  }
   document.querySelectorAll('.screen').forEach(el => el.classList.remove('active'));
   const el = document.getElementById('screen-' + name);
   if (el) {
@@ -808,6 +897,76 @@ function showScreen(name) {
 // ── Scan input ────────────────────────────────────────────────────────────────
 function applyWelcomeBg() {
   if (station) applyScreenBg(station.welcome);
+}
+
+// ── Camera QR scanning ───────────────────────────────────────────────────────
+let cameraStream   = null;
+let cameraRafId    = null;
+let lastQrScan     = 0;  // throttle: ignore repeated detections of same code
+let lastQrValue    = '';
+
+async function startCamera() {
+  const wrap   = document.getElementById('camera-wrap');
+  const video  = document.getElementById('camera-video');
+  const canvas = document.getElementById('camera-canvas');
+  if (!wrap || !video) return;
+
+  // Show overlay, hide default scan prompt
+  wrap.style.display = 'flex';
+  const prompt = document.querySelector('.scan-prompt');
+  if (prompt) prompt.style.visibility = 'hidden';
+
+  try {
+    cameraStream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } }
+    });
+    video.srcObject = cameraStream;
+    await video.play();
+    scheduleCameraFrame(video, canvas);
+  } catch(e) {
+    console.error('Camera error:', e);
+    wrap.style.display = 'none';
+    if (prompt) prompt.style.visibility = '';
+  }
+}
+
+function stopCamera() {
+  if (cameraRafId) { cancelAnimationFrame(cameraRafId); cameraRafId = null; }
+  if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+  const wrap = document.getElementById('camera-wrap');
+  if (wrap) wrap.style.display = 'none';
+  const prompt = document.querySelector('.scan-prompt');
+  if (prompt) prompt.style.visibility = '';
+}
+
+function scheduleCameraFrame(video, canvas) {
+  cameraRafId = requestAnimationFrame(() => tickCameraFrame(video, canvas));
+}
+
+function tickCameraFrame(video, canvas) {
+  if (!cameraStream) return;
+  if (video.readyState === video.HAVE_ENOUGH_DATA) {
+    const w = video.videoWidth;
+    const h = video.videoHeight;
+    if (w && h) {
+      canvas.width  = w;
+      canvas.height = h;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(video, 0, 0, w, h);
+      const imageData = ctx.getImageData(0, 0, w, h);
+      const code = jsQR(imageData.data, w, h, { inversionAttempts: 'dontInvert' });
+      if (code && code.data) {
+        const now = Date.now();
+        // Debounce: ignore same code re-detected within 3 seconds
+        if (code.data !== lastQrValue || now - lastQrScan > 3000) {
+          lastQrValue = code.data;
+          lastQrScan  = now;
+          handleScan(code.data.trim());
+        }
+      }
+    }
+  }
+  scheduleCameraFrame(video, canvas);
 }
 
 function setupScanInput() {
@@ -1201,6 +1360,7 @@ function openConfig(isNew) {
   document.getElementById('cfg-accent').value         = s.accentColor || '#d3222a';
   document.getElementById('cfg-bg').value             = s.bgColor || '#0a0a0a';
   document.getElementById('cfg-print-endpoint').value = s.printEndpoint || '';
+  document.getElementById('cfg-camera-mode').checked  = s.cameraMode || false;
   document.getElementById('cfg-welcome-title').value  = s.welcome?.title || '';
   document.getElementById('cfg-welcome-sub').value    = s.welcome?.subtitle || '';
   document.getElementById('cfg-success-title').value  = s.success?.title || '';
@@ -1250,6 +1410,7 @@ async function saveConfig() {
     accentColor:   gv('cfg-accent'),
     bgColor:       gv('cfg-bg'),
     printEndpoint: gv('cfg-print-endpoint') || null,
+    cameraMode:    gvc('cfg-camera-mode'),
     welcome:          { title: gv('cfg-welcome-title'),  subtitle: gv('cfg-welcome-sub'),  titleSize: gvn('cfg-welcome-title-size'),  subSize: gvn('cfg-welcome-sub-size'),  bgImage: gv('cfg-welcome-bg-data')||null,  returnSecs: gvn('cfg-welcome-return-secs') },
     success:          { title: gv('cfg-success-title'),  subtitle: gv('cfg-success-sub'),  titleSize: gvn('cfg-success-title-size'),  subSize: gvn('cfg-success-sub-size'),  bgImage: gv('cfg-success-bg-data')||null,  returnSecs: gvn('cfg-success-return-secs'),  hideGuestCard: gvc('cfg-success-hide-card') },
     notFound:         { title: gv('cfg-notfound-title'), subtitle: gv('cfg-notfound-sub'), titleSize: gvn('cfg-notfound-title-size'), subSize: gvn('cfg-notfound-sub-size'), bgImage: gv('cfg-notfound-bg-data')||null, returnSecs: gvn('cfg-notfound-return-secs') },
