@@ -107,13 +107,14 @@ function getEffectiveCredentials(projectId) {
 
 async function getToken(projectId) {
   const key = projectId || 'global';
-  if (!tokenCaches[key]) tokenCaches[key] = { token:null, expires:0, _promise:null };
+  if (!tokenCaches[key]) tokenCaches[key] = { token:null, expires:0, inflight:null };
   const cache = tokenCaches[key];
   const now = Date.now();
   if (cache.token && cache.expires > now+10000) return cache.token;
-  // Deduplicate concurrent refresh requests
-  if (cache._promise) return cache._promise;
-  cache._promise = (async () => {
+  // Deduplicate concurrent refresh requests — if one is already in flight,
+  // all callers await the same promise instead of firing N OAuth requests.
+  if (cache.inflight) return cache.inflight;
+  cache.inflight = (async () => {
     try {
       const creds = getEffectiveCredentials(projectId);
       const params = new URLSearchParams();
@@ -128,10 +129,10 @@ async function getToken(projectId) {
       cache.expires = Date.now() + (data.expires_in||300)*1000;
       return cache.token;
     } finally {
-      cache._promise = null;
+      cache.inflight = null;
     }
   })();
-  return cache._promise;
+  return cache.inflight;
 }
 
 function compensateQwerty(input) {
@@ -313,14 +314,14 @@ app.post('/api/config', (req, res) => {
   config = { ...config, ...req.body };
   saveConfig(config);
   // Clear all token caches since global creds changed
-  Object.keys(tokenCaches).forEach(k => { tokenCaches[k] = { token:null, expires:0 }; });
+  Object.keys(tokenCaches).forEach(k => { tokenCaches[k] = { token:null, expires:0, inflight:null }; });
   res.json({ ok:true, config:{ ...config, clientSecret:'••••••••' } });
 });
 
 app.get('/api/token/test', async (req, res) => {
   try {
     const id = getActiveProjectId();
-    if (id && tokenCaches[id]) tokenCaches[id] = { token:null, expires:0 };
+    if (id && tokenCaches[id]) tokenCaches[id] = { token:null, expires:0, inflight:null };
     await getToken(id);
     const cache = tokenCaches[id||'global'] || { expires: Date.now()+300000 };
     res.json({ ok:true, expiresIn:Math.round((cache.expires-Date.now())/1000)+'s' });
@@ -411,36 +412,86 @@ app.get('/api/guests/:eventId/schema', async (req, res) => {
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
+// Option labels endpoint — fetches the Colada365 application/form schema to resolve
+// UUID option values to human-readable labels.
+// Tries multiple known Colada365 API endpoint patterns.
+app.get('/api/guests/:eventId/optionlabels', async (req, res) => {
+  try {
+    const pid = getActiveProjectId();
+    const token = await getToken(pid);
+    const { apiBase } = getEffectiveCredentials(pid);
+    const eventId = req.params.eventId;
+    const headers = { Authorization: `Bearer ${token}` };
+
+    // Try candidate endpoints in order — return first one that gives us properties with options
+    const candidates = [
+      `${apiBase}/_gw/s-events-guests/external-api/events/${eventId}/guestschema`,
+      `${apiBase}/_gw/s-events/external-api/events/${eventId}/guestschema`,
+      `${apiBase}/_gw/s-events/external-api/events/${eventId}/schema`,
+      `${apiBase}/_gw/s-events/external-api/events/${eventId}/applications`,
+    ];
+
+    let labelMap = {}; // { uuid -> label }
+    let tried = [];
+
+    for (const url of candidates) {
+      try {
+        const r = await fetch(url, { headers });
+        tried.push({ url, status: r.status });
+        if (!r.ok) continue;
+        const data = await r.json();
+        // guestschema returns an array of field objects, each with an options array.
+        // Each option has an id (UUID) and label info in l10n or displayNameL10n.
+        const extractOptLabel = (opt) =>
+          opt.label || opt.name
+          || opt.l10n?.en?.label || opt.l10n?.de?.label || opt.l10n?.fr?.label
+          || opt.displayNameL10n?.en?.label || opt.displayNameL10n?.de?.label || opt.displayNameL10n?.fr?.label;
+
+        const fields = Array.isArray(data) ? data : (data.properties || data.fields || Object.values(data));
+        for (const field of fields) {
+          if (!field || typeof field !== 'object') continue;
+          const opts = field.options || field.values || [];
+          for (const opt of (Array.isArray(opts) ? opts : [])) {
+            const id = opt.id || opt.uid || opt.value;
+            const label = extractOptLabel(opt);
+            if (id && label) labelMap[id] = label;
+          }
+        }
+        if (Object.keys(labelMap).length > 0) break;
+      } catch(e) { tried.push({ url, error: e.message }); }
+    }
+
+    res.json({ tried, labelCount: Object.keys(labelMap).length, labelMap });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.get('/api/guests/:eventId', async (req, res) => {
   try {
     const pid = getActiveProjectId();
     const token = await getToken(pid);
     const { apiBase } = getEffectiveCredentials(pid);
+    let scanInput = req.query.scan || '';
+    const searchTerm = (req.query.search||'').trim().toLowerCase();
+    if (config.qwertyCorrection && scanInput) scanInput = compensateQwerty(scanInput);
     const base = `${apiBase}/_gw/s-events-guests/external-api/events/${req.params.eventId}/guests`;
 
     // ── Scan path: direct API lookup only, never fetches the full list ────────
     // Always returns live data with the correct revision for the subsequent PATCH.
-    if (req.query.scan) {
-      let scanInput = req.query.scan;
-      if (config.qwertyCorrection) scanInput = compensateQwerty(scanInput);
-
-      // 1. Direct lookup by UID — fastest path
+    if (scanInput) {
+      // 1. Direct lookup by UID — fastest path, correct revision
       try {
         const dr = await fetch(`${base}/${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}` } });
-        if (dr.ok) { const g = await dr.json(); const r = Array.isArray(g) ? g : (g && (g.id || g.uid) ? [g] : []); if (r.length > 0) return res.json(r); }
+        if (dr.ok) { const g=await dr.json(); const r=Array.isArray(g)?g:(g&&(g.id||g.uid)?[g]:[]); if(r.length>0) return res.json(r); }
       } catch(e) {}
-
-      // 2. Filter query fallback (scoped, never paginates the full list)
+      // 2. Filter query fallback — scoped, never paginates the full list
       try {
-        const fr = await fetch(`${base}?filter[uid]=${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}`, Range: 'guests 0-499' } });
-        if (fr.ok) { const gs = await fr.json(); const arr = Array.isArray(gs) ? gs : []; const m = arr.filter(g => { const u = g.uid||g.id||(g.attributes||g.properties||{}).uid||''; return u === scanInput || u.toLowerCase() === scanInput.toLowerCase(); }); return res.json(m.length > 0 ? m : arr.slice(0, 1)); }
+        const fr = await fetch(`${base}?filter[uid]=${encodeURIComponent(scanInput)}`,{headers:{Authorization:`Bearer ${token}`,Range:'guests 0-499'}});
+        if (fr.ok) { const gs=await fr.json(); const arr=Array.isArray(gs)?gs:[]; const m=arr.filter(g=>{const u=g.uid||g.id||(g.attributes||g.properties||{}).uid||''; return u===scanInput||u.toLowerCase()===scanInput.toLowerCase();}); return res.json(m); }
       } catch(e) {}
-
       return res.json([]);
     }
 
     // ── Search / list path: full paginated fetch (backoffice name search only) ─
-    const searchTerm = (req.query.search||'').trim().toLowerCase();
     const PAGE=500;
     const r = await fetch(base,{headers:{Authorization:`Bearer ${token}`,Range:`guests 0-${PAGE-1}`}});
     if (!r.ok) throw new Error(`API error ${r.status}`);
@@ -482,6 +533,231 @@ app.post('/api/guests/:eventId/:guestId/badge', async (req, res) => {
     const p = checkPermissions(attrs);
     res.json({ ok:true, badge:{ firstName:attrs.contact_firstName||'', lastName:attrs.contact_lastName||'', company:attrs.contact_x_companyName||'', stimmberechtigt:p.stimmberechtigt, permissions:p } });
   } catch(e) { res.status(500).json({ error:e.message }); }
+});
+
+
+// ─── Kiosk stations ───────────────────────────────────────────────────────────
+function kioskStationsPath(projectId) {
+  return path.join(projectDir(projectId), 'kiosk-stations.json');
+}
+function loadKioskStations(projectId) {
+  try {
+    const p = kioskStationsPath(projectId);
+    if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p, 'utf-8'));
+  } catch(e) {}
+  return [];
+}
+function saveKioskStations(projectId, stations) {
+  ensureProjectDirs(projectId);
+  fs.writeFileSync(kioskStationsPath(projectId), JSON.stringify(stations, null, 2));
+}
+
+
+// ─── Kiosk heartbeat (in-memory, resets on server restart) ───────────────────
+const kioskHeartbeats = {}; // stationId -> { lastSeen: Date, ip: string }
+
+app.post('/api/kiosk/heartbeat', (req, res) => {
+  const { stationId } = req.body;
+  if (!stationId) return res.status(400).json({ error: 'stationId required' });
+  kioskHeartbeats[stationId] = { lastSeen: new Date(), ip: req.ip };
+  res.json({ ok: true });
+});
+
+app.get('/api/kiosk/stations/status', (req, res) => {
+  const now = Date.now();
+  const status = {};
+  for (const [id, h] of Object.entries(kioskHeartbeats)) {
+    const age = now - new Date(h.lastSeen).getTime();
+    status[id] = { lastSeen: h.lastSeen, ip: h.ip, online: age < 30000 }; // online = seen within 30s
+  }
+  res.json(status);
+});
+
+app.get('/api/kiosk/stations', (req, res) => {
+  const id = getActiveProjectId();
+  if (!id) return res.json([]);
+  res.json(loadKioskStations(id));
+});
+
+app.post('/api/kiosk/stations', (req, res) => {
+  const id = getActiveProjectId();
+  if (!id) return res.status(400).json({ error: 'no active project' });
+  const { name, welcome, success, notFound, alreadyCheckedIn, accentColor, bgColor, logoText, printEndpoint, cameraMode } = req.body;
+  if (!name?.trim()) return res.status(400).json({ error: 'name required' });
+  const stations = loadKioskStations(id);
+  const stationId = req.body.id || uuidv4();
+  const existing = stations.findIndex(s => s.id === stationId);
+
+  // Extract bgImage data URLs from each screen and save them as separate image files.
+  // This keeps kiosk-stations.json small — only a bgImageKey is stored, not the full base64.
+  // bgImage === data URL  → save file, store key
+  // bgImage === ''        → client explicitly cleared — delete file and key
+  // bgImage === null      → unchanged — preserve existing bgImageKey from current station
+  const existingStation = stations.find(s => s.id === stationId) || {};
+  function extractScreenBg(screenObj, screenKey, existingScreen) {
+    if (!screenObj) return {};
+    const s = { ...screenObj };
+    const imgKey = `kiosk-${stationId}-${screenKey}`;
+    const imgPath = path.join(projectImagesDir(id), `${imgKey}.txt`);
+
+    if (s.bgImage && s.bgImage.startsWith('data:')) {
+      // New upload — save to disk
+      ensureProjectDirs(id);
+      fs.writeFileSync(imgPath, s.bgImage, 'utf-8');
+      s.bgImageKey = imgKey;
+    } else if (s.bgImage === '') {
+      // Explicitly cleared — delete file
+      if (fs.existsSync(imgPath)) fs.unlinkSync(imgPath);
+      delete s.bgImageKey;
+    } else {
+      // null = unchanged — preserve existing key
+      const existingKey = existingScreen?.bgImageKey;
+      if (existingKey) s.bgImageKey = existingKey;
+      else delete s.bgImageKey;
+    }
+    delete s.bgImage;
+    // bgImageTop is a plain number — pass through as-is
+    if (s.bgImageTop == null) delete s.bgImageTop;
+    return s;
+  }
+
+  const { lightMode } = req.body;
+  const station = {
+    id: stationId,
+    name: name.trim(),
+    welcome:          extractScreenBg(welcome,          'welcome',  existingStation.welcome),
+    success:          extractScreenBg(success,          'success',  existingStation.success),
+    notFound:         extractScreenBg(notFound,         'notfound', existingStation.notFound),
+    alreadyCheckedIn: extractScreenBg(alreadyCheckedIn, 'already',  existingStation.alreadyCheckedIn),
+    accentColor:   accentColor  || '#d3222a',
+    bgColor:       bgColor      || '#0a0a0a',
+    logoText:      logoText     || '',
+    printEndpoint: printEndpoint || null,
+    cameraMode:    cameraMode   || false,
+    lightMode:     lightMode    || false,
+  };
+  if (existing >= 0) stations[existing] = station; else stations.push(station);
+  saveKioskStations(id, stations);
+  res.json({ ok: true, station });
+});
+
+app.delete('/api/kiosk/stations/:stationId', (req, res) => {
+  const id = getActiveProjectId();
+  if (!id) return res.status(400).json({ error: 'no active project' });
+  const stations = loadKioskStations(id).filter(s => s.id !== req.params.stationId);
+  saveKioskStations(id, stations);
+  res.json({ ok: true });
+});
+
+app.post('/api/kiosk/scan', async (req, res) => {
+  try {
+    const pid = getActiveProjectId();
+    const token = await getToken(pid);
+    const { apiBase } = getEffectiveCredentials(pid);
+    const projects = loadProjects();
+    const project = projects.find(p => p.id === pid);
+    const eventId = project?.eventId;
+    if (!eventId) return res.status(400).json({ error: 'no event configured' });
+
+    let scanInput = (req.body.scan || '').trim();
+    if (config.qwertyCorrection && scanInput) scanInput = compensateQwerty(scanInput);
+    if (!scanInput) return res.status(400).json({ error: 'scan value required' });
+
+    const base = `${apiBase}/_gw/s-events-guests/external-api/events/${eventId}/guests`;
+
+    // 1. Try direct lookup by ID
+    let guest = null;
+    try {
+      const dr = await fetch(`${base}/${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (dr.ok) {
+        const g = await dr.json();
+        guest = Array.isArray(g) ? g[0] : (g?.id || g?.uid ? g : null);
+      }
+    } catch(e) {}
+
+    // 2. Try filter[uid] — but only accept an EXACT uid match, never fall back to first result
+    if (!guest) {
+      const fr = await fetch(`${base}?filter[uid]=${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}`, Range: 'guests 0-0' } });
+      if (fr.ok) {
+        const gs = await fr.json();
+        const arr = Array.isArray(gs) ? gs : [];
+        guest = arr.find(g => {
+          const u = g.uid || g.id || (g.attributes || g.properties || {}).uid || '';
+          return u === scanInput || u.toLowerCase() === scanInput.toLowerCase();
+        }) || null; // NO fallback to arr[0] — must be exact match
+      }
+    }
+
+    if (!guest) return res.json({ result: 'not_found' });
+
+    const attrs = guest.attributes || guest.properties || {};
+    const status = guest.status || attrs.status || '';
+    const isEligible = status === 'REGISTERED' || status === 'PENDING';
+
+    if (!isEligible) return res.json({ result: 'invalid_status', status, guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '' } });
+
+    const alreadyIn = attrs.guest_x_checkedin === true || (attrs.guest_x_checkedinat && attrs.guest_x_checkedinat !== false && attrs.guest_x_checkedinat !== 'false' && attrs.guest_x_checkedinat !== '');
+    if (alreadyIn) return res.json({ result: 'already_checked_in', guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', checkedInAt: attrs.guest_x_checkedinat } });
+
+    const today = new Date().toISOString().split('T')[0];
+    const patchAttrs = { ...attrs, guest_x_checkedin: true, guest_x_checkedinat: today };
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
+    const rev = guest.revision || attrs.revision;
+    if (rev) headers['If-Match'] = rev;
+    const pr = await fetch(`${base}/${guest.id}`, { method: 'PATCH', headers, body: JSON.stringify({ attributes: patchAttrs }) });
+    if (!pr.ok) throw new Error(`Check-in failed: ${pr.status}`);
+
+    const badgeCfg = loadProjectBadgeConfig(pid);
+    res.json({
+      result: 'success',
+      guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', id: guest.id, attributes: attrs },
+      badgeConfig: { templates: badgeCfg.templates, rules: badgeCfg.rules, fallback: badgeCfg.fallback },
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.get('/api/kiosk/badge-image/:key', (req, res) => {
+  const id = getActiveProjectId();
+  if (!id) return res.status(404).end();
+  const file = path.join(projectImagesDir(id), `${req.params.key}.txt`);
+  if (!fs.existsSync(file)) return res.status(404).end();
+  try { res.json({ dataUrl: fs.readFileSync(file, 'utf-8') }); } catch(e) { res.status(500).end(); }
+});
+
+app.get('/kiosk', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/kiosk.html'));
+});
+// ─── Print proxy ──────────────────────────────────────────────────────────────
+// Forwards base64-encoded PDF from the kiosk to the configured print endpoint.
+// This avoids mixed-content blocking on iOS Safari — the kiosk posts to HTTPS
+// here, and this server forwards to the (potentially HTTP) print endpoint.
+app.post('/api/kiosk/print', express.text({ limit: '20mb' }), async (req, res) => {
+  const { stationId } = req.query;
+  const pid = getActiveProjectId();
+  if (!pid) return res.status(400).json({ error: 'no active project' });
+  const stations = loadKioskStations(pid);
+  const station = stations.find(s => s.id === stationId);
+  if (!station?.printEndpoint) return res.status(400).json({ error: 'no print endpoint configured' });
+
+  const b64 = req.body;
+  if (!b64) return res.status(400).json({ error: 'no body' });
+
+  try {
+    const pr = await fetch(station.printEndpoint, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/pdf', 'X-Encoding': 'base64' },
+      body: b64,
+    });
+    if (!pr.ok) throw new Error(`Print endpoint returned ${pr.status}`);
+    res.json({ ok: true });
+  } catch(e) {
+    console.error('[print proxy]', e.message);
+    res.status(502).json({ error: e.message });
+  }
+});
+
+app.get('/kiosk/:stationId', (req, res) => {
+  res.sendFile(path.join(__dirname, '../public/kiosk.html'));
 });
 
 // ─── SPA fallback ─────────────────────────────────────────────────────────────
