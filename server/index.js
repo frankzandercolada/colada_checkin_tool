@@ -32,10 +32,7 @@ function loadConfig() {
     apiBase:'https://admin.colada365.com', activeProjectId:null, tokenRefreshInterval:240, qwertyCorrection:true };
   return _config;
 }
-function saveConfig(cfg) {
-  _config = cfg;
-  fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2));
-}
+function saveConfig(cfg) { _config = cfg; fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2)); }
 let config = loadConfig();
 
 // ─── Projects (in-memory cache) ───────────────────────────────────────────────
@@ -47,10 +44,7 @@ function loadProjects() {
   _projects = [];
   return _projects;
 }
-function saveProjects(p) {
-  _projects = p;
-  fs.writeFileSync(PROJECTS_PATH, JSON.stringify(p, null, 2));
-}
+function saveProjects(p) { _projects = p; fs.writeFileSync(PROJECTS_PATH, JSON.stringify(p, null, 2)); }
 function projectDir(id)        { return path.join(DATA_DIR, 'projects', id); }
 function projectConfigPath(id) { return path.join(projectDir(id), 'badge-config.json'); }
 function projectImagesDir(id)  { return path.join(projectDir(id), 'badge-images'); }
@@ -116,8 +110,8 @@ async function getToken(projectId) {
   if (!tokenCaches[key]) tokenCaches[key] = { token:null, expires:0, _promise:null };
   const cache = tokenCaches[key];
   const now = Date.now();
-  if (cache.token && cache.expires > now + 10000) return cache.token;
-  // Deduplicate in-flight refresh requests
+  if (cache.token && cache.expires > now+10000) return cache.token;
+  // Deduplicate concurrent refresh requests
   if (cache._promise) return cache._promise;
   cache._promise = (async () => {
     try {
@@ -131,7 +125,7 @@ async function getToken(projectId) {
       if (!res.ok) throw new Error(`Token fetch failed (${res.status}): ${await res.text()}`);
       const data = await res.json();
       cache.token = data.access_token;
-      cache.expires = Date.now() + (data.expires_in || 300) * 1000;
+      cache.expires = Date.now() + (data.expires_in||300)*1000;
       return cache.token;
     } finally {
       cache._promise = null;
@@ -264,10 +258,7 @@ app.get('/api/badge-images/:key', (req, res) => {
   if (!id) return res.status(404).json({ error:'no active project' });
   const file = path.join(projectImagesDir(id), `${req.params.key}.txt`);
   if (!fs.existsSync(file)) return res.status(404).json({ error:'not found' });
-  try {
-    res.set('Cache-Control', 'public, max-age=3600');
-    res.json({ dataUrl: fs.readFileSync(file,'utf-8') });
-  } catch(e) { res.status(500).json({ error:e.message }); }
+  try { res.set('Cache-Control', 'public, max-age=3600'); res.json({ dataUrl: fs.readFileSync(file,'utf-8') }); } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
 app.put('/api/badge-images/:key', (req, res) => {
@@ -310,6 +301,7 @@ app.get('/api/projects/:id/credentials', (req, res) => {
     tokenUrl:     project.tokenUrl     || '',
     apiBase:      project.apiBase      || '',
     eventId:      project.eventId      || '',
+    // effective (what would actually be used)
     effective: getEffectiveCredentials(req.params.id),
   });
 });
@@ -321,74 +313,18 @@ app.post('/api/config', (req, res) => {
   config = { ...config, ...req.body };
   saveConfig(config);
   // Clear all token caches since global creds changed
-  Object.keys(tokenCaches).forEach(k => { tokenCaches[k] = { token:null, expires:0, _promise:null }; });
+  Object.keys(tokenCaches).forEach(k => { tokenCaches[k] = { token:null, expires:0 }; });
   res.json({ ok:true, config:{ ...config, clientSecret:'••••••••' } });
 });
 
 app.get('/api/token/test', async (req, res) => {
   try {
     const id = getActiveProjectId();
-    if (id && tokenCaches[id]) tokenCaches[id] = { token:null, expires:0, _promise:null };
+    if (id && tokenCaches[id]) tokenCaches[id] = { token:null, expires:0 };
     await getToken(id);
     const cache = tokenCaches[id||'global'] || { expires: Date.now()+300000 };
     res.json({ ok:true, expiresIn:Math.round((cache.expires-Date.now())/1000)+'s' });
   } catch(e) { res.status(500).json({ ok:false, error:e.message }); }
-});
-
-// ─── Kiosk stations ───────────────────────────────────────────────────────────
-function kioskStationsPath(projectId) { return path.join(projectDir(projectId), 'kiosk-stations.json'); }
-function loadKioskStations(projectId) {
-  try { const p = kioskStationsPath(projectId); if (fs.existsSync(p)) return JSON.parse(fs.readFileSync(p,'utf-8')); } catch(e) {}
-  return [];
-}
-function saveKioskStations(projectId, stations) {
-  ensureProjectDirs(projectId);
-  fs.writeFileSync(kioskStationsPath(projectId), JSON.stringify(stations, null, 2));
-}
-
-app.get('/api/kiosk-stations', (req, res) => {
-  const id = getActiveProjectId();
-  if (!id) return res.json([]);
-  res.json(loadKioskStations(id));
-});
-
-app.post('/api/kiosk-stations', (req, res) => {
-  const id = getActiveProjectId();
-  if (!id) return res.status(400).json({ error:'no active project' });
-  const { name, printEndpoint='' } = req.body;
-  if (!name?.trim()) return res.status(400).json({ error:'name required' });
-  const stations = loadKioskStations(id);
-  const station = { id:uuidv4(), name:name.trim(), printEndpoint, createdAt:new Date().toISOString() };
-  stations.push(station);
-  saveKioskStations(id, stations);
-  res.json({ ok:true, station });
-});
-
-app.patch('/api/kiosk-stations/:stationId', (req, res) => {
-  const id = getActiveProjectId();
-  if (!id) return res.status(400).json({ error:'no active project' });
-  const stations = loadKioskStations(id);
-  const idx = stations.findIndex(s => s.id === req.params.stationId);
-  if (idx === -1) return res.status(404).json({ error:'not found' });
-  if (req.body.name !== undefined) stations[idx].name = req.body.name.trim();
-  if (req.body.printEndpoint !== undefined) stations[idx].printEndpoint = req.body.printEndpoint;
-  saveKioskStations(id, stations);
-  res.json({ ok:true, station:stations[idx] });
-});
-
-app.delete('/api/kiosk-stations/:stationId', (req, res) => {
-  const id = getActiveProjectId();
-  if (!id) return res.status(400).json({ error:'no active project' });
-  const stations = loadKioskStations(id);
-  const idx = stations.findIndex(s => s.id === req.params.stationId);
-  if (idx === -1) return res.status(404).json({ error:'not found' });
-  stations.splice(idx, 1);
-  saveKioskStations(id, stations);
-  res.json({ ok:true });
-});
-
-app.get('/api/kiosk', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/kiosk.html'));
 });
 
 // ─── Events & Guests ──────────────────────────────────────────────────────────
@@ -401,7 +337,6 @@ app.get('/api/events', async (req, res) => {
     if(!r.ok) throw new Error(`API error ${r.status}`); res.json(await r.json());
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
-
 app.get('/api/event/:id', async (req, res) => {
   try {
     const pid = getActiveProjectId();
@@ -434,7 +369,7 @@ app.get('/api/guests/:eventId/schema', async (req, res) => {
     }
 
     // Build per-field schema
-    const fields = {};
+    const fields = {}; // key -> { types: Set, values: Map<value, count> }
     for (const g of arr) {
       const attrs = g.attributes || g.properties || {};
       for (const [k, v] of Object.entries(attrs)) {
@@ -460,10 +395,11 @@ app.get('/api/guests/:eventId/schema', async (req, res) => {
 
       let fieldType = 'text';
       if (isBool) fieldType = 'boolean';
-      else if (isUUID) fieldType = 'choice';
+      else if (isUUID) fieldType = 'choice'; // single/multi-choice stored as UUID
 
       schema[k] = {
         type: fieldType,
+        // for choice fields: sorted by count desc so most common option appears first
         values: (fieldType === 'choice' || fieldType === 'boolean')
           ? allValues.sort((a, b) => b.count - a.count)
           : [],
@@ -482,74 +418,39 @@ app.get('/api/guests/:eventId', async (req, res) => {
     const { apiBase } = getEffectiveCredentials(pid);
     const base = `${apiBase}/_gw/s-events-guests/external-api/events/${req.params.eventId}/guests`;
 
-    // ── Scan path: direct API lookup only, never fetches full list ────────────
+    // ── Scan path: direct API lookup only, never fetches the full list ────────
+    // Always returns live data with the correct revision for the subsequent PATCH.
     if (req.query.scan) {
       let scanInput = req.query.scan;
       if (config.qwertyCorrection) scanInput = compensateQwerty(scanInput);
 
-      // 1. Direct lookup by UID — fast, returns correct revision for check-in
+      // 1. Direct lookup by UID — fastest path
       try {
-        const dr = await fetch(`${base}/${encodeURIComponent(scanInput)}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (dr.ok) {
-          const g = await dr.json();
-          const r = Array.isArray(g) ? g : (g && (g.id || g.uid) ? [g] : []);
-          if (r.length > 0) return res.json(r);
-        }
+        const dr = await fetch(`${base}/${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (dr.ok) { const g = await dr.json(); const r = Array.isArray(g) ? g : (g && (g.id || g.uid) ? [g] : []); if (r.length > 0) return res.json(r); }
       } catch(e) {}
 
-      // 2. Filter query fallback (scoped, never paginates full list)
+      // 2. Filter query fallback (scoped, never paginates the full list)
       try {
-        const fr = await fetch(`${base}?filter[uid]=${encodeURIComponent(scanInput)}`, {
-          headers: { Authorization: `Bearer ${token}`, Range: 'guests 0-499' },
-        });
-        if (fr.ok) {
-          const gs = await fr.json();
-          const arr = Array.isArray(gs) ? gs : [];
-          const m = arr.filter(g => {
-            const u = g.uid || g.id || (g.attributes || g.properties || {}).uid || '';
-            return u === scanInput || u.toLowerCase() === scanInput.toLowerCase();
-          });
-          return res.json(m.length > 0 ? m : arr.slice(0, 1));
-        }
+        const fr = await fetch(`${base}?filter[uid]=${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}`, Range: 'guests 0-499' } });
+        if (fr.ok) { const gs = await fr.json(); const arr = Array.isArray(gs) ? gs : []; const m = arr.filter(g => { const u = g.uid||g.id||(g.attributes||g.properties||{}).uid||''; return u === scanInput || u.toLowerCase() === scanInput.toLowerCase(); }); return res.json(m.length > 0 ? m : arr.slice(0, 1)); }
       } catch(e) {}
 
       return res.json([]);
     }
 
-    // ── Search/list path: full paginated fetch (backoffice name search only) ──
-    const searchTerm = (req.query.search || '').trim().toLowerCase();
-    const PAGE = 500;
-    const r = await fetch(base, {
-      headers: { Authorization: `Bearer ${token}`, Range: `guests 0-${PAGE - 1}` },
-    });
+    // ── Search / list path: full paginated fetch (backoffice name search only) ─
+    const searchTerm = (req.query.search||'').trim().toLowerCase();
+    const PAGE=500;
+    const r = await fetch(base,{headers:{Authorization:`Bearer ${token}`,Range:`guests 0-${PAGE-1}`}});
     if (!r.ok) throw new Error(`API error ${r.status}`);
-    const guests = await r.json();
-    const arr = Array.isArray(guests) ? guests : [];
-    const total = parseInt((r.headers.get('Content-Range') || '').split('/')[1]) || arr.length;
+    const guests = await r.json(); const arr = Array.isArray(guests)?guests:[];
+    const total = parseInt((r.headers.get('Content-Range')||'').split('/')[1])||arr.length;
     if (total > arr.length) {
-      const pages = [];
-      for (let f = PAGE; f < total; f += PAGE) pages.push({ from: f, to: Math.min(f + PAGE - 1, total - 1) });
-      arr.push(...(await Promise.all(
-        pages.map(({ from, to }) =>
-          fetch(base, { headers: { Authorization: `Bearer ${token}`, Range: `guests ${from}-${to}` } })
-            .then(r2 => r2.json()).then(d => Array.isArray(d) ? d : [])
-        )
-      )).flat());
+      const pages=[]; for(let f=PAGE;f<total;f+=PAGE) pages.push({from:f,to:Math.min(f+PAGE-1,total-1)});
+      arr.push(...(await Promise.all(pages.map(({from,to})=>fetch(base,{headers:{Authorization:`Bearer ${token}`,Range:`guests ${from}-${to}`}}).then(r2=>r2.json()).then(d=>Array.isArray(d)?d:[])))).flat());
     }
-    if (searchTerm) {
-      return res.json(arr.filter(g => {
-        const a = g.attributes || g.properties || {};
-        return [
-          a.contact_firstName || '',
-          a.contact_lastName || '',
-          (a.contact_firstName || '') + ' ' + (a.contact_lastName || ''),
-          a.contact_x_companyName || '',
-          a.contact_email || '',
-        ].some(f => f.toLowerCase().includes(searchTerm));
-      }));
-    }
+    if (searchTerm) return res.json(arr.filter(g=>{const a=g.attributes||g.properties||{};return [a.contact_firstName||'',a.contact_lastName||'',(a.contact_firstName||'')+' '+(a.contact_lastName||''),a.contact_x_companyName||'',a.contact_email||''].some(f=>f.toLowerCase().includes(searchTerm));}));
     res.json(arr);
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
