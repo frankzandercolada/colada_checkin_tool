@@ -8,6 +8,13 @@ const path    = require('path');
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '20mb' }));
+// Serve root CA cert with correct MIME type for iOS profile installation
+app.get('/caddy-root.crt', (req, res) => {
+  const certPath = path.join(__dirname, '../public/caddy-root.crt');
+  res.setHeader('Content-Type', 'application/x-x509-ca-cert');
+  res.setHeader('Content-Disposition', 'attachment; filename="caddy-root.crt"');
+  res.sendFile(certPath);
+});
 app.use(express.static(path.join(__dirname, '../public')));
 
 const DATA_DIR = path.join(__dirname, '../data');
@@ -21,30 +28,24 @@ function uuidv4() {
   });
 }
 
-// ─── Config (in-memory cache) ─────────────────────────────────────────────────
+// ─── Config ───────────────────────────────────────────────────────────────────
 const CONFIG_PATH = path.join(__dirname, '../config.json');
-let _config = null;
 function loadConfig() {
-  if (_config) return _config;
-  try { if (fs.existsSync(CONFIG_PATH)) { _config = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')); return _config; } } catch(e) {}
-  _config = { clientId:'external_client_s-ge', clientSecret:'aPCcOA7D3jti7t7Q',
+  try { if (fs.existsSync(CONFIG_PATH)) return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')); } catch(e) {}
+  return { clientId:'external_client_s-ge', clientSecret:'aPCcOA7D3jti7t7Q',
     tokenUrl:'https://admin.colada365.com/auth/realms/default/protocol/openid-connect/token',
     apiBase:'https://admin.colada365.com', activeProjectId:null, tokenRefreshInterval:240, qwertyCorrection:true };
-  return _config;
 }
-function saveConfig(cfg) { _config = cfg; fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2)); }
+function saveConfig(cfg) { fs.writeFileSync(CONFIG_PATH, JSON.stringify(cfg, null, 2)); }
 let config = loadConfig();
 
-// ─── Projects (in-memory cache) ───────────────────────────────────────────────
+// ─── Projects ─────────────────────────────────────────────────────────────────
 const PROJECTS_PATH = path.join(DATA_DIR, 'projects.json');
-let _projects = null;
 function loadProjects() {
-  if (_projects) return _projects;
-  try { if (fs.existsSync(PROJECTS_PATH)) { _projects = JSON.parse(fs.readFileSync(PROJECTS_PATH, 'utf-8')); return _projects; } } catch(e) {}
-  _projects = [];
-  return _projects;
+  try { if (fs.existsSync(PROJECTS_PATH)) return JSON.parse(fs.readFileSync(PROJECTS_PATH, 'utf-8')); } catch(e) {}
+  return [];
 }
-function saveProjects(p) { _projects = p; fs.writeFileSync(PROJECTS_PATH, JSON.stringify(p, null, 2)); }
+function saveProjects(p) { fs.writeFileSync(PROJECTS_PATH, JSON.stringify(p, null, 2)); }
 function projectDir(id)        { return path.join(DATA_DIR, 'projects', id); }
 function projectConfigPath(id) { return path.join(projectDir(id), 'badge-config.json'); }
 function projectImagesDir(id)  { return path.join(projectDir(id), 'badge-images'); }
@@ -259,7 +260,7 @@ app.get('/api/badge-images/:key', (req, res) => {
   if (!id) return res.status(404).json({ error:'no active project' });
   const file = path.join(projectImagesDir(id), `${req.params.key}.txt`);
   if (!fs.existsSync(file)) return res.status(404).json({ error:'not found' });
-  try { res.set('Cache-Control', 'public, max-age=3600'); res.json({ dataUrl: fs.readFileSync(file,'utf-8') }); } catch(e) { res.status(500).json({ error:e.message }); }
+  try { res.json({ dataUrl: fs.readFileSync(file,'utf-8') }); } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
 app.put('/api/badge-images/:key', (req, res) => {
@@ -314,14 +315,14 @@ app.post('/api/config', (req, res) => {
   config = { ...config, ...req.body };
   saveConfig(config);
   // Clear all token caches since global creds changed
-  Object.keys(tokenCaches).forEach(k => { tokenCaches[k] = { token:null, expires:0, inflight:null }; });
+  Object.keys(tokenCaches).forEach(k => { tokenCaches[k] = { token:null, expires:0 }; });
   res.json({ ok:true, config:{ ...config, clientSecret:'••••••••' } });
 });
 
 app.get('/api/token/test', async (req, res) => {
   try {
     const id = getActiveProjectId();
-    if (id && tokenCaches[id]) tokenCaches[id] = { token:null, expires:0, inflight:null };
+    if (id && tokenCaches[id]) tokenCaches[id] = { token:null, expires:0 };
     await getToken(id);
     const cache = tokenCaches[id||'global'] || { expires: Date.now()+300000 };
     res.json({ ok:true, expiresIn:Math.round((cache.expires-Date.now())/1000)+'s' });
@@ -475,23 +476,16 @@ app.get('/api/guests/:eventId', async (req, res) => {
     if (config.qwertyCorrection && scanInput) scanInput = compensateQwerty(scanInput);
     const base = `${apiBase}/_gw/s-events-guests/external-api/events/${req.params.eventId}/guests`;
 
-    // ── Scan path: direct API lookup only, never fetches the full list ────────
-    // Always returns live data with the correct revision for the subsequent PATCH.
     if (scanInput) {
-      // 1. Direct lookup by UID — fastest path, correct revision
       try {
-        const dr = await fetch(`${base}/${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}` } });
+        const dr = await fetch(`${base}/${encodeURIComponent(scanInput)}`,{headers:{Authorization:`Bearer ${token}`,Range:'guests 0-0'}});
         if (dr.ok) { const g=await dr.json(); const r=Array.isArray(g)?g:(g&&(g.id||g.uid)?[g]:[]); if(r.length>0) return res.json(r); }
       } catch(e) {}
-      // 2. Filter query fallback — scoped, never paginates the full list
-      try {
-        const fr = await fetch(`${base}?filter[uid]=${encodeURIComponent(scanInput)}`,{headers:{Authorization:`Bearer ${token}`,Range:'guests 0-499'}});
-        if (fr.ok) { const gs=await fr.json(); const arr=Array.isArray(gs)?gs:[]; const m=arr.filter(g=>{const u=g.uid||g.id||(g.attributes||g.properties||{}).uid||''; return u===scanInput||u.toLowerCase()===scanInput.toLowerCase();}); return res.json(m); }
-      } catch(e) {}
+      const fr = await fetch(`${base}?filter[uid]=${encodeURIComponent(scanInput)}`,{headers:{Authorization:`Bearer ${token}`,Range:'guests 0-499'}});
+      if (fr.ok) { const gs=await fr.json(); const arr=Array.isArray(gs)?gs:[]; const m=arr.filter(g=>{const u=g.uid||g.id||(g.attributes||g.properties||{}).uid||''; return u===scanInput||u.toLowerCase()===scanInput.toLowerCase();}); return res.json(m); }
       return res.json([]);
     }
 
-    // ── Search / list path: full paginated fetch (backoffice name search only) ─
     const PAGE=500;
     const r = await fetch(base,{headers:{Authorization:`Bearer ${token}`,Range:`guests 0-${PAGE-1}`}});
     if (!r.ok) throw new Error(`API error ${r.status}`);
