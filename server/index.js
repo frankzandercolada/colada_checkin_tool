@@ -8,12 +8,24 @@ const path    = require('path');
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '20mb' }));
-// Serve root CA cert with correct MIME type for iOS profile installation
+// Serve root CA cert for iOS device enrollment.
+// iOS requires DER format (.cer) with the x509-ca-cert MIME type.
+app.get('/caddy-root.cer', (req, res) => {
+  const certPath = path.join(__dirname, '../public/caddy-root.cer');
+  res.setHeader('Content-Type', 'application/x-x509-ca-cert');
+  res.setHeader('Content-Disposition', 'attachment; filename="caddy-root.cer"');
+  res.sendFile(certPath, err => {
+    if (err) res.status(404).send('Certificate not found. Copy caddy-root.cer to the public folder.');
+  });
+});
+// Also serve PEM for non-iOS devices
 app.get('/caddy-root.crt', (req, res) => {
   const certPath = path.join(__dirname, '../public/caddy-root.crt');
   res.setHeader('Content-Type', 'application/x-x509-ca-cert');
   res.setHeader('Content-Disposition', 'attachment; filename="caddy-root.crt"');
-  res.sendFile(certPath);
+  res.sendFile(certPath, err => {
+    if (err) res.status(404).send('Certificate not found. Copy caddy-root.crt to the public folder.');
+  });
 });
 app.use(express.static(path.join(__dirname, '../public')));
 
