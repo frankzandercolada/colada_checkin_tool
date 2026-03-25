@@ -1174,68 +1174,111 @@ function updateBadgeTemplateHint(guest) {
 }
 
 function renderGuestCard(guest) {
-  const fname = guestAttr(guest, 'contact_firstName') || '';
-  const lname = guestAttr(guest, 'contact_lastName') || '';
-  const company = guestAttr(guest, 'contact_x_companyName') || '—';
-  // Checked in = boolean guest_x_checkedin is true AND guest_x_checkedinat has a date value
-  // API returns guest_x_checkedin: false (not checked in) or true (checked in)
-  // guest_x_checkedinat: false / "" (not set) or "YYYY-MM-DD" (date of check-in)
-  const _checkedinBool = guestAttr(guest, 'guest_x_checkedin');
-  const _rawCheckin = guestAttr(guest, 'guest_x_checkedinat');
-  const _atValid = _rawCheckin && _rawCheckin !== false && _rawCheckin !== 'false' && _rawCheckin !== '';
-  // A guest is checked in if EITHER: the boolean is true OR the date is set (handles partial API updates)
-  const checkedIn = (_checkedinBool === true || _atValid) ? (_atValid ? _rawCheckin : true) : false;
-  const awf = guestAttr(guest, 'guest_x_awf_teilnehmer') === true;
-  const stimm = guestAttr(guest, 'guest_x_Stimmberechtigt') === true;
-  const group = guestAttr(guest, 'guest_x_group') || '—';
-  const jobTitle = guestAttr(guest, 'contact_x_jobTitle') || '—';
-  const status = guest.status || guestAttr(guest, 'status') || '—';
+  const attrs   = guest.attributes || guest.properties || {};
+  const fname   = attrs.contact_firstName || '';
+  const lname   = attrs.contact_lastName  || '';
+  const company = attrs.contact_x_companyName || '—';
+  const status  = guest.status || attrs.status || '—';
   const isEligible = status === 'REGISTERED' || status === 'PENDING';
 
-  const permBadge = awf
-    ? `<span class="badge badge-green">✓ AWF Participant</span>`
-    : `<span class="badge badge-red">✕ Not AWF</span>`;
-  const stimmBadge = stimm
-    ? `<span class="badge badge-accent">⊛ Stimmberechtigt</span>`
-    : `<span class="badge badge-muted">— No vote</span>`;
+  const _checkedinBool = attrs.guest_x_checkedin;
+  const _rawCheckin    = attrs.guest_x_checkedinat;
+  const _atValid = _rawCheckin && _rawCheckin !== false && _rawCheckin !== 'false' && _rawCheckin !== '';
+  const checkedIn = (_checkedinBool === true || _atValid) ? (_atValid ? _rawCheckin : true) : false;
+  const canCheckin = isEligible && !checkedIn;
+
   const checkedBadge = checkedIn
     ? `<span class="badge badge-green">✓ Checked in ${checkedIn}</span>`
     : `<span class="badge badge-orange">○ Not checked in</span>`;
   const statusBadge = `<span class="badge badge-muted">${status}</span>`;
 
-  const canCheckin = isEligible && !checkedIn;
+  // ── Dynamic rule-based status panel ─────────────────────────────────────────
+  // Collect all condition attributes from:
+  //   1. The event group matching this guest's _matchedEventId
+  //   2. Global rules
+  // Deduplicate, strip _matchedEventId (structural) and check-in fields (shown above)
+  const SKIP_ATTRS = new Set(['_matchedEventId','guest_x_checkedin','guest_x_checkedinat']);
+  const matchedEventId = attrs._matchedEventId;
+  const groups      = loadEventGroups();
+  const globalRules = loadRules();
+  const eventRules  = matchedEventId
+    ? (groups.find(g => g.eventId === matchedEventId)?.rules || [])
+    : [];
+  const allRules = [...eventRules, ...globalRules];
+
+  // Ordered deduplication — preserve first-seen order
+  const seenAttrs = new Set();
+  const ruleAttrs = [];
+  for (const rule of allRules) {
+    for (const cond of (rule.conditions || [])) {
+      if (!SKIP_ATTRS.has(cond.attr) && !seenAttrs.has(cond.attr)) {
+        seenAttrs.add(cond.attr);
+        ruleAttrs.push(cond.attr);
+      }
+    }
+  }
+
+  // Resolve a raw attribute value to a human-readable label
+  function resolveAttrValue(attrName, rawVal) {
+    if (rawVal === undefined || rawVal === null) return '<span style="color:var(--muted)">—</span>';
+    // Boolean
+    if (rawVal === true  || rawVal === 'true')  return '<span style="color:var(--green)">✓ Yes</span>';
+    if (rawVal === false || rawVal === 'false') return '<span style="color:var(--muted)">✕ No</span>';
+    // UUID — try to resolve via labelMap
+    const label = _guestSchema?.labelMap?.[rawVal];
+    if (label) return `<span style="color:var(--text)">${escHtml(label)}</span>`;
+    // Short UUID truncation for unresolved UUIDs
+    if (/^[0-9a-f-]{36}$/.test(String(rawVal))) return `<span style="color:var(--muted);font-family:var(--font-mono);font-size:11px;">${String(rawVal).slice(0,8)}…</span>`;
+    return `<span style="color:var(--text)">${escHtml(String(rawVal))}</span>`;
+  }
+
+  // Make a friendly label from an attribute name
+  function attrLabel(name) {
+    return name
+      .replace(/^(guest_x_|contact_x_|contact_)/, '')
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+  }
+
+  const dynamicRows = ruleAttrs.length
+    ? ruleAttrs.map(attr => `
+        <div class="perm-row">
+          <span class="key">${escHtml(attrLabel(attr))}</span>
+          ${resolveAttrValue(attr, attrs[attr])}
+        </div>`).join('')
+    : `<div class="perm-row"><span class="key" style="color:var(--muted)">No rule conditions configured for this event</span></div>`;
+
+  // Event label
+  const evLabel = matchedEventId
+    ? (_eventNameCache[matchedEventId] || `Event ${matchedEventId.slice(0,8)}…`)
+    : '';
 
   document.getElementById('guest-result').innerHTML = `
     <div class="guest-card">
       <div class="guest-card-header">
-        <div class="guest-name">${fname} ${lname}</div>
-        <div class="guest-company">${company}</div>
+        <div class="guest-name">${escHtml(fname)} ${escHtml(lname)}</div>
+        <div class="guest-company">${escHtml(company)}</div>
+        ${evLabel ? `<div style="margin-top:6px;"><span style="font-size:11px;font-family:var(--font-mono);background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:1px 6px;">⬡ ${escHtml(evLabel)}</span></div>` : ''}
         <div style="margin-top:10px; display:flex; gap:6px; flex-wrap:wrap;">
           ${checkedBadge}
           ${statusBadge}
-          ${permBadge}
-          ${stimmBadge}
         </div>
       </div>
       <div class="guest-body">
         <div class="guest-attrs">
-          <div class="guest-attr"><span class="key">Job Title</span><span class="val">${jobTitle}</span></div>
-          <div class="guest-attr"><span class="key">Group</span><span class="val">${group}</span></div>
           <div class="guest-attr"><span class="key">Guest ID</span><span class="val" style="font-family:var(--font-mono);font-size:11px;">${guest.id || guest.uid || '—'}</span></div>
-          <div class="guest-attr"><span class="key">Member UUID</span><span class="val" style="font-family:var(--font-mono);font-size:11px;">${(guestAttr(guest,'guest_x_member')||'—').slice(0,14)}…</span></div>
         </div>
 
         <div class="perm-panel">
-          <div class="perm-row"><span class="key">Status</span> <span style="color:var(--text)">${status}</span></div>
-          <div class="perm-row"><span class="key">AWF Teilnehmer</span> ${awf ? '<span style="color:var(--green)">✓ Yes</span>' : '<span style="color:var(--red)">✕ No</span>'}</div>
-          <div class="perm-row"><span class="key">Stimmberechtigt</span> ${stimm ? '<span style="color:var(--accent)">✓ Yes</span>' : '<span style="color:var(--muted)">— No</span>'}</div>
           <div class="perm-row"><span class="key">Check-in Status</span> ${checkedIn ? `<span style="color:var(--green)">${checkedIn}</span>` : '<span style="color:var(--orange)">Pending</span>'}</div>
+          <div class="perm-row"><span class="key">Registration</span> <span style="color:var(--text)">${status}</span></div>
+          ${dynamicRows}
         </div>
 
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           ${canCheckin ? `<button class="btn btn-primary" onclick="confirmCheckin()">✓ Check In + Print Badge</button>` : ''}
-          ${checkedIn ? `<button class="btn btn-secondary" onclick="printBadge()">⎙ Reprint Badge</button>` : ''}
-          ${checkedIn ? `<button class="btn btn-ghost" style="color:var(--orange);" onclick="confirmUndoCheckin()">↺ Reset Check-in</button>` : ''}
+          ${checkedIn  ? `<button class="btn btn-secondary" onclick="printBadge()">⎙ Reprint Badge</button>` : ''}
+          ${checkedIn  ? `<button class="btn btn-ghost" style="color:var(--orange);" onclick="confirmUndoCheckin()">↺ Reset Check-in</button>` : ''}
           ${!checkedIn ? `<span id="badge-template-hint" style="font-size:11px;color:var(--muted);font-family:var(--font-mono);margin-left:8px;"></span>` : ''}
           ${!isEligible && !checkedIn ? `<button class="btn btn-danger" onclick="showDeny()">✕ Deny (${status})</button>` : ''}
           <button class="btn btn-ghost" onclick="clearScan()">← Back</button>
@@ -1248,22 +1291,28 @@ function renderGuestCard(guest) {
 function confirmCheckin() {
   const guest = state.currentGuest;
   if (!guest) return;
-  const fname = guestAttr(guest, 'contact_firstName') || '';
-  const lname = guestAttr(guest, 'contact_lastName') || '';
-  const name = `${fname} ${lname}`.trim();
-  const company = guestAttr(guest, 'contact_x_companyName') || '';
-  const stimm = guestAttr(guest, 'guest_x_Stimmberechtigt') === true;
-  const awf = guestAttr(guest, 'guest_x_awf_teilnehmer') === true;
+  const attrs   = guest.attributes || guest.properties || {};
+  const fname   = attrs.contact_firstName || '';
+  const lname   = attrs.contact_lastName  || '';
+  const name    = `${fname} ${lname}`.trim();
+  const company = attrs.contact_x_companyName || '';
+
+  // Show the matched template name in the confirmation dialog
+  const templateKey  = selectBadgeTemplate(guest);
+  const tpls         = loadTemplates();
+  const tpl          = tpls.find(t => t.key === templateKey);
+  const templateName = tpl?.name || templateKey || '—';
+  const evLabel      = attrs._matchedEventId
+    ? (_eventNameCache[attrs._matchedEventId] || `Event ${attrs._matchedEventId.slice(0,8)}…`)
+    : '';
 
   document.getElementById('confirm-content').innerHTML = `
     <div style="text-align:center; margin-bottom:24px;">
       <div style="font-size:40px; margin-bottom:12px;">✓</div>
-      <div style="font-size:22px; font-weight:800;">${name}</div>
-      <div style="color:var(--muted); font-size:14px; margin-top:4px;">${company}</div>
-      <div style="margin-top:12px; display:flex; justify-content:center; gap:8px; flex-wrap:wrap;">
-        ${awf ? '<span class="badge badge-green">AWF Participant</span>' : ''}
-        ${stimm ? '<span class="badge badge-accent">⊛ Stimmberechtigt</span>' : '<span class="badge badge-muted">No vote</span>'}
-      </div>
+      <div style="font-size:22px; font-weight:800;">${escHtml(name)}</div>
+      <div style="color:var(--muted); font-size:14px; margin-top:4px;">${escHtml(company)}</div>
+      ${evLabel ? `<div style="margin-top:8px;"><span style="font-size:11px;font-family:var(--font-mono);background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:1px 6px;">⬡ ${escHtml(evLabel)}</span></div>` : ''}
+      <div style="margin-top:10px; color:var(--muted); font-size:12px;">Badge: <strong style="color:var(--text)">${escHtml(templateName)}</strong></div>
     </div>
     <p style="text-align:center; color:var(--muted); font-size:13px; margin-bottom:24px;">Confirm check-in and print badge?</p>
     <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">

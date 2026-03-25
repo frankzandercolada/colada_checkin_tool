@@ -742,8 +742,8 @@ app.post('/api/guests/:eventId/:guestId/undo-checkin', async (req, res) => {
     const token = await getToken(pid);
     const { apiBase } = getEffectiveCredentials(pid);
     const guest = req.body;
-    const existingAttrs = guest.attributes || guest.properties || {};
-    const patchAttrs = { ...existingAttrs, guest_x_checkedin: false, guest_x_checkedinat: false };
+    // Send only the two check-in fields — avoids sending synthetic or unknown attributes
+    const patchAttrs = { guest_x_checkedin: false, guest_x_checkedinat: false };
     const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json', 'Cache-Control': 'no-cache' };
     const rev = guest.revision || (guest.attributes || {}).revision;
     if (rev) headers['If-Match'] = rev;
