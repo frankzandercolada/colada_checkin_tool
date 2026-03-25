@@ -147,19 +147,29 @@ function selectTemplateKey(attrs, badgeCfg) {
 
   const matchedEventId = attrs._matchedEventId;
 
+  console.log('[routing] matchedEventId:', matchedEventId);
+  console.log('[routing] eventGroups:', JSON.stringify((badgeCfg.eventGroups||[]).map(g => ({
+    eventId: g.eventId, rulesCount: g.rules?.length || 0
+  }))));
+  console.log('[routing] globalRules:', badgeCfg.rules?.length || 0);
+
   // 1. Try event-scoped group first
   if (matchedEventId && Array.isArray(badgeCfg.eventGroups)) {
     const group = badgeCfg.eventGroups.find(g => g.eventId === matchedEventId);
     if (group) {
+      console.log('[routing] found group with', group.rules?.length || 0, 'rules');
       const key = evalRules(group.rules);
-      if (key) return key;
+      if (key) { console.log('[routing] matched event rule ->', key); return key; }
+    } else {
+      console.log('[routing] no group found for event', matchedEventId);
     }
   }
 
   // 2. Fall through to global rules
   const key = evalRules(badgeCfg.rules);
-  if (key) return key;
+  if (key) { console.log('[routing] matched global rule ->', key); return key; }
 
+  console.log('[routing] no match -> fallback:', badgeCfg.fallback || DEFAULT_FALLBACK);
   // 3. Final fallback
   return badgeCfg.fallback || DEFAULT_FALLBACK;
 }
