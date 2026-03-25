@@ -742,10 +742,13 @@ app.post('/api/guests/:eventId/:guestId/undo-checkin', async (req, res) => {
     const token = await getToken(pid);
     const { apiBase } = getEffectiveCredentials(pid);
     const guest = req.body;
-    // Send only the two check-in fields — avoids sending synthetic or unknown attributes
-    const patchAttrs = { guest_x_checkedin: false, guest_x_checkedinat: false };
+    const existingAttrs = guest.attributes || guest.properties || {};
+    // Mirror the checkin pattern: spread full attrs then override the two fields.
+    // Strip _matchedEventId (synthetic, never stored in Colada365).
+    const { _matchedEventId: _omit, ...cleanAttrs } = existingAttrs;
+    const patchAttrs = { ...cleanAttrs, guest_x_checkedin: false, guest_x_checkedinat: false };
     const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json', 'Cache-Control': 'no-cache' };
-    const rev = guest.revision || (guest.attributes || {}).revision;
+    const rev = guest.revision || existingAttrs.revision;
     if (rev) headers['If-Match'] = rev;
     const r = await fetch(`${apiBase}/_gw/s-events-guests/external-api/events/${req.params.eventId}/guests/${req.params.guestId}`, { method: 'PATCH', headers, body: JSON.stringify({ attributes: patchAttrs }) });
     const text = await r.text();
