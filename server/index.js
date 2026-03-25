@@ -743,14 +743,19 @@ app.post('/api/guests/:eventId/:guestId/undo-checkin', async (req, res) => {
     const { apiBase } = getEffectiveCredentials(pid);
     const guest = req.body;
     const existingAttrs = guest.attributes || guest.properties || {};
-    // Mirror the checkin pattern: spread full attrs then override the two fields.
-    // Strip _matchedEventId (synthetic, never stored in Colada365).
     const { _matchedEventId: _omit, ...cleanAttrs } = existingAttrs;
-    const patchAttrs = { ...cleanAttrs, guest_x_checkedin: false, guest_x_checkedinat: false };
+    // Reset check-in: set the boolean back to false and $unset the date field
+    // (Colada365 rejects false for a date-type field — $unset clears it properly)
+    const patchAttrs = { ...cleanAttrs, guest_x_checkedin: false };
+    delete patchAttrs.guest_x_checkedinat; // don't send the date field in attributes
+    const body = {
+      attributes: patchAttrs,
+      $unset: { 'attributes.guest_x_checkedinat': true },
+    };
     const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json', 'Cache-Control': 'no-cache' };
     const rev = guest.revision || existingAttrs.revision;
     if (rev) headers['If-Match'] = rev;
-    const r = await fetch(`${apiBase}/_gw/s-events-guests/external-api/events/${req.params.eventId}/guests/${req.params.guestId}`, { method: 'PATCH', headers, body: JSON.stringify({ attributes: patchAttrs }) });
+    const r = await fetch(`${apiBase}/_gw/s-events-guests/external-api/events/${req.params.eventId}/guests/${req.params.guestId}`, { method: 'PATCH', headers, body: JSON.stringify(body) });
     const text = await r.text();
     if (!r.ok) throw new Error(`API error ${r.status}: ${text.slice(0, 200)}`);
     try { res.json(JSON.parse(text)); } catch(e) { res.json({ ok: true }); }
