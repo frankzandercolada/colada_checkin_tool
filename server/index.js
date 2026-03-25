@@ -779,7 +779,17 @@ app.post('/api/kiosk/scan', async (req, res) => {
 
     if (!guest) return res.json({ result: 'not_found' });
 
-    const attrs = guest.attributes || guest.properties || {};
+    // Normalise attributes — Colada365 may return nested (.attributes/.properties)
+    // or flat (all fields at top level). Use whichever has the most keys.
+    const nestedAttrs = guest.attributes || guest.properties || {};
+    const topLevelAttrs = Object.fromEntries(
+      Object.entries(guest).filter(([k]) =>
+        !['id','uid','status','revision','attributes','properties'].includes(k)
+      )
+    );
+    const attrs = Object.keys(nestedAttrs).length >= Object.keys(topLevelAttrs).length
+      ? nestedAttrs
+      : { ...topLevelAttrs, ...nestedAttrs }; // merge, nested takes precedence
 
     // Inject synthetic attribute so badge routing rules can match on which event was matched
     attrs._matchedEventId = matchedEventId;
@@ -793,7 +803,9 @@ app.post('/api/kiosk/scan', async (req, res) => {
     if (alreadyIn) return res.json({ result: 'already_checked_in', guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', checkedInAt: attrs.guest_x_checkedinat } });
 
     const today = new Date().toISOString().split('T')[0];
-    const patchAttrs = { ...attrs, guest_x_checkedin: true, guest_x_checkedinat: today };
+    // Build patch — exclude the synthetic _matchedEventId so it is never sent to Colada365
+    const { _matchedEventId: _omit, ...cleanAttrs } = attrs;
+    const patchAttrs = { ...cleanAttrs, guest_x_checkedin: true, guest_x_checkedinat: today };
     const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
     const rev = guest.revision || attrs.revision;
     if (rev) headers['If-Match'] = rev;
