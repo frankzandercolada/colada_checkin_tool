@@ -1112,15 +1112,16 @@ async function searchGuests(term) {
       const email = a.contact_email || a.email || '';
       const checkedin = a.guest_x_checkedin === true || (a.guest_x_checkedinat && a.guest_x_checkedinat !== false && a.guest_x_checkedinat !== 'false' && a.guest_x_checkedinat !== '');
       const status_val = a.status || g.status || '';
-      const evLabel = _eventNameCache[a._matchedEventId] || a._matchedEventId?.slice(0,8) || '';
+      const evLabel = _eventNameCache[a._matchedEventId] || (a._matchedEventId ? `Event ${a._matchedEventId.slice(0,8)}…` : '');
       return `<div onclick="selectSearchResult(${i})" data-idx="${i}" style="
         padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border);
         display:flex; justify-content:space-between; align-items:center;
         transition:background 0.15s;
       " onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background=''">
-        <div>
+        <div style="min-width:0;">
           <div style="font-weight:600; color:var(--text);">${fname} ${lname}</div>
-          <div style="font-size:12px; color:var(--muted); font-family:var(--font-mono);">${company}${email ? ' · ' + email : ''}${evLabel ? ' · <span style="color:var(--accent)">' + escHtml(evLabel) + '</span>' : ''}</div>
+          <div style="font-size:12px; color:var(--muted); font-family:var(--font-mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${company}${email ? ' · ' + email : ''}</div>
+          ${evLabel ? `<div style="margin-top:4px;"><span style="font-size:10px;font-family:var(--font-mono);background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:1px 6px;letter-spacing:0.03em;">⬡ ${escHtml(evLabel)}</span></div>` : ''}
         </div>
         <div style="text-align:right; flex-shrink:0; margin-left:12px;">
           ${checkedin ? '<span class="badge badge-green" style="font-size:10px;">✓ In</span>' : '<span class="badge badge-orange" style="font-size:10px;">Pending</span>'}
@@ -2937,6 +2938,7 @@ async function switchProject(projectId) {
       ensureBadgeConfigLoaded(),
       ensureGuestSchema(),
     ]);
+    ensureEventNames(); // pre-fetch event names for scan page search results
     const project = _projects.find(p => p.id === projectId);
     toast(`Switched to "${project?.name}"`, 'success');
     addLog(`Project switched to "${project?.name}"`, 'info');
@@ -3101,6 +3103,8 @@ function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'
     loadProjects(),
     ensureBadgeConfigLoaded(),
   ]);
+  // Pre-fetch event names so search results show event labels immediately
+  ensureEventNames();
   addLog('App initialized', 'info');
 })();
 
