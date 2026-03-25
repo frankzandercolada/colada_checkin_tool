@@ -136,9 +136,16 @@ function selectTemplateKey(attrs, badgeCfg) {
       default:         return false;
     }
   }
-  function evalRules(rules) {
+  function evalRules(rules, label) {
     for (const rule of (rules || [])) {
-      const results = rule.conditions.map(c => evalCond(c, attrs));
+      const results = rule.conditions.map(c => {
+        const raw  = attrs[c.attr];
+        const sv   = String(raw ?? '').toLowerCase();
+        const cv   = String(c.value ?? '').toLowerCase();
+        const pass = evalCond(c, attrs);
+        console.log(`[routing]   ${label} | rule:"${rule.name}" | ${c.attr} ${c.op} "${c.value}" | attrVal=${JSON.stringify(raw)} | ${pass?'✓':'✗'}`);
+        return pass;
+      });
       const match = rule.logic === 'OR' ? results.some(Boolean) : results.every(Boolean);
       if (match) return rule.template;
     }
@@ -158,7 +165,7 @@ function selectTemplateKey(attrs, badgeCfg) {
     const group = badgeCfg.eventGroups.find(g => g.eventId === matchedEventId);
     if (group) {
       console.log('[routing] found group with', group.rules?.length || 0, 'rules');
-      const key = evalRules(group.rules);
+      const key = evalRules(group.rules, 'event');
       if (key) { console.log('[routing] matched event rule ->', key); return key; }
     } else {
       console.log('[routing] no group found for event', matchedEventId);
@@ -166,7 +173,7 @@ function selectTemplateKey(attrs, badgeCfg) {
   }
 
   // 2. Fall through to global rules
-  const key = evalRules(badgeCfg.rules);
+  const key = evalRules(badgeCfg.rules, 'global');
   if (key) { console.log('[routing] matched global rule ->', key); return key; }
 
   console.log('[routing] no match -> fallback:', badgeCfg.fallback || DEFAULT_FALLBACK);
@@ -865,24 +872,26 @@ app.post('/api/kiosk/scan', async (req, res) => {
     if (config.qwertyCorrection && scanInput) scanInput = compensateQwerty(scanInput);
     if (!scanInput) return res.status(400).json({ error: 'scan value required' });
 
-    // Try each event ID in order — stop at the first that returns a matching guest
+    // Try each event ID in order — stop at the first that returns a matching guest.
+    // IMPORTANT: only use filter[uid] for the event-matching step — the direct-by-ID
+    // endpoint (/guests/{id}) is NOT event-scoped on Colada365 and will return a guest
+    // regardless of which event it's queried against, causing the wrong event to be matched.
+    // filter[uid] is genuinely scoped to the event's guest list.
     let guest = null;
     let matchedEventId = null;
 
-    for (const eid of eventIds) {
+    if (eventIds.length === 1) {
+      // Single-event fast path: try direct lookup first, then filter[uid]
+      const eid  = eventIds[0];
       const base = `${apiBase}/_gw/s-events-guests/external-api/events/${eid}/guests`;
-
-      // 1. Try direct lookup by ID
       try {
         const dr = await fetch(`${base}/${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}` } });
         if (dr.ok) {
           const g = await dr.json();
           const found = Array.isArray(g) ? g[0] : (g?.id || g?.uid ? g : null);
-          if (found) { guest = found; matchedEventId = eid; break; }
+          if (found) { guest = found; matchedEventId = eid; }
         }
       } catch(e) {}
-
-      // 2. Try filter[uid] — only accept EXACT uid match, never fall back to first result
       if (!guest) {
         try {
           const fr = await fetch(`${base}?filter[uid]=${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}`, Range: 'guests 0-0' } });
@@ -893,10 +902,33 @@ app.post('/api/kiosk/scan', async (req, res) => {
               const u = g.uid || g.id || (g.attributes || g.properties || {}).uid || '';
               return u === scanInput || u.toLowerCase() === scanInput.toLowerCase();
             }) || null;
-            if (found) { guest = found; matchedEventId = eid; break; }
+            if (found) { guest = found; matchedEventId = eid; }
           }
         } catch(e) {}
       }
+    } else {
+      // Multi-event: use ONLY filter[uid] — it is event-scoped so we know
+      // exactly which event the guest belongs to.
+      // Run all events in parallel for speed, then pick the first match.
+      const results = await Promise.all(eventIds.map(async eid => {
+        const base = `${apiBase}/_gw/s-events-guests/external-api/events/${eid}/guests`;
+        try {
+          const fr = await fetch(`${base}?filter[uid]=${encodeURIComponent(scanInput)}`, {
+            headers: { Authorization: `Bearer ${token}`, Range: 'guests 0-0' },
+          });
+          if (!fr.ok) return null;
+          const gs  = await fr.json();
+          const arr = Array.isArray(gs) ? gs : [];
+          const found = arr.find(g => {
+            const u = g.uid || g.id || (g.attributes || g.properties || {}).uid || '';
+            return u === scanInput || u.toLowerCase() === scanInput.toLowerCase();
+          }) || null;
+          return found ? { guest: found, matchedEventId: eid } : null;
+        } catch(e) { return null; }
+      }));
+      // Use the first successful result (preserving eventIds order priority)
+      const hit = results.find(r => r !== null);
+      if (hit) { guest = hit.guest; matchedEventId = hit.matchedEventId; }
     }
 
     if (!guest) return res.json({ result: 'not_found' });
