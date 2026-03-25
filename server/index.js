@@ -877,11 +877,41 @@ app.post('/api/kiosk/scan', async (req, res) => {
     if (!pr.ok) throw new Error(`Check-in failed: ${pr.status}`);
 
     const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
+
+    // ── Dry-run routing evaluation for diagnostics ─────────────────────────────
+    function evalCond(c, a) {
+      const raw = a[c.attr];
+      const sv  = String(raw ?? '').toLowerCase();
+      const cv  = String(c.value ?? '').toLowerCase();
+      switch(c.op) {
+        case 'eq':       return sv === cv;
+        case 'neq':      return sv !== cv;
+        case 'contains': return sv.includes(cv);
+        case 'exists':   return raw !== undefined && raw !== null && raw !== '';
+        case 'true':     return raw === true || sv === 'true';
+        case 'false':    return raw === false || sv === 'false';
+        default:         return false;
+      }
+    }
+    const routingTrace = (badgeCfg.rules || []).map(rule => {
+      const condResults = rule.conditions.map(c => ({
+        attr: c.attr, op: c.op, condValue: c.value,
+        attrValue: attrs[c.attr], attrType: typeof attrs[c.attr],
+        pass: evalCond(c, attrs),
+      }));
+      const match = rule.logic === 'OR'
+        ? condResults.some(r => r.pass)
+        : condResults.every(r => r.pass);
+      return { rule: rule.name, template: rule.template, match, conditions: condResults };
+    });
+    const matchedRule = routingTrace.find(r => r.match);
+
     res.json({
       result: 'success',
       matchedEventId,
       guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', id: guest.id, attributes: attrs },
       badgeConfig: { templates: badgeCfg.templates, rules: badgeCfg.rules, fallback: badgeCfg.fallback },
+      _routingTrace: { selectedTemplate: matchedRule?.template || badgeCfg.fallback, rules: routingTrace },
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
