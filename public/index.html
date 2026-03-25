@@ -1355,6 +1355,35 @@ function closeConfirm() {
   document.getElementById('confirm-overlay').style.display = 'none';
 }
 
+// Re-fetch the current guest from the API and update state + card.
+// Called after any mutation (check-in, reset) to keep revision fresh.
+async function refreshCurrentGuest() {
+  const guest = state.currentGuest;
+  if (!guest || !state.eventId) return;
+  const uid = (guest.attributes || guest.properties || {}).code
+           || (guest.attributes || guest.properties || {}).guest_code
+           || guest.uid || guest.id;
+  if (!uid) return;
+  try {
+    const r    = await fetch(`/api/guests/${encodeURIComponent(state.eventId)}?scan=${encodeURIComponent(uid)}`);
+    const data = await r.json();
+    const arr  = Array.isArray(data) ? data : (data.data || []);
+    if (!arr.length) return;
+    const fresh = arr[0];
+    // Preserve _matchedEventId so routing continues to work
+    const matchedEventId = (guest.attributes || guest.properties || {})._matchedEventId;
+    const freshAttrs = fresh.attributes || fresh.properties || {};
+    if (matchedEventId) freshAttrs._matchedEventId = matchedEventId;
+    if (fresh.attributes) fresh.attributes = freshAttrs;
+    else fresh.properties = freshAttrs;
+    state.currentGuest = fresh;
+    renderGuestCard(fresh);
+  } catch(e) {
+    // Non-critical — stale data is better than an error
+    console.warn('[refreshCurrentGuest]', e.message);
+  }
+}
+
 async function doCheckin(printAfter = true) {
   const guest = state.currentGuest;
   if (!guest) return;
@@ -1376,18 +1405,9 @@ async function doCheckin(printAfter = true) {
       toast(`✓ ${name} checked in!`, 'success', 5000);
       addLog(`Checked in: ${name}`, 'ok');
       state.stats.checked++;
-      // Update local guest state to reflect both fields the API now has
-      const today = new Date().toISOString().split('T')[0];
-      const attrs = state.currentGuest.attributes || state.currentGuest.properties || {};
-      attrs.guest_x_checkedin = true;
-      if (!attrs.guest_x_checkedinat || attrs.guest_x_checkedinat === false || attrs.guest_x_checkedinat === '') {
-        attrs.guest_x_checkedinat = today;
-      }
-      if (state.currentGuest.attributes) state.currentGuest.attributes = attrs;
-      else state.currentGuest.properties = attrs;
-      renderGuestCard(state.currentGuest);
-      updateBadgeTemplateHint(state.currentGuest);
       if (printAfter) printBadge();
+      // Re-fetch fresh guest (updates revision so subsequent actions don't conflict)
+      await refreshCurrentGuest();
     } else {
       toast(`Check-in failed: ${data.error || r.status}`, 'error');
       addLog(`Check-in failed: ${name} — ${data.error}`, 'err');
@@ -1441,13 +1461,8 @@ async function undoCheckin() {
     if (r.ok) {
       toast(`↺ ${name} check-in reset`, 'info', 4000);
       addLog(`Reset check-in: ${name}`, 'info');
-      // Update local state
-      const attrs = state.currentGuest.attributes || state.currentGuest.properties || {};
-      attrs.guest_x_checkedin    = false;
-      attrs.guest_x_checkedinat  = false;
-      if (state.currentGuest.attributes) state.currentGuest.attributes = attrs;
-      else state.currentGuest.properties = attrs;
-      renderGuestCard(state.currentGuest);
+      // Re-fetch fresh guest (updates revision so subsequent actions don't conflict)
+      await refreshCurrentGuest();
     } else {
       toast(`Reset failed: ${data.error || r.status}`, 'error');
       addLog(`Reset failed: ${name} — ${data.error}`, 'err');
