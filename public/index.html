@@ -236,9 +236,11 @@
         <div class="card-title">Event Configuration</div>
         <div class="form-grid cols-1">
           <div class="field">
-            <label>Event ID</label>
-            <input id="cfg-eventId" type="text" placeholder="Paste Event UUID here"/>
-            <span class="hint">The Colada365 event UUID used for all guest lookups</span>
+            <label>Event IDs</label>
+            <textarea id="cfg-eventIds" rows="3" class="form-input"
+              style="font-family:var(--font-mono);font-size:11px;resize:vertical;line-height:1.6;"
+              placeholder="One Event UUID per line"></textarea>
+            <span class="hint">One Colada365 event UUID per line — scans are tried against each event in order until a match is found</span>
           </div>
           <div class="field">
             <label>Token Refresh Interval (seconds)</label>
@@ -725,9 +727,11 @@ async function loadSettings() {
     document.getElementById('cfg-tokenUrl').value = projCreds.tokenUrl || '';
     document.getElementById('cfg-apiBase').value = projCreds.apiBase || '';
 
-    // Event ID comes from project (via projects list)
-    const eventId = proj?.eventId || cfgRes.eventId || '';
-    document.getElementById('cfg-eventId').value = eventId;
+    // Event IDs come from project (via projects list) — normalise to array
+    const eventIds = proj?.eventIds?.length ? proj.eventIds : (proj?.eventId ? [proj.eventId] : (cfgRes.eventId ? [cfgRes.eventId] : []));
+    document.getElementById('cfg-eventIds').value = eventIds.join('\n');
+    state.eventId = eventIds[0] || '';
+    updateEventBadge(eventIds[0] || '');
 
     // Global fallback credentials
     document.getElementById('cfg-global-clientId').value = cfgRes.clientId || '';
@@ -738,16 +742,18 @@ async function loadSettings() {
 
     document.getElementById('cfg-tokenRefreshInterval').value = cfgRes.tokenRefreshInterval || 240;
     document.getElementById('cfg-qwertyCorrection').checked = !!cfgRes.qwertyCorrection;
-    state.eventId = eventId;
-    updateEventBadge(eventId);
   } catch(e) { toast('Failed to load config', 'error'); }
 }
 
 async function saveSettings() {
-  const eventId = document.getElementById('cfg-eventId').value.trim();
+  // Parse event IDs from the multi-line textarea — one UUID per line
+  const eventIds = document.getElementById('cfg-eventIds').value
+    .split('\n').map(s => s.trim()).filter(Boolean);
+  const eventId = eventIds[0] || '';
 
   // Project-level patch
   const projPatch = {
+    eventIds,
     eventId,
     clientId:  document.getElementById('cfg-clientId').value.trim(),
     tokenUrl:  document.getElementById('cfg-tokenUrl').value.trim(),
@@ -783,6 +789,9 @@ async function saveSettings() {
     }
     state.eventId = eventId;
     updateEventBadge(eventId);
+    // Refresh schema so the _matchedEventId condition dropdown reflects updated event IDs
+    _guestSchema = null;
+    await ensureGuestSchema();
     toast('Settings saved', 'success');
   } catch(e) { toast('Failed to save', 'error'); }
 }
@@ -894,16 +903,20 @@ function renderEventItems(events) {
 }
 
 function useEventId(id, name) {
-  state.eventId = id;
-  updateEventBadge(id);
-  // Pre-fill settings
+  // Navigate to Settings first, then append the selected event ID if not already listed
   document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelector('[data-page="settings"]').classList.add('active');
   document.getElementById('page-settings').classList.add('active');
   loadSettings().then(() => {
-    document.getElementById('cfg-eventId').value = id;
-    toast(`Event "${name}" selected — save to confirm`, 'info');
+    const ta = document.getElementById('cfg-eventIds');
+    const existing = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
+    if (!existing.includes(id)) {
+      ta.value = [...existing, id].join('\n');
+    }
+    state.eventId = state.eventId || id;
+    updateEventBadge(state.eventId);
+    toast(`Event "${name}" added — save to confirm`, 'info');
   });
 }
 
@@ -1899,16 +1912,46 @@ async function ensureGuestSchema() {
   try {
     const cfg = await fetch('/api/config').then(r => r.json());
     const eventId = cfg.eventId;
-    if (!eventId) return null;
-    // Fetch inferred field schema AND real option labels from upstream guestschema in parallel
-    const [schemaData, labelsData] = await Promise.all([
-      fetch(`/api/guests/${eventId}/schema`).then(r => r.json()).catch(() => null),
-      fetch(`/api/guests/${eventId}/optionlabels`).then(r => r.json()).catch(() => null),
-    ]);
-    _guestSchema = {
-      ...(schemaData || {}),
-      labelMap: labelsData?.labelMap || {},
-    };
+    if (!eventId) {
+      // Even with no event configured, still build a minimal schema so _matchedEventId
+      // is available in the rule editor if event IDs exist on the project
+      _guestSchema = { fields: {}, labelMap: {} };
+    } else {
+      // Fetch inferred field schema AND real option labels from upstream guestschema in parallel
+      const [schemaData, labelsData] = await Promise.all([
+        fetch(`/api/guests/${eventId}/schema`).then(r => r.json()).catch(() => null),
+        fetch(`/api/guests/${eventId}/optionlabels`).then(r => r.json()).catch(() => null),
+      ]);
+      _guestSchema = {
+        ...(schemaData || {}),
+        labelMap: labelsData?.labelMap || {},
+      };
+    }
+
+    // ── Inject synthetic _matchedEventId field ────────────────────────────────
+    // This allows routing rules to branch on which event a scanned guest came from.
+    // The active project's event IDs become the choice options.
+    const proj = _projects.find(p => p.id === _activeProjectId);
+    const projEventIds = proj?.eventIds?.length
+      ? proj.eventIds
+      : (proj?.eventId ? [proj.eventId] : []);
+
+    if (projEventIds.length) {
+      if (!_guestSchema.fields) _guestSchema.fields = {};
+      if (!_guestSchema.labelMap) _guestSchema.labelMap = {};
+      _guestSchema.fields['_matchedEventId'] = {
+        type: 'choice',
+        values: projEventIds.map(id => ({ value: id, count: 0 })),
+        totalGuests: 0,
+        synthetic: true,
+      };
+      // Seed labels as short UUID prefix; Settings "Use this →" can add real names later
+      for (const id of projEventIds) {
+        if (!_guestSchema.labelMap[id]) {
+          _guestSchema.labelMap[id] = `Event ${id.slice(0, 8)}…`;
+        }
+      }
+    }
   } catch(e) { console.warn('Schema load failed:', e); }
   return _guestSchema;
 }
@@ -1931,13 +1974,19 @@ function conditionSummary(c, schema) {
   let valLabel = c.value;
   if (field?.type === 'choice') {
     valLabel = schema?.labelMap?.[c.value]
-      || (() => { const e = field.values?.find(e => e.value === c.value); return e ? `${c.value.slice(0,8)}… (${e.count} guests)` : c.value; })();
+      || (() => {
+           const e = field.values?.find(e => e.value === c.value);
+           return e
+             ? (field.synthetic ? `Event ${c.value.slice(0,8)}…` : `${c.value.slice(0,8)}… (${e.count} guests)`)
+             : c.value.slice(0,8) + '…';
+         })();
   } else if (field?.type === 'boolean') {
     valLabel = c.value;
   }
   const opLabel = { eq: '=', neq: '≠', contains: '∋', exists: '∃', true: '= true', false: '= false' }[c.op] || c.op;
-  if (c.op === 'exists' || c.op === 'true' || c.op === 'false') return `${c.attr} ${opLabel}`;
-  return `${c.attr} ${opLabel} "${valLabel}"`;
+  const attrLabel = c.attr === '_matchedEventId' ? 'Matched Event' : c.attr;
+  if (c.op === 'exists' || c.op === 'true' || c.op === 'false') return `${attrLabel} ${opLabel}`;
+  return `${attrLabel} ${opLabel} "${valLabel}"`;
 }
 
 // ── Routing Rules CRUD ────────────────────────────────────────────────────────
@@ -2034,10 +2083,19 @@ function renderRuleConditions(conds) {
   const el = document.getElementById('rule-conditions-list');
 
   // Build field options for attribute select
+  // _matchedEventId is a synthetic field — always show it at the top if the project has >1 event
   let fieldOpts = '<option value="">— field —</option>';
+  if (schema?.fields?.['_matchedEventId']) {
+    fieldOpts += `<optgroup label="Event Routing">` +
+      `<option value="_matchedEventId">_matchedEventId (Matched Event)</option>` +
+      `</optgroup>`;
+  }
   if (schema?.fields) {
     const grouped = { boolean: [], choice: [], text: [] };
-    for (const [k, f] of Object.entries(schema.fields)) grouped[f.type]?.push(k);
+    for (const [k, f] of Object.entries(schema.fields)) {
+      if (k === '_matchedEventId') continue; // already pinned above
+      grouped[f.type]?.push(k);
+    }
     if (grouped.boolean.length) {
       fieldOpts += `<optgroup label="Boolean">` + grouped.boolean.sort().map(k => `<option value="${k}">${k}</option>`).join('') + `</optgroup>`;
     }
@@ -2562,10 +2620,11 @@ async function switchProject(projectId) {
     _badgeCache.images = {};
     _badgeCache.ready = false;
     _guestSchema = null; // invalidate schema cache — new project has a different event
-    // Update event ID from project
-    if (data.eventId) {
-      state.eventId = data.eventId;
-      updateEventBadge(data.eventId);
+    // Update event ID from project (use first event ID for badge display)
+    const firstEventId = data.eventIds?.[0] || data.eventId || '';
+    if (firstEventId) {
+      state.eventId = firstEventId;
+      updateEventBadge(firstEventId);
     }
     // Reload badge config AND guest schema in parallel — schema drives option labels
     // and condition counts in the rule editor, so it must be fresh before any re-render
@@ -2608,7 +2667,7 @@ function renderProjectList() {
     return `<div class="project-row ${isActive ? 'is-active' : ''}">
       <div class="project-row-info">
         <div class="project-row-name">${escHtml(p.name)}${isActive ? ' <span style="font-size:10px;color:var(--accent);font-weight:600;">ACTIVE</span>' : ''}</div>
-        <div class="project-row-meta">Event: ${p.eventId || '—'} · Created: ${p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '—'}</div>
+        <div class="project-row-meta">${(() => { const ids = p.eventIds?.length ? p.eventIds : (p.eventId ? [p.eventId] : []); return ids.length === 1 ? `Event: ${ids[0].slice(0,8)}…` : ids.length > 1 ? `Events: ${ids.length} configured` : 'No event'; })()}  · Created: ${p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '—'}</div>
       </div>
       <div class="project-row-actions">
         ${!isActive ? `<button class="btn btn-primary" style="font-size:11px;padding:4px 10px;" onclick="switchProjectFromModal('${p.id}')">Use</button>` : ''}
@@ -2628,18 +2687,19 @@ async function switchProjectFromModal(id) {
 
 async function createProject() {
   const name = document.getElementById('new-project-name').value.trim();
-  const eventId = document.getElementById('new-project-eventid').value.trim();
+  const eventIds = document.getElementById('new-project-eventids').value
+    .split('\n').map(s => s.trim()).filter(Boolean);
   if (!name) { toast('Enter a project name', 'error'); return; }
   try {
     const res = await fetch('/api/projects', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, eventId }),
+      body: JSON.stringify({ name, eventIds, eventId: eventIds[0] || '' }),
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
     _projects.push(data.project);
     document.getElementById('new-project-name').value = '';
-    document.getElementById('new-project-eventid').value = '';
+    document.getElementById('new-project-eventids').value = '';
     renderProjectSelect();
     renderProjectList();
     toast(`Project "${name}" created`, 'success');
@@ -2687,7 +2747,8 @@ function openRenameProject(id) {
   if (!project) return;
   _renamingProjectId = id;
   document.getElementById('rename-project-name').value = project.name;
-  document.getElementById('rename-project-eventid').value = project.eventId || '';
+  const ids = project.eventIds?.length ? project.eventIds : (project.eventId ? [project.eventId] : []);
+  document.getElementById('rename-project-eventids').value = ids.join('\n');
   document.getElementById('project-rename-popover').style.display = 'flex';
   document.getElementById('rename-project-name').focus();
 }
@@ -2697,12 +2758,14 @@ function closeRenamePopover() {
 }
 async function confirmRenameProject() {
   const name = document.getElementById('rename-project-name').value.trim();
-  const eventId = document.getElementById('rename-project-eventid').value.trim();
+  const eventIds = document.getElementById('rename-project-eventids').value
+    .split('\n').map(s => s.trim()).filter(Boolean);
+  const eventId = eventIds[0] || '';
   if (!name || !_renamingProjectId) return;
   try {
     const res = await fetch(`/api/projects/${_renamingProjectId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, eventId }),
+      body: JSON.stringify({ name, eventIds, eventId }),
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
@@ -2712,10 +2775,13 @@ async function confirmRenameProject() {
     renderProjectSelect();
     renderProjectList();
     toast(`Project renamed to "${name}"`, 'success');
-    // If active project was renamed, update event ID
+    // If active project was renamed, update event ID display
     if (_renamingProjectId === _activeProjectId && eventId !== state.eventId) {
       state.eventId = eventId;
       updateEventBadge(eventId);
+      // Refresh schema so _matchedEventId options reflect new event IDs
+      _guestSchema = null;
+      ensureGuestSchema();
     }
   } catch(e) { toast(`Rename failed: ${e.message}`, 'error'); }
 }
@@ -2966,12 +3032,13 @@ async function deleteKioskStation(id) {
       </div>
       <div style="padding:16px 20px;">
         <!-- Create new -->
-        <div style="display:flex;gap:8px;margin-bottom:16px;">
+        <div style="display:flex;gap:8px;margin-bottom:16px;align-items:flex-start;">
           <input id="new-project-name" class="form-input" placeholder="New project name…" style="flex:1;"
             onkeydown="if(event.key==='Enter') createProject()"/>
-          <input id="new-project-eventid" class="form-input" placeholder="Event ID (optional)" style="width:160px;"
-            onkeydown="if(event.key==='Enter') createProject()"/>
-          <button class="btn btn-primary" onclick="createProject()">+ Create</button>
+          <textarea id="new-project-eventids" class="form-input"
+            placeholder="Event IDs (one per line)"
+            style="width:180px;font-size:11px;font-family:var(--font-mono);resize:none;height:54px;line-height:1.5;"></textarea>
+          <button class="btn btn-primary" onclick="createProject()" style="flex-shrink:0;align-self:flex-start;">+ Create</button>
         </div>
         <!-- List -->
         <div class="project-list" id="project-list-container"></div>
@@ -2984,7 +3051,10 @@ async function deleteKioskStation(id) {
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px;width:380px;max-width:94vw;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
       <div style="font-size:14px;font-weight:700;margin-bottom:12px;">Rename Project</div>
       <input id="rename-project-name" class="form-input" style="margin-bottom:8px;width:100%;" placeholder="Project name"/>
-      <input id="rename-project-eventid" class="form-input" style="margin-bottom:14px;width:100%;" placeholder="Event ID"/>
+      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Event IDs (one per line)</label>
+      <textarea id="rename-project-eventids" class="form-input"
+        style="margin-bottom:14px;width:100%;font-size:11px;font-family:var(--font-mono);resize:vertical;height:72px;line-height:1.6;"
+        placeholder="One Event UUID per line"></textarea>
       <div style="display:flex;gap:8px;justify-content:flex-end;">
         <button class="btn btn-ghost" onclick="closeRenamePopover()">Cancel</button>
         <button class="btn btn-primary" onclick="confirmRenameProject()">Save</button>

@@ -58,6 +58,15 @@ function loadProjects() {
   return [];
 }
 function saveProjects(p) { fs.writeFileSync(PROJECTS_PATH, JSON.stringify(p, null, 2)); }
+
+// Normalise single eventId vs eventIds array — handles legacy records transparently.
+// Always returns a non-empty array of UUIDs, or [] if none configured.
+function getProjectEventIds(project) {
+  if (Array.isArray(project?.eventIds) && project.eventIds.length > 0) return project.eventIds;
+  if (project?.eventId) return [project.eventId];
+  return [];
+}
+
 function projectDir(id)        { return path.join(DATA_DIR, 'projects', id); }
 function projectConfigPath(id) { return path.join(projectDir(id), 'badge-config.json'); }
 function projectImagesDir(id)  { return path.join(projectDir(id), 'badge-images'); }
@@ -169,11 +178,16 @@ app.get('/api/projects', (req, res) => {
 });
 
 app.post('/api/projects', (req, res) => {
-  const { name, eventId='' } = req.body;
+  const { name } = req.body;
   if (!name?.trim()) return res.status(400).json({ error:'name required' });
+  // Accept either eventIds[] (new) or eventId string (legacy) from the client
+  const eventIds = Array.isArray(req.body.eventIds)
+    ? req.body.eventIds.map(s => (s||'').trim()).filter(Boolean)
+    : (req.body.eventId ? [req.body.eventId.trim()] : []);
+  const eventId = eventIds[0] || '';
   const id = uuidv4();
   const { clientId='', clientSecret='', tokenUrl='', apiBase='' } = req.body;
-  const project = { id, name:name.trim(), eventId, clientId, clientSecret, tokenUrl, apiBase, createdAt:new Date().toISOString() };
+  const project = { id, name:name.trim(), eventId, eventIds, clientId, clientSecret, tokenUrl, apiBase, createdAt:new Date().toISOString() };
   ensureProjectDirs(id);
   const projects = loadProjects();
   projects.push(project);
@@ -186,7 +200,18 @@ app.patch('/api/projects/:id', (req, res) => {
   const idx = projects.findIndex(p => p.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error:'not found' });
   if (req.body.name !== undefined) projects[idx].name = req.body.name.trim();
-  if (req.body.eventId !== undefined) projects[idx].eventId = req.body.eventId;
+  // Accept either eventIds[] (new) or eventId string (legacy); keep both fields in sync
+  if (req.body.eventIds !== undefined) {
+    const ids = Array.isArray(req.body.eventIds)
+      ? req.body.eventIds.map(s => (s||'').trim()).filter(Boolean)
+      : [req.body.eventIds].map(s => (s||'').trim()).filter(Boolean);
+    projects[idx].eventIds = ids;
+    projects[idx].eventId  = ids[0] || '';
+  } else if (req.body.eventId !== undefined) {
+    const id0 = (req.body.eventId || '').trim();
+    projects[idx].eventId  = id0;
+    projects[idx].eventIds = id0 ? [id0] : [];
+  }
   if (req.body.clientId !== undefined) projects[idx].clientId = req.body.clientId;
   if (req.body.clientSecret !== undefined) projects[idx].clientSecret = req.body.clientSecret;
   if (req.body.tokenUrl !== undefined) projects[idx].tokenUrl = req.body.tokenUrl;
@@ -232,8 +257,11 @@ app.post('/api/projects/active', (req, res) => {
   if (!project) return res.status(404).json({ error:'not found' });
   config.activeProjectId = projectId;
   saveConfig(config);
-  res.json({ ok:true, activeProjectId:projectId, eventId:project.eventId,
-    clientId:project.clientId||'', tokenUrl:project.tokenUrl||'', apiBase:project.apiBase||'',
+  const eventIds = getProjectEventIds(project);
+  res.json({ ok:true, activeProjectId:projectId,
+    eventId:  project.eventId,
+    eventIds,
+    clientId: project.clientId||'', tokenUrl:project.tokenUrl||'', apiBase:project.apiBase||'',
     hasSecret:!!(project.clientSecret) });
 });
 
@@ -662,41 +690,54 @@ app.post('/api/kiosk/scan', async (req, res) => {
     const { apiBase } = getEffectiveCredentials(pid);
     const projects = loadProjects();
     const project = projects.find(p => p.id === pid);
-    const eventId = project?.eventId;
-    if (!eventId) return res.status(400).json({ error: 'no event configured' });
+    const eventIds = getProjectEventIds(project);
+    if (!eventIds.length) return res.status(400).json({ error: 'no event configured' });
 
     let scanInput = (req.body.scan || '').trim();
     if (config.qwertyCorrection && scanInput) scanInput = compensateQwerty(scanInput);
     if (!scanInput) return res.status(400).json({ error: 'scan value required' });
 
-    const base = `${apiBase}/_gw/s-events-guests/external-api/events/${eventId}/guests`;
-
-    // 1. Try direct lookup by ID
+    // Try each event ID in order — stop at the first that returns a matching guest
     let guest = null;
-    try {
-      const dr = await fetch(`${base}/${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}` } });
-      if (dr.ok) {
-        const g = await dr.json();
-        guest = Array.isArray(g) ? g[0] : (g?.id || g?.uid ? g : null);
-      }
-    } catch(e) {}
+    let matchedEventId = null;
 
-    // 2. Try filter[uid] — but only accept an EXACT uid match, never fall back to first result
-    if (!guest) {
-      const fr = await fetch(`${base}?filter[uid]=${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}`, Range: 'guests 0-0' } });
-      if (fr.ok) {
-        const gs = await fr.json();
-        const arr = Array.isArray(gs) ? gs : [];
-        guest = arr.find(g => {
-          const u = g.uid || g.id || (g.attributes || g.properties || {}).uid || '';
-          return u === scanInput || u.toLowerCase() === scanInput.toLowerCase();
-        }) || null; // NO fallback to arr[0] — must be exact match
+    for (const eid of eventIds) {
+      const base = `${apiBase}/_gw/s-events-guests/external-api/events/${eid}/guests`;
+
+      // 1. Try direct lookup by ID
+      try {
+        const dr = await fetch(`${base}/${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}` } });
+        if (dr.ok) {
+          const g = await dr.json();
+          const found = Array.isArray(g) ? g[0] : (g?.id || g?.uid ? g : null);
+          if (found) { guest = found; matchedEventId = eid; break; }
+        }
+      } catch(e) {}
+
+      // 2. Try filter[uid] — only accept EXACT uid match, never fall back to first result
+      if (!guest) {
+        try {
+          const fr = await fetch(`${base}?filter[uid]=${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}`, Range: 'guests 0-0' } });
+          if (fr.ok) {
+            const gs = await fr.json();
+            const arr = Array.isArray(gs) ? gs : [];
+            const found = arr.find(g => {
+              const u = g.uid || g.id || (g.attributes || g.properties || {}).uid || '';
+              return u === scanInput || u.toLowerCase() === scanInput.toLowerCase();
+            }) || null;
+            if (found) { guest = found; matchedEventId = eid; break; }
+          }
+        } catch(e) {}
       }
     }
 
     if (!guest) return res.json({ result: 'not_found' });
 
     const attrs = guest.attributes || guest.properties || {};
+
+    // Inject synthetic attribute so badge routing rules can match on which event was matched
+    attrs._matchedEventId = matchedEventId;
+
     const status = guest.status || attrs.status || '';
     const isEligible = status === 'REGISTERED' || status === 'PENDING';
 
@@ -710,12 +751,15 @@ app.post('/api/kiosk/scan', async (req, res) => {
     const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
     const rev = guest.revision || attrs.revision;
     if (rev) headers['If-Match'] = rev;
-    const pr = await fetch(`${base}/${guest.id}`, { method: 'PATCH', headers, body: JSON.stringify({ attributes: patchAttrs }) });
+    // Check in against the event where the guest was found
+    const checkinBase = `${apiBase}/_gw/s-events-guests/external-api/events/${matchedEventId}/guests`;
+    const pr = await fetch(`${checkinBase}/${guest.id}`, { method: 'PATCH', headers, body: JSON.stringify({ attributes: patchAttrs }) });
     if (!pr.ok) throw new Error(`Check-in failed: ${pr.status}`);
 
     const badgeCfg = loadProjectBadgeConfig(pid);
     res.json({
       result: 'success',
+      matchedEventId,
       guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', id: guest.id, attributes: attrs },
       badgeConfig: { templates: badgeCfg.templates, rules: badgeCfg.rules, fallback: badgeCfg.fallback },
     });
