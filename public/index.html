@@ -964,8 +964,10 @@ function clearScan() {
 }
 
 async function lookupGuest(uid) {
-  const eventId = state.eventId;
-  if (!eventId) {
+  const proj         = _projects.find(p => p.id === _activeProjectId);
+  const projEventIds = proj?.eventIds?.length ? proj.eventIds : (proj?.eventId ? [proj.eventId] : []);
+
+  if (!projEventIds.length) {
     toast('No Event ID configured. Go to Settings.', 'error');
     document.getElementById('scan-status').textContent = '✕ No event';
     return;
@@ -975,11 +977,33 @@ async function lookupGuest(uid) {
   document.getElementById('guest-result').innerHTML = '<div class="empty"><div class="spinner"></div></div>';
 
   try {
-    const r = await fetch(`/api/guests/${encodeURIComponent(eventId)}?scan=${encodeURIComponent(uid)}`);
-    const data = await r.json();
+    let guest = null;
+    let matchedEventId = null;
 
-    const guests = Array.isArray(data) ? data : (data.data || []);
-    if (!guests.length) {
+    if (projEventIds.length === 1) {
+      // Single event — direct lookup first, then filter[uid]
+      const eid  = projEventIds[0];
+      const r    = await fetch(`/api/guests/${encodeURIComponent(eid)}?scan=${encodeURIComponent(uid)}`);
+      const data = await r.json();
+      const arr  = Array.isArray(data) ? data : (data.data || []);
+      if (arr.length) { guest = arr[0]; matchedEventId = eid; }
+    } else {
+      // Multi-event — use filter[uid] against all events in parallel (event-scoped)
+      const results = await Promise.all(
+        projEventIds.map(async eid => {
+          try {
+            const r    = await fetch(`/api/guests/${encodeURIComponent(eid)}?scan=${encodeURIComponent(uid)}`);
+            const data = await r.json();
+            const arr  = Array.isArray(data) ? data : (data.data || []);
+            return arr.length ? { guest: arr[0], matchedEventId: eid } : null;
+          } catch(e) { return null; }
+        })
+      );
+      const hit = results.find(r => r !== null);
+      if (hit) { guest = hit.guest; matchedEventId = hit.matchedEventId; }
+    }
+
+    if (!guest) {
       document.getElementById('guest-result').innerHTML = `
         <div class="empty">
           <div class="icon" style="color:var(--red);">✕</div>
@@ -990,11 +1014,20 @@ async function lookupGuest(uid) {
       return;
     }
 
-    const guest = guests[0];
+    // Inject matched event so badge routing works the same as on the kiosk
+    const attrs = guest.attributes || guest.properties || {};
+    attrs._matchedEventId = matchedEventId;
+    if (guest.attributes) guest.attributes = attrs;
+    else guest.properties = attrs;
+
+    // Keep state.eventId pointing at the matched event for check-in calls
+    state.eventId = matchedEventId;
+    updateEventBadge(matchedEventId);
+
     state.currentGuest = guest;
     renderGuestCard(guest);
     document.getElementById('scan-status').textContent = '✓ Found';
-    addLog(`Found: ${guest.attributes?.contact_firstName || ''} ${guest.attributes?.contact_lastName || ''} (${uid})`, 'info');
+    addLog(`Found: ${attrs.contact_firstName || ''} ${attrs.contact_lastName || ''} (${uid}) [event: ${matchedEventId?.slice(0,8)}…]`, 'info');
   } catch(e) {
     document.getElementById('guest-result').innerHTML = `<div class="empty"><p style="color:var(--red);">Error: ${e.message}</p></div>`;
     document.getElementById('scan-status').textContent = '✕ Error';
@@ -1026,18 +1059,43 @@ document.getElementById('search-input').addEventListener('keydown', e => {
 });
 
 async function searchGuests(term) {
-  const eventId = state.eventId;
-  if (!eventId) {
+  const proj         = _projects.find(p => p.id === _activeProjectId);
+  const projEventIds = proj?.eventIds?.length ? proj.eventIds : (proj?.eventId ? [proj.eventId] : []);
+  if (!projEventIds.length) {
     document.getElementById('search-status').textContent = '✕ No event';
     return;
   }
   try {
-    const r = await fetch(`/api/guests/${encodeURIComponent(eventId)}?search=${encodeURIComponent(term)}`);
-    const guests = await r.json();
-    const box = document.getElementById('search-results');
+    // Search all events in parallel, tag each result with its source event
+    const perEvent = await Promise.all(
+      projEventIds.map(async eid => {
+        try {
+          const r = await fetch(`/api/guests/${encodeURIComponent(eid)}?search=${encodeURIComponent(term)}`);
+          const data = await r.json();
+          const arr = Array.isArray(data) ? data : [];
+          // Inject _matchedEventId so routing works when guest is selected
+          arr.forEach(g => {
+            const a = g.attributes || g.properties || {};
+            a._matchedEventId = eid;
+            if (g.attributes) g.attributes = a; else g.properties = a;
+          });
+          return arr;
+        } catch(e) { return []; }
+      })
+    );
+    // Merge, deduplicate by guest id
+    const seen   = new Set();
+    const guests = perEvent.flat().filter(g => {
+      const id = g.id || g.uid;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+
+    const box    = document.getElementById('search-results');
     const status = document.getElementById('search-status');
 
-    if (!Array.isArray(guests) || guests.length === 0) {
+    if (!guests.length) {
       status.textContent = '✕ No matches';
       box.style.display = 'none';
       box.innerHTML = '';
@@ -1052,9 +1110,9 @@ async function searchGuests(term) {
       const lname = a.contact_lastName || '';
       const company = a.contact_x_companyName || '—';
       const email = a.contact_email || a.email || '';
-      const uid = g.uid || g.id || '';
       const checkedin = a.guest_x_checkedin === true || (a.guest_x_checkedinat && a.guest_x_checkedinat !== false && a.guest_x_checkedinat !== 'false' && a.guest_x_checkedinat !== '');
       const status_val = a.status || g.status || '';
+      const evLabel = _eventNameCache[a._matchedEventId] || a._matchedEventId?.slice(0,8) || '';
       return `<div onclick="selectSearchResult(${i})" data-idx="${i}" style="
         padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border);
         display:flex; justify-content:space-between; align-items:center;
@@ -1062,7 +1120,7 @@ async function searchGuests(term) {
       " onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background=''">
         <div>
           <div style="font-weight:600; color:var(--text);">${fname} ${lname}</div>
-          <div style="font-size:12px; color:var(--muted); font-family:var(--font-mono);">${company}${email ? ' · ' + email : ''}</div>
+          <div style="font-size:12px; color:var(--muted); font-family:var(--font-mono);">${company}${email ? ' · ' + email : ''}${evLabel ? ' · <span style="color:var(--accent)">' + escHtml(evLabel) + '</span>' : ''}</div>
         </div>
         <div style="text-align:right; flex-shrink:0; margin-left:12px;">
           ${checkedin ? '<span class="badge badge-green" style="font-size:10px;">✓ In</span>' : '<span class="badge badge-orange" style="font-size:10px;">Pending</span>'}
@@ -1071,7 +1129,6 @@ async function searchGuests(term) {
       </div>`;
     }).join('');
 
-    // Store results on the element for click handler
     box._searchResults = guests;
   } catch(e) {
     document.getElementById('search-status').textContent = '✕ Error';
@@ -1079,21 +1136,27 @@ async function searchGuests(term) {
 }
 
 function selectSearchResult(idx) {
-  const box = document.getElementById('search-results');
+  const box    = document.getElementById('search-results');
   const guests = box._searchResults || [];
-  const guest = guests[idx];
+  const guest  = guests[idx];
   if (!guest) return;
+
+  // Update state.eventId to the event this guest was found in
+  const matchedEid = (guest.attributes || guest.properties || {})._matchedEventId;
+  if (matchedEid) {
+    state.eventId = matchedEid;
+    updateEventBadge(matchedEid);
+  }
+
   state.currentGuest = guest;
   renderGuestCard(guest);
-  // Clear search UI
-  document.getElementById('search-input').value = '';
+  document.getElementById('search-input').value   = '';
   document.getElementById('search-status').textContent = '';
   box.style.display = 'none';
-  box.innerHTML = '';
-  // Scroll guest card into view
+  box.innerHTML     = '';
   document.getElementById('guest-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   const a = guest.attributes || guest.properties || {};
-  addLog(`Found: ${a.contact_firstName || ''} ${a.contact_lastName || ''} (search)`, 'info');
+  addLog(`Found: ${a.contact_firstName || ''} ${a.contact_lastName || ''} (search, event: ${matchedEid?.slice(0,8) || '?'}…)`, 'info');
 }
 
 function guestAttr(guest, key) {
@@ -2437,15 +2500,37 @@ function evalCondition(cond, attrs) {
 }
 
 function selectBadgeTemplate(guest) {
-  const attrs = guest.attributes || guest.properties || {};
-  const rules = loadRules();
+  const attrs     = guest.attributes || guest.properties || {};
+  const groups    = loadEventGroups();
+  const globalRules = loadRules();
+  const fallback  = getFallbackTemplate();
 
-  for (const rule of rules) {
+  function evalConds(rule) {
     const results = rule.conditions.map(c => evalCondition(c, attrs));
-    const match = rule.logic === 'OR' ? results.some(Boolean) : results.every(Boolean);
-    if (match) return rule.template;
+    return rule.logic === 'OR' ? results.some(Boolean) : results.every(Boolean);
   }
-  return getFallbackTemplate();
+  function evalRuleList(rules) {
+    for (const rule of (rules || [])) {
+      if (evalConds(rule)) return rule.template;
+    }
+    return null;
+  }
+
+  // 1. Event-scoped group (requires _matchedEventId to be set on attrs)
+  const matchedEventId = attrs._matchedEventId;
+  if (matchedEventId && groups.length) {
+    const group = groups.find(g => g.eventId === matchedEventId);
+    if (group) {
+      const key = evalRuleList(group.rules);
+      if (key) return key;
+    }
+  }
+
+  // 2. Global rules
+  const key = evalRuleList(globalRules);
+  if (key) return key;
+
+  return fallback;
 }
 
 // ── Font sizing ───────────────────────────────────────────────────────────────
