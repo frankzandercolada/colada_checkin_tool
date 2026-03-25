@@ -1171,7 +1171,8 @@ function renderGuestCard(guest) {
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           ${canCheckin ? `<button class="btn btn-primary" onclick="confirmCheckin()">✓ Check In + Print Badge</button>` : ''}
           ${checkedIn ? `<button class="btn btn-secondary" onclick="printBadge()">⎙ Reprint Badge</button>` : ''}
-      ${!checkedIn ? `<span id="badge-template-hint" style="font-size:11px;color:var(--muted);font-family:var(--font-mono);margin-left:8px;"></span>` : ''}
+          ${checkedIn ? `<button class="btn btn-ghost" style="color:var(--orange);" onclick="confirmUndoCheckin()">↺ Reset Check-in</button>` : ''}
+          ${!checkedIn ? `<span id="badge-template-hint" style="font-size:11px;color:var(--muted);font-family:var(--font-mono);margin-left:8px;"></span>` : ''}
           ${!isEligible && !checkedIn ? `<button class="btn btn-danger" onclick="showDeny()">✕ Deny (${status})</button>` : ''}
           <button class="btn btn-ghost" onclick="clearScan()">← Back</button>
         </div>
@@ -1284,7 +1285,65 @@ async function doCheckin(printAfter = true) {
   }
 }
 
-// ── Badge Templates ──────────────────────────────────────────────────────────
+// ── Reset check-in ────────────────────────────────────────────────────────────
+function confirmUndoCheckin() {
+  const guest = state.currentGuest;
+  if (!guest) return;
+  const fname = guestAttr(guest, 'contact_firstName') || '';
+  const lname = guestAttr(guest, 'contact_lastName') || '';
+  const name  = `${fname} ${lname}`.trim();
+
+  document.getElementById('confirm-content').innerHTML = `
+    <div style="text-align:center; margin-bottom:24px;">
+      <div style="font-size:40px; margin-bottom:12px;">↺</div>
+      <div style="font-size:22px; font-weight:800;">${name}</div>
+      <div style="color:var(--orange); font-size:13px; margin-top:8px;">This will reset the check-in status in Colada365.</div>
+    </div>
+    <p style="text-align:center; color:var(--muted); font-size:13px; margin-bottom:24px;">The guest will be marked as not checked in and can scan in again.</p>
+    <div style="display:flex; gap:10px; justify-content:center;">
+      <button class="btn btn-danger" onclick="undoCheckin()">↺ Reset Check-in</button>
+      <button class="btn btn-ghost" onclick="closeConfirm()">Cancel</button>
+    </div>`;
+  document.getElementById('confirm-box').className = 'confirm-box deny';
+  document.getElementById('confirm-overlay').style.display = 'flex';
+}
+
+async function undoCheckin() {
+  const guest = state.currentGuest;
+  if (!guest) return;
+  closeConfirm();
+
+  const fname   = guestAttr(guest, 'contact_firstName') || '';
+  const lname   = guestAttr(guest, 'contact_lastName') || '';
+  const name    = `${fname} ${lname}`.trim();
+  const guestId = guest.id || guest.uid;
+
+  try {
+    const r = await fetch(`/api/guests/${encodeURIComponent(state.eventId)}/${guestId}/undo-checkin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(guest),
+    });
+    const data = await r.json();
+    if (r.ok) {
+      toast(`↺ ${name} check-in reset`, 'info', 4000);
+      addLog(`Reset check-in: ${name}`, 'info');
+      // Update local state
+      const attrs = state.currentGuest.attributes || state.currentGuest.properties || {};
+      attrs.guest_x_checkedin    = false;
+      attrs.guest_x_checkedinat  = false;
+      if (state.currentGuest.attributes) state.currentGuest.attributes = attrs;
+      else state.currentGuest.properties = attrs;
+      renderGuestCard(state.currentGuest);
+    } else {
+      toast(`Reset failed: ${data.error || r.status}`, 'error');
+      addLog(`Reset failed: ${name} — ${data.error}`, 'err');
+    }
+  } catch(e) {
+    toast(`Error: ${e.message}`, 'error');
+    addLog(`Error: ${e.message}`, 'err');
+  }
+}
 // Matches Node-RED jimp-image node names → background PNG filenames
 // ══════════════════════════════════════════════════════════════════════════════
 // ── Dynamic Badge Template & Routing System ───────────────────────────────────

@@ -736,6 +736,24 @@ app.post('/api/guests/:eventId/:guestId/checkin', async (req, res) => {
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
+app.post('/api/guests/:eventId/:guestId/undo-checkin', async (req, res) => {
+  try {
+    const pid = getActiveProjectId();
+    const token = await getToken(pid);
+    const { apiBase } = getEffectiveCredentials(pid);
+    const guest = req.body;
+    const existingAttrs = guest.attributes || guest.properties || {};
+    const patchAttrs = { ...existingAttrs, guest_x_checkedin: false, guest_x_checkedinat: false };
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json', 'Cache-Control': 'no-cache' };
+    const rev = guest.revision || (guest.attributes || {}).revision;
+    if (rev) headers['If-Match'] = rev;
+    const r = await fetch(`${apiBase}/_gw/s-events-guests/external-api/events/${req.params.eventId}/guests/${req.params.guestId}`, { method: 'PATCH', headers, body: JSON.stringify({ attributes: patchAttrs }) });
+    const text = await r.text();
+    if (!r.ok) throw new Error(`API error ${r.status}: ${text.slice(0, 200)}`);
+    try { res.json(JSON.parse(text)); } catch(e) { res.json({ ok: true }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/guests/:eventId/:guestId/badge', async (req, res) => {
   try {
     const attrs = req.body.attributes||{};
