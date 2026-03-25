@@ -293,7 +293,9 @@
           <div class="card-title" style="margin:0;">Routing Rules</div>
           <button class="btn btn-primary" style="font-size:12px;" onclick="openRuleEditor()">+ New Rule</button>
         </div>
-        <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">Rules are evaluated top-to-bottom. First match wins. Drag to reorder.</p>
+        <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
+          Rules are grouped by event. First the active event's rules are evaluated top-to-bottom, then global rules.
+        </p>
         <div id="routing-rules-list"><!-- filled by JS --></div>
         <div style="margin-top:14px;">
           <label style="font-size:12px; color:var(--muted); display:flex; align-items:center; gap:10px;">
@@ -427,6 +429,14 @@
         <div class="form-group">
           <label class="form-label">Rule Name / Description</label>
           <input id="rule-name" class="form-input" type="text" placeholder="e.g. AWF + Stimmberechtigt"/>
+        </div>
+
+        <div class="form-group" style="margin-top:14px;">
+          <label class="form-label">Event Scope</label>
+          <select id="rule-event-scope" style="width:100%;background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-family:var(--font-mono);font-size:13px;padding:8px 10px;border-radius:6px;">
+            <option value="">— Global (all events) —</option>
+          </select>
+          <span class="hint">Rule is only evaluated when a guest is found in the selected event. Choose Global to apply across all events.</span>
         </div>
 
         <div style="margin-top:14px;">
@@ -1287,10 +1297,11 @@ const PT_PER_CM = 28.3465; // 1 cm = 28.3465 pt (PDF points)
 // server (badge-config.json + badge-images/*.txt) so any client gets the same
 // configuration. An in-memory cache avoids redundant fetches.
 const _badgeCache = {
-  templates: null,   // array or null (null = not yet loaded)
-  rules: null,
-  fallback: null,
-  images: {},        // { [key]: dataUrl }
+  templates:   null,
+  eventGroups: null,  // array of { eventId, rules[] } or null
+  rules:       null,
+  fallback:    null,
+  images: {},
   ready: false,
   _loadPromise: null,
 };
@@ -1303,9 +1314,10 @@ async function ensureBadgeConfigLoaded() {
     try {
       const res = await fetch('/api/badge-config');
       const data = await res.json();
-      if (data.templates) _badgeCache.templates = data.templates;
-      if (data.rules)     _badgeCache.rules     = data.rules;
-      if (data.fallback)  _badgeCache.fallback  = data.fallback;
+      if (data.templates)   _badgeCache.templates   = data.templates;
+      if (data.eventGroups) _badgeCache.eventGroups = data.eventGroups;
+      if (data.rules)       _badgeCache.rules       = data.rules;
+      if (data.fallback)    _badgeCache.fallback    = data.fallback;
 
       // If rules or templates were missing on disk (first run / new project),
       // write defaults back to the server NOW so the kiosk scan route always
@@ -1341,9 +1353,10 @@ async function _saveBadgeConfigToServer() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        templates: _badgeCache.templates || loadTemplates(),
-        rules:     _badgeCache.rules     || loadRules(),
-        fallback:  _badgeCache.fallback  || 'gv_gast',
+        templates:   _badgeCache.templates   || loadTemplates(),
+        eventGroups: _badgeCache.eventGroups || [],
+        rules:       _badgeCache.rules       || loadRules(),
+        fallback:    _badgeCache.fallback    || 'gv_gast',
       }),
     });
   } catch(e) { console.error('[badge-config] save error:', e.message); }
@@ -1352,11 +1365,12 @@ async function _saveBadgeConfigToServer() {
 // Force-refresh badge config from server (call after navigating back from badges page
 // or if you suspect stale data). Resets ready flag so ensureBadgeConfigLoaded re-fetches.
 async function refreshBadgeConfigFromServer() {
-  _badgeCache.templates = null;
-  _badgeCache.rules = null;
-  _badgeCache.fallback = null;
-  _badgeCache.images = {};
-  _badgeCache.ready = false;
+  _badgeCache.templates   = null;
+  _badgeCache.eventGroups = null;
+  _badgeCache.rules       = null;
+  _badgeCache.fallback    = null;
+  _badgeCache.images      = {};
+  _badgeCache.ready       = false;
   _badgeCache._loadPromise = null;
   await ensureBadgeConfigLoaded();
 }
@@ -1434,6 +1448,15 @@ function loadRules() {
 }
 function saveRules(rules) {
   _badgeCache.rules = rules;
+  _saveBadgeConfigToServer();
+}
+function loadEventGroups() {
+  return _badgeCache.eventGroups
+    ? JSON.parse(JSON.stringify(_badgeCache.eventGroups))
+    : [];
+}
+function saveEventGroups(groups) {
+  _badgeCache.eventGroups = groups;
   _saveBadgeConfigToServer();
 }
 function getFallbackTemplate() {
@@ -1514,17 +1537,24 @@ function renderTemplateList() {
 }
 
 function renderRoutingRulesList() {
-  const rules = loadRules();
-  const tpls = loadTemplates();
-  const el = document.getElementById('routing-rules-list');
-  if (!rules.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px;">No rules yet. Click + New Rule.</p>'; return; }
-  el.innerHTML = rules.map((r, i) => {
-    const tpl = tpls.find(t => t.key === r.template);
-    const condStr = r.conditions.map(c => conditionSummary(c, _guestSchema)).join(` ${r.logic} `);
-    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:var(--surface2);margin-bottom:8px;">
+  const tpls       = loadTemplates();
+  const groups     = loadEventGroups();
+  const globalRules = loadRules();
+  const el         = document.getElementById('routing-rules-list');
+  const schema     = _guestSchema;
+
+  function ruleRow(r, i, scope) {
+    // scope: 'global' or an eventId string
+    const tpl     = tpls.find(t => t.key === r.template);
+    const condStr = r.conditions.map(c => conditionSummary(c, schema)).join(` ${r.logic} `);
+    const isFirst = i === 0;
+    const isLast  = scope === 'global'
+      ? i === globalRules.length - 1
+      : i === (groups.find(g => g.eventId === scope)?.rules?.length || 1) - 1;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:var(--surface2);margin-bottom:6px;">
       <div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0;">
-        <button onclick="moveRule(${i},-1)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0;" ${i===0?'disabled':''}>▲</button>
-        <button onclick="moveRule(${i},1)"  style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0;" ${i===rules.length-1?'disabled':''}>▼</button>
+        <button onclick="moveRule('${scope}',${i},-1)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0;" ${isFirst?'disabled':''}>▲</button>
+        <button onclick="moveRule('${scope}',${i},1)"  style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0;" ${isLast?'disabled':''}>▼</button>
       </div>
       <div style="width:22px;height:22px;border-radius:50%;background:var(--accent-dim);color:var(--accent);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</div>
       <div style="flex:1;min-width:0;">
@@ -1533,11 +1563,40 @@ function renderRoutingRulesList() {
         <div style="font-size:11px;color:var(--accent);margin-top:2px;">→ ${tpl?.name || r.template}</div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;">
-        <button class="btn btn-secondary" style="font-size:11px;padding:4px 8px;" onclick="openRuleEditor(${i})">✎ Edit</button>
-        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;color:var(--red);" onclick="deleteRule(${i})">✕</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:4px 8px;" onclick="openRuleEditor('${scope}',${i})">✎ Edit</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;color:var(--red);" onclick="deleteRule('${scope}',${i})">✕</button>
       </div>
     </div>`;
-  }).join('');
+  }
+
+  function sectionHtml(title, scope, rules, accent) {
+    const addBtn = `<button class="btn btn-secondary" style="font-size:11px;" onclick="openRuleEditor('${scope}')">+ Add Rule</button>`;
+    const header = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;margin-top:14px;">
+      <div style="font-size:12px;font-weight:700;color:${accent};font-family:var(--font-mono);letter-spacing:0.05em;">${title}</div>
+      ${addBtn}
+    </div>`;
+    const body = rules.length
+      ? rules.map((r, i) => ruleRow(r, i, scope)).join('')
+      : `<div style="font-size:12px;color:var(--muted);padding:8px 0;">No rules — click Add Rule to create one.</div>`;
+    return header + body;
+  }
+
+  let html = '';
+
+  // Event-scoped groups
+  if (groups.length) {
+    for (const group of groups) {
+      const label = _guestSchema?.labelMap?.[group.eventId]
+        || `Event ${group.eventId.slice(0,8)}…`;
+      html += sectionHtml(`⬡ ${label}`, group.eventId, group.rules || [], 'var(--accent)');
+      html += '<div style="border-bottom:1px solid var(--border);margin:10px 0 4px;"></div>';
+    }
+  }
+
+  // Global rules
+  html += sectionHtml('🌐 Global (all events)', 'global', globalRules, 'var(--muted)');
+
+  el.innerHTML = html;
 }
 
 function populateFallbackSelect() {
@@ -1937,56 +1996,9 @@ async function ensureGuestSchema() {
       };
     }
 
-    // ── Inject synthetic _matchedEventId field ────────────────────────────────
-    // This allows routing rules to branch on which event a scanned guest came from.
-    // The active project's event IDs become the choice options.
-    const proj = _projects.find(p => p.id === _activeProjectId);
-    const projEventIds = proj?.eventIds?.length
-      ? proj.eventIds
-      : (proj?.eventId ? [proj.eventId] : []);
-
-    if (projEventIds.length) {
-      if (!_guestSchema.fields) _guestSchema.fields = {};
-      if (!_guestSchema.labelMap) _guestSchema.labelMap = {};
-      _guestSchema.fields['_matchedEventId'] = {
-        type: 'choice',
-        values: projEventIds.map(id => ({ value: id, count: 0 })),
-        totalGuests: 0,
-        synthetic: true,
-      };
-
-      // Seed short-UUID fallback labels immediately so the UI is usable
-      // even if the name resolution call below is slow or fails
-      for (const id of projEventIds) {
-        if (!_guestSchema.labelMap[id]) {
-          _guestSchema.labelMap[id] = `Event ${id.slice(0, 8)}…`;
-        }
-      }
-
-      // Resolve real event names from the API — replace fallback labels with actual names
-      try {
-        const namesRes = await fetch(
-          `/api/events/names?ids=${projEventIds.map(encodeURIComponent).join(',')}`
-        ).then(r => r.json()).catch(() => null);
-
-        if (namesRes?.names) {
-          for (const [id, name] of Object.entries(namesRes.names)) {
-            _guestSchema.labelMap[id] = name;
-          }
-          // Also update the values array labels so conditionSummary can use them
-          if (_guestSchema.fields['_matchedEventId']) {
-            _guestSchema.fields['_matchedEventId'].values =
-              projEventIds.map(id => ({
-                value: id,
-                count: 0,
-                label: namesRes.names[id] || `Event ${id.slice(0, 8)}…`,
-              }));
-          }
-        }
-      } catch(e) {
-        console.warn('Event name resolution failed:', e);
-      }
-    }
+    // NOTE: _matchedEventId is no longer injected as a schema field —
+    // event-based routing is now handled structurally via eventGroups,
+    // so it no longer needs to appear in the condition editor.
   } catch(e) { console.warn('Schema load failed:', e); }
   return _guestSchema;
 }
@@ -2025,20 +2037,44 @@ function conditionSummary(c, schema) {
 }
 
 // ── Routing Rules CRUD ────────────────────────────────────────────────────────
-let _editingRuleIdx = null;
+let _editingRuleIdx   = null;
+let _editingRuleScope = 'global'; // 'global' or an eventId string
 
-async function openRuleEditor(idx) {
-  _editingRuleIdx = (idx !== undefined) ? idx : null;
-  const rules = loadRules();
-  const r = (_editingRuleIdx !== null) ? rules[_editingRuleIdx] : null;
+async function openRuleEditor(scope, idx) {
+  _editingRuleScope = (scope !== undefined && scope !== null) ? scope : 'global';
+  _editingRuleIdx   = (idx   !== undefined && idx   !== null) ? idx   : null;
+
+  // Get the rule being edited (if any)
+  let r = null;
+  if (_editingRuleIdx !== null) {
+    if (_editingRuleScope === 'global') {
+      r = loadRules()[_editingRuleIdx];
+    } else {
+      const groups = loadEventGroups();
+      const group  = groups.find(g => g.eventId === _editingRuleScope);
+      r = group?.rules?.[_editingRuleIdx] || null;
+    }
+  }
 
   document.getElementById('rule-modal-title').textContent = r ? 'Edit Rule' : 'New Routing Rule';
-  document.getElementById('rule-name').value = r?.name || '';
+  document.getElementById('rule-name').value  = r?.name  || '';
   document.getElementById('rule-logic').value = r?.logic || 'AND';
 
-  populateRuleTemplateSelect(r?.template || '');
+  // Populate event scope dropdown from project's configured event IDs
+  const proj       = _projects.find(p => p.id === _activeProjectId);
+  const projEventIds = proj?.eventIds?.length ? proj.eventIds : (proj?.eventId ? [proj.eventId] : []);
+  const scopeSel   = document.getElementById('rule-event-scope');
+  const labelMap   = _guestSchema?.labelMap || {};
+  scopeSel.innerHTML = `<option value="">— Global (all events) —</option>` +
+    projEventIds.map(eid => {
+      const label = labelMap[eid] || `Event ${eid.slice(0,8)}…`;
+      const sel   = _editingRuleScope === eid ? 'selected' : '';
+      return `<option value="${eid}" ${sel}>${label}</option>`;
+    }).join('');
+  // Set global selection
+  if (_editingRuleScope === 'global') scopeSel.value = '';
 
-  // Load schema before rendering (non-blocking fallback if unavailable)
+  populateRuleTemplateSelect(r?.template || '');
   await ensureGuestSchema();
 
   const conds = r?.conditions || [ { attr:'', op:'eq', value:'' } ];
@@ -2118,17 +2154,10 @@ function renderRuleConditions(conds) {
   const el = document.getElementById('rule-conditions-list');
 
   // Build field options for attribute select
-  // _matchedEventId is a synthetic field — always show it at the top if the project has >1 event
   let fieldOpts = '<option value="">— field —</option>';
-  if (schema?.fields?.['_matchedEventId']) {
-    fieldOpts += `<optgroup label="Event Routing">` +
-      `<option value="_matchedEventId">_matchedEventId (Matched Event)</option>` +
-      `</optgroup>`;
-  }
   if (schema?.fields) {
     const grouped = { boolean: [], choice: [], text: [] };
     for (const [k, f] of Object.entries(schema.fields)) {
-      if (k === '_matchedEventId') continue; // already pinned above
       grouped[f.type]?.push(k);
     }
     if (grouped.boolean.length) {
@@ -2197,43 +2226,95 @@ function collectRuleConditions() {
 }
 
 function saveRuleModal() {
-  const name     = document.getElementById('rule-name').value.trim();
-  const logic    = document.getElementById('rule-logic').value;
-  const template = document.getElementById('rule-template-select').value;
+  const name       = document.getElementById('rule-name').value.trim();
+  const logic      = document.getElementById('rule-logic').value;
+  const template   = document.getElementById('rule-template-select').value;
+  const newScope   = document.getElementById('rule-event-scope').value || 'global';
   const conditions = collectRuleConditions();
 
-  if (!name) { toast('Rule name is required', 'error'); return; }
-  if (!template) { toast('Select a template', 'error'); return; }
+  if (!name)       { toast('Rule name is required', 'error'); return; }
+  if (!template)   { toast('Select a template', 'error'); return; }
   if (!conditions.length) { toast('Add at least one condition', 'error'); return; }
   if (conditions.some(c => !c.attr)) { toast('All conditions need an attribute name', 'error'); return; }
 
-  const rules = loadRules();
   const rule = { id: `r${Date.now()}`, name, logic, template, conditions };
 
-  if (_editingRuleIdx !== null) rules[_editingRuleIdx] = rule;
-  else rules.push(rule);
+  if (newScope === 'global') {
+    const rules = loadRules();
+    if (_editingRuleIdx !== null && _editingRuleScope === 'global') rules[_editingRuleIdx] = rule;
+    else rules.push(rule);
+    // If scope changed from an event group → remove from old group
+    if (_editingRuleIdx !== null && _editingRuleScope !== 'global') {
+      _removeRuleFromGroup(_editingRuleScope, _editingRuleIdx);
+    }
+    saveRules(rules);
+  } else {
+    const groups = loadEventGroups();
+    let group = groups.find(g => g.eventId === newScope);
+    if (!group) { group = { eventId: newScope, rules: [] }; groups.push(group); }
+    if (_editingRuleIdx !== null && _editingRuleScope === newScope) {
+      group.rules[_editingRuleIdx] = rule;
+    } else {
+      // If scope changed from another group/global → remove from old location
+      if (_editingRuleIdx !== null) {
+        if (_editingRuleScope === 'global') {
+          const gRules = loadRules();
+          gRules.splice(_editingRuleIdx, 1);
+          _badgeCache.rules = gRules;
+        } else {
+          _removeRuleFromGroup(_editingRuleScope, _editingRuleIdx);
+        }
+      }
+      group.rules.push(rule);
+    }
+    saveEventGroups(groups);
+  }
 
-  saveRules(rules);
   closeRuleModal();
   renderRoutingRulesList();
   toast(`✓ Rule "${name}" saved`, 'success');
 }
 
-function deleteRule(idx) {
-  const rules = loadRules();
-  if (!confirm(`Delete rule "${rules[idx].name}"?`)) return;
-  rules.splice(idx, 1);
-  saveRules(rules);
+function _removeRuleFromGroup(eventId, idx) {
+  const groups = loadEventGroups();
+  const group  = groups.find(g => g.eventId === eventId);
+  if (group) { group.rules.splice(idx, 1); _badgeCache.eventGroups = groups; }
+}
+
+function deleteRule(scope, idx) {
+  if (scope === 'global') {
+    const rules = loadRules();
+    if (!confirm(`Delete rule "${rules[idx].name}"?`)) return;
+    rules.splice(idx, 1);
+    saveRules(rules);
+  } else {
+    const groups = loadEventGroups();
+    const group  = groups.find(g => g.eventId === scope);
+    if (!group) return;
+    if (!confirm(`Delete rule "${group.rules[idx].name}"?`)) return;
+    group.rules.splice(idx, 1);
+    saveEventGroups(groups);
+  }
   renderRoutingRulesList();
   toast('Rule deleted', 'info');
 }
 
-function moveRule(idx, dir) {
-  const rules = loadRules();
-  const newIdx = idx + dir;
-  if (newIdx < 0 || newIdx >= rules.length) return;
-  [rules[idx], rules[newIdx]] = [rules[newIdx], rules[idx]];
-  saveRules(rules);
+function moveRule(scope, idx, dir) {
+  if (scope === 'global') {
+    const rules  = loadRules();
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= rules.length) return;
+    [rules[idx], rules[newIdx]] = [rules[newIdx], rules[idx]];
+    saveRules(rules);
+  } else {
+    const groups = loadEventGroups();
+    const group  = groups.find(g => g.eventId === scope);
+    if (!group) return;
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= group.rules.length) return;
+    [group.rules[idx], group.rules[newIdx]] = [group.rules[newIdx], group.rules[idx]];
+    saveEventGroups(groups);
+  }
   renderRoutingRulesList();
 }
 

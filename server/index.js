@@ -112,10 +112,56 @@ const DEFAULT_FALLBACK = 'gv_gast';
 function loadProjectBadgeConfigWithDefaults(id) {
   const cfg = loadProjectBadgeConfig(id);
   return {
-    templates: cfg.templates || DEFAULT_TEMPLATES,
-    rules:     cfg.rules     || DEFAULT_RULES,
-    fallback:  cfg.fallback  || DEFAULT_FALLBACK,
+    templates:   cfg.templates   || DEFAULT_TEMPLATES,
+    eventGroups: cfg.eventGroups || [],
+    rules:       cfg.rules       || DEFAULT_RULES,
+    fallback:    cfg.fallback    || DEFAULT_FALLBACK,
   };
+}
+
+// Shared routing engine — used by both /api/kiosk/scan and future endpoints.
+// Returns the template key to use for a given attrs object.
+function selectTemplateKey(attrs, badgeCfg) {
+  function evalCond(c, a) {
+    const raw = a[c.attr];
+    const sv  = String(raw ?? '').toLowerCase();
+    const cv  = String(c.value ?? '').toLowerCase();
+    switch(c.op) {
+      case 'eq':       return sv === cv;
+      case 'neq':      return sv !== cv;
+      case 'contains': return sv.includes(cv);
+      case 'exists':   return raw !== undefined && raw !== null && raw !== '';
+      case 'true':     return raw === true || sv === 'true';
+      case 'false':    return raw === false || sv === 'false';
+      default:         return false;
+    }
+  }
+  function evalRules(rules) {
+    for (const rule of (rules || [])) {
+      const results = rule.conditions.map(c => evalCond(c, attrs));
+      const match = rule.logic === 'OR' ? results.some(Boolean) : results.every(Boolean);
+      if (match) return rule.template;
+    }
+    return null;
+  }
+
+  const matchedEventId = attrs._matchedEventId;
+
+  // 1. Try event-scoped group first
+  if (matchedEventId && Array.isArray(badgeCfg.eventGroups)) {
+    const group = badgeCfg.eventGroups.find(g => g.eventId === matchedEventId);
+    if (group) {
+      const key = evalRules(group.rules);
+      if (key) return key;
+    }
+  }
+
+  // 2. Fall through to global rules
+  const key = evalRules(badgeCfg.rules);
+  if (key) return key;
+
+  // 3. Final fallback
+  return badgeCfg.fallback || DEFAULT_FALLBACK;
 }
 
 // ─── Migrate legacy badge-config.json ────────────────────────────────────────
@@ -315,9 +361,10 @@ app.post('/api/badge-config', (req, res) => {
     if (!id) return res.status(400).json({ error:'no active project' });
     const existing = loadProjectBadgeConfig(id);
     saveProjectBadgeConfig(id, {
-      templates: req.body.templates !== undefined ? req.body.templates : existing.templates,
-      rules:     req.body.rules     !== undefined ? req.body.rules     : existing.rules,
-      fallback:  req.body.fallback  !== undefined ? req.body.fallback  : existing.fallback,
+      templates:   req.body.templates   !== undefined ? req.body.templates   : existing.templates,
+      eventGroups: req.body.eventGroups !== undefined ? req.body.eventGroups : (existing.eventGroups || []),
+      rules:       req.body.rules       !== undefined ? req.body.rules       : existing.rules,
+      fallback:    req.body.fallback    !== undefined ? req.body.fallback    : existing.fallback,
     });
     res.json({ ok:true });
   } catch(e) { res.status(500).json({ error:e.message }); }
@@ -335,15 +382,18 @@ app.get('/api/kiosk/routing-debug', (req, res) => {
   res.json({
     activeProjectId: id,
     rawFromDisk: {
-      templatesCount: raw.templates?.length ?? null,
-      rulesCount:     raw.rules?.length     ?? null,
-      fallback:       raw.fallback          ?? null,
+      templatesCount:   raw.templates?.length    ?? null,
+      eventGroupsCount: raw.eventGroups?.length  ?? null,
+      rulesCount:       raw.rules?.length        ?? null,
+      fallback:         raw.fallback             ?? null,
     },
     resolvedForKiosk: {
-      templatesCount: resolved.templates.length,
-      rulesCount:     resolved.rules.length,
-      fallback:       resolved.fallback,
-      rules:          resolved.rules,
+      templatesCount:   resolved.templates.length,
+      eventGroupsCount: resolved.eventGroups.length,
+      rulesCount:       resolved.rules.length,
+      fallback:         resolved.fallback,
+      eventGroups:      resolved.eventGroups.map(g => ({ eventId: g.eventId, rulesCount: g.rules?.length || 0, rules: g.rules })),
+      globalRules:      resolved.rules,
     },
   });
 });
@@ -877,41 +927,13 @@ app.post('/api/kiosk/scan', async (req, res) => {
     if (!pr.ok) throw new Error(`Check-in failed: ${pr.status}`);
 
     const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
-
-    // ── Dry-run routing evaluation for diagnostics ─────────────────────────────
-    function evalCond(c, a) {
-      const raw = a[c.attr];
-      const sv  = String(raw ?? '').toLowerCase();
-      const cv  = String(c.value ?? '').toLowerCase();
-      switch(c.op) {
-        case 'eq':       return sv === cv;
-        case 'neq':      return sv !== cv;
-        case 'contains': return sv.includes(cv);
-        case 'exists':   return raw !== undefined && raw !== null && raw !== '';
-        case 'true':     return raw === true || sv === 'true';
-        case 'false':    return raw === false || sv === 'false';
-        default:         return false;
-      }
-    }
-    const routingTrace = (badgeCfg.rules || []).map(rule => {
-      const condResults = rule.conditions.map(c => ({
-        attr: c.attr, op: c.op, condValue: c.value,
-        attrValue: attrs[c.attr], attrType: typeof attrs[c.attr],
-        pass: evalCond(c, attrs),
-      }));
-      const match = rule.logic === 'OR'
-        ? condResults.some(r => r.pass)
-        : condResults.every(r => r.pass);
-      return { rule: rule.name, template: rule.template, match, conditions: condResults };
-    });
-    const matchedRule = routingTrace.find(r => r.match);
+    const selectedTemplate = selectTemplateKey(attrs, badgeCfg);
 
     res.json({
       result: 'success',
       matchedEventId,
       guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', id: guest.id, attributes: attrs },
-      badgeConfig: { templates: badgeCfg.templates, rules: badgeCfg.rules, fallback: badgeCfg.fallback },
-      _routingTrace: { selectedTemplate: matchedRule?.template || badgeCfg.fallback, rules: routingTrace },
+      badgeConfig: { templates: badgeCfg.templates, eventGroups: badgeCfg.eventGroups, rules: badgeCfg.rules, fallback: badgeCfg.fallback, _selectedTemplate: selectedTemplate },
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

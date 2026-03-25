@@ -1242,38 +1242,57 @@ function evalCondition(c, attrs) {
   }
 }
 
-function selectTemplate(guest, rules, fallback) {
+function selectTemplate(guest, badgeConfig) {
   // Support both nested (.attributes / .properties) and flat guest objects
   const attrs = (Object.keys(guest.attributes || {}).length > 0)
     ? guest.attributes
     : (guest.properties || guest.attributes || {});
 
+  const matchedEventId = attrs._matchedEventId;
+  const fallback = badgeConfig.fallback;
+
   console.group('[Badge Routing]');
   console.log('Attrs keys:', Object.keys(attrs));
-  console.log('Rules count:', (rules||[]).length, '| Fallback:', fallback);
+  console.log('matchedEventId:', matchedEventId);
+  console.log('eventGroups:', (badgeConfig.eventGroups||[]).length,
+              '| globalRules:', (badgeConfig.rules||[]).length,
+              '| fallback:', fallback);
 
-  for (const rule of (rules || [])) {
-    const results = rule.conditions.map(c => {
-      const pass = evalCondition(c, attrs);
-      const rawVal = attrs[c.attr];
-      console.log(
-        `  Rule "${rule.name}" | cond: ${c.attr} ${c.op} "${c.value}"`,
-        `| attr value: ${JSON.stringify(rawVal)} (${typeof rawVal})`,
-        `| → ${pass ? '✓ PASS' : '✗ FAIL'}`
-      );
-      return pass;
-    });
-    const match = rule.logic === 'OR' ? results.some(Boolean) : results.every(Boolean);
-    if (match) {
-      console.log(`  ✅ Matched rule "${rule.name}" → template: ${rule.template}`);
-      console.groupEnd();
-      return rule.template;
+  function evalRules(rules, label) {
+    for (const rule of (rules || [])) {
+      const results = rule.conditions.map(c => {
+        const pass   = evalCondition(c, attrs);
+        const rawVal = attrs[c.attr];
+        console.log(`  [${label}] Rule "${rule.name}" | ${c.attr} ${c.op} "${c.value}"`,
+          `| value: ${JSON.stringify(rawVal)} | → ${pass ? '✓' : '✗'}`);
+        return pass;
+      });
+      const match = rule.logic === 'OR' ? results.some(Boolean) : results.every(Boolean);
+      if (match) {
+        console.log(`  ✅ Matched [${label}] "${rule.name}" → ${rule.template}`);
+        console.groupEnd();
+        return rule.template;
+      }
+    }
+    return null;
+  }
+
+  // 1. Event-scoped group
+  if (matchedEventId && Array.isArray(badgeConfig.eventGroups)) {
+    const group = badgeConfig.eventGroups.find(g => g.eventId === matchedEventId);
+    if (group) {
+      const key = evalRules(group.rules, `event:${matchedEventId.slice(0,8)}`);
+      if (key) return key;
     }
   }
 
-  console.log(`  ⚠️ No rule matched → using fallback: ${fallback}`);
+  // 2. Global rules
+  const key = evalRules(badgeConfig.rules, 'global');
+  if (key) return key;
+
+  console.log(`  ⚠️ No rule matched → fallback: ${fallback}`);
   console.groupEnd();
-  return fallback || (rules?.[0]?.template) || null;
+  return fallback || null;
 }
 
 function resolveField(fieldSpec, attrs) {
@@ -1303,10 +1322,11 @@ async function printKioskBadge(data) {
   // embedded Roboto. document.fonts.load() resolves quickly if already cached.
   try { await document.fonts.load('16px Roboto'); } catch(e) {}
 
-  const attrs = guest.attributes || {};
+  const attrs  = guest.attributes || {};
   const templates = badgeConfig.templates || [];
-  const tplKey = selectTemplate(guest, badgeConfig.rules, badgeConfig.fallback);
-  const tpl = templates.find(t => t.key === tplKey) || templates[0];
+  // Use server-pre-selected template when available, otherwise evaluate locally
+  const tplKey = badgeConfig._selectedTemplate || selectTemplate(guest, badgeConfig);
+  const tpl    = templates.find(t => t.key === tplKey) || templates[0];
   if (!tpl) { console.warn('No badge template found'); return; }
 
   const bgImage      = await getBadgeImg(tpl.key);
