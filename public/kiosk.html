@@ -1110,6 +1110,14 @@ async function handleScan(raw) {
       return;
     }
 
+    console.log('[Scan response]', JSON.stringify({
+      result: data.result,
+      matchedEventId: data.matchedEventId,
+      guestAttrsKeys: data.guest?.attributes ? Object.keys(data.guest.attributes) : '(no attributes key)',
+      rulesCount: data.badgeConfig?.rules?.length ?? '(no badgeConfig)',
+      fallback: data.badgeConfig?.fallback,
+    }, null, 2));
+
     switch (data.result) {
       case 'success':
         await handleSuccess(data);
@@ -1235,12 +1243,36 @@ function evalCondition(c, attrs) {
 }
 
 function selectTemplate(guest, rules, fallback) {
-  const attrs = guest.attributes || {};
+  // Support both nested (.attributes / .properties) and flat guest objects
+  const attrs = (Object.keys(guest.attributes || {}).length > 0)
+    ? guest.attributes
+    : (guest.properties || guest.attributes || {});
+
+  console.group('[Badge Routing]');
+  console.log('Attrs keys:', Object.keys(attrs));
+  console.log('Rules count:', (rules||[]).length, '| Fallback:', fallback);
+
   for (const rule of (rules || [])) {
-    const results = rule.conditions.map(c => evalCondition(c, attrs));
+    const results = rule.conditions.map(c => {
+      const pass = evalCondition(c, attrs);
+      const rawVal = attrs[c.attr];
+      console.log(
+        `  Rule "${rule.name}" | cond: ${c.attr} ${c.op} "${c.value}"`,
+        `| attr value: ${JSON.stringify(rawVal)} (${typeof rawVal})`,
+        `| → ${pass ? '✓ PASS' : '✗ FAIL'}`
+      );
+      return pass;
+    });
     const match = rule.logic === 'OR' ? results.some(Boolean) : results.every(Boolean);
-    if (match) return rule.template;
+    if (match) {
+      console.log(`  ✅ Matched rule "${rule.name}" → template: ${rule.template}`);
+      console.groupEnd();
+      return rule.template;
+    }
   }
+
+  console.log(`  ⚠️ No rule matched → using fallback: ${fallback}`);
+  console.groupEnd();
   return fallback || (rules?.[0]?.template) || null;
 }
 

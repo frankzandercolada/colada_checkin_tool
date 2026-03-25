@@ -1306,6 +1306,15 @@ async function ensureBadgeConfigLoaded() {
       if (data.templates) _badgeCache.templates = data.templates;
       if (data.rules)     _badgeCache.rules     = data.rules;
       if (data.fallback)  _badgeCache.fallback  = data.fallback;
+
+      // If rules or templates were missing on disk (first run / new project),
+      // write defaults back to the server NOW so the kiosk scan route always
+      // receives populated badgeConfig — it reads directly from badge-config.json
+      // and has no access to the DEFAULT_RULES/DEFAULT_TEMPLATES JS constants.
+      if (!data.rules || !data.templates) {
+        await _saveBadgeConfigToServer();
+      }
+
       // Load all stored images
       const imgRes = await fetch('/api/badge-images');
       const { keys } = await imgRes.json();
