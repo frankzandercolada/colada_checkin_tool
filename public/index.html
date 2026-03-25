@@ -1355,31 +1355,38 @@ function closeConfirm() {
   document.getElementById('confirm-overlay').style.display = 'none';
 }
 
-// Re-fetch the current guest from the API and update state + card.
-// Called after any mutation (check-in, reset) to keep revision fresh.
+// Re-fetch the current guest from the API and update state, card, and badge hint.
+// Called after any mutation (check-in, reset) to keep revision and display fresh.
 async function refreshCurrentGuest() {
   const guest = state.currentGuest;
   if (!guest || !state.eventId) return;
-  const uid = (guest.attributes || guest.properties || {}).code
-           || (guest.attributes || guest.properties || {}).guest_code
-           || guest.uid || guest.id;
-  if (!uid) return;
+
+  // Prefer guest.id (primary key) — backend tries it as a direct ID lookup first
+  // which works regardless of check-in status. Fall back to uid/code for older records.
+  const lookupKey = guest.id || guest.uid
+    || (guest.attributes || guest.properties || {}).code
+    || (guest.attributes || guest.properties || {}).guest_code;
+  if (!lookupKey) return;
+
   try {
-    const r    = await fetch(`/api/guests/${encodeURIComponent(state.eventId)}?scan=${encodeURIComponent(uid)}`);
+    const r    = await fetch(`/api/guests/${encodeURIComponent(state.eventId)}?scan=${encodeURIComponent(lookupKey)}`);
     const data = await r.json();
     const arr  = Array.isArray(data) ? data : (data.data || []);
     if (!arr.length) return;
+
     const fresh = arr[0];
+
     // Preserve _matchedEventId so routing continues to work
     const matchedEventId = (guest.attributes || guest.properties || {})._matchedEventId;
     const freshAttrs = fresh.attributes || fresh.properties || {};
     if (matchedEventId) freshAttrs._matchedEventId = matchedEventId;
     if (fresh.attributes) fresh.attributes = freshAttrs;
     else fresh.properties = freshAttrs;
+
     state.currentGuest = fresh;
     renderGuestCard(fresh);
+    updateBadgeTemplateHint(fresh);
   } catch(e) {
-    // Non-critical — stale data is better than an error
     console.warn('[refreshCurrentGuest]', e.message);
   }
 }
