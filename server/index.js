@@ -389,6 +389,52 @@ app.get('/api/event/:id', async (req, res) => {
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
+// Resolve a list of event IDs to their display names in one round-trip.
+// GET /api/events/names?ids=uuid1,uuid2,…
+// Returns { names: { uuid: "Event Name", … }, errors: { uuid: "message", … } }
+app.get('/api/events/names', async (req, res) => {
+  try {
+    const pid = getActiveProjectId();
+    const token = await getToken(pid);
+    const { apiBase } = getEffectiveCredentials(pid);
+    const ids = (req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (!ids.length) return res.json({ names: {}, errors: {} });
+
+    // Helper: extract display name from the Colada365 event object
+    function extractEventName(ev) {
+      const props = ev?.properties || ev?.attributes || {};
+      return props.title || props.name || props.event_name ||
+             ev?.name || ev?.title || null;
+    }
+
+    const results = await Promise.allSettled(
+      ids.map(id =>
+        fetch(`${apiBase}/_gw/s-events/external-api/events/${id}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        }).then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
+      )
+    );
+
+    const names = {};
+    const errors = {};
+    ids.forEach((id, i) => {
+      const r = results[i];
+      if (r.status === 'fulfilled') {
+        const name = extractEventName(r.value);
+        names[id] = name || `Event ${id.slice(0, 8)}…`;
+      } else {
+        errors[id] = r.reason?.message || 'unknown error';
+        names[id] = `Event ${id.slice(0, 8)}…`; // graceful fallback
+      }
+    });
+
+    res.json({ names, errors });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // Schema endpoint — scans all guests and infers field types + unique values
 app.get('/api/guests/:eventId/schema', async (req, res) => {
   try {

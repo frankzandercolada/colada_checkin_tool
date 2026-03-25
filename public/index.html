@@ -1945,11 +1945,37 @@ async function ensureGuestSchema() {
         totalGuests: 0,
         synthetic: true,
       };
-      // Seed labels as short UUID prefix; Settings "Use this →" can add real names later
+
+      // Seed short-UUID fallback labels immediately so the UI is usable
+      // even if the name resolution call below is slow or fails
       for (const id of projEventIds) {
         if (!_guestSchema.labelMap[id]) {
           _guestSchema.labelMap[id] = `Event ${id.slice(0, 8)}…`;
         }
+      }
+
+      // Resolve real event names from the API — replace fallback labels with actual names
+      try {
+        const namesRes = await fetch(
+          `/api/events/names?ids=${projEventIds.map(encodeURIComponent).join(',')}`
+        ).then(r => r.json()).catch(() => null);
+
+        if (namesRes?.names) {
+          for (const [id, name] of Object.entries(namesRes.names)) {
+            _guestSchema.labelMap[id] = name;
+          }
+          // Also update the values array labels so conditionSummary can use them
+          if (_guestSchema.fields['_matchedEventId']) {
+            _guestSchema.fields['_matchedEventId'].values =
+              projEventIds.map(id => ({
+                value: id,
+                count: 0,
+                label: namesRes.names[id] || `Event ${id.slice(0, 8)}…`,
+              }));
+          }
+        }
+      } catch(e) {
+        console.warn('Event name resolution failed:', e);
       }
     }
   } catch(e) { console.warn('Schema load failed:', e); }
