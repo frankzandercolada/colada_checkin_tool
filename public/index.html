@@ -1502,14 +1502,36 @@ async function renameBadgeImage(oldKey, newKey) {
 }
 
 // ── Template page rendering ───────────────────────────────────────────────────
+// Fetch and cache real event names for the project's configured event IDs.
+// Returns the cache object { eventId: name }. Safe to call multiple times.
+async function ensureEventNames() {
+  const proj         = _projects.find(p => p.id === _activeProjectId);
+  const projEventIds = proj?.eventIds?.length ? proj.eventIds : (proj?.eventId ? [proj.eventId] : []);
+  if (!projEventIds.length) return _eventNameCache;
+
+  // Only fetch IDs we don't have yet
+  const missing = projEventIds.filter(id => !_eventNameCache[id]);
+  if (!missing.length) return _eventNameCache;
+
+  try {
+    const data = await fetch(
+      `/api/events/names?ids=${missing.map(encodeURIComponent).join(',')}`
+    ).then(r => r.json());
+    if (data?.names) Object.assign(_eventNameCache, data.names);
+  } catch(e) {
+    // non-critical — short UUID fallback used in UI
+  }
+  return _eventNameCache;
+}
+
 async function loadBadgesPage() {
   await ensureBadgeConfigLoaded();
   renderTemplateList();
   renderRoutingRulesList();
   populateFallbackSelect();
-  // Pre-fetch schema in background so rule editor is ready instantly
-  ensureGuestSchema().then(schema => {
-    if (schema) renderRoutingRulesList(); // re-render with resolved labels
+  // Fetch event names + guest schema in parallel, then re-render rules with resolved labels
+  Promise.all([ensureEventNames(), ensureGuestSchema()]).then(() => {
+    renderRoutingRulesList();
   });
 }
 
@@ -1586,9 +1608,10 @@ function renderRoutingRulesList() {
   // Event-scoped groups
   if (groups.length) {
     for (const group of groups) {
-      const label = _guestSchema?.labelMap?.[group.eventId]
+      const label = _eventNameCache[group.eventId]
+        || _guestSchema?.labelMap?.[group.eventId]
         || `Event ${group.eventId.slice(0,8)}…`;
-      html += sectionHtml(`⬡ ${label}`, group.eventId, group.rules || [], 'var(--accent)');
+      html += sectionHtml(`⬡ ${escHtml(label)}`, group.eventId, group.rules || [], 'var(--accent)');
       html += '<div style="border-bottom:1px solid var(--border);margin:10px 0 4px;"></div>';
     }
   }
@@ -1974,6 +1997,7 @@ function deleteTemplate(idx) {
 
 // ── Guest field schema (for routing rule editor) ──────────────────────────────
 let _guestSchema = null; // { fields: { [attr]: { type, values: [{value,count}] } }, labelMap: { uuid: label } }
+let _eventNameCache = {}; // { eventId: "Event Name" } — populated on demand
 
 async function ensureGuestSchema() {
   if (_guestSchema) return _guestSchema;
@@ -2060,19 +2084,38 @@ async function openRuleEditor(scope, idx) {
   document.getElementById('rule-name').value  = r?.name  || '';
   document.getElementById('rule-logic').value = r?.logic || 'AND';
 
-  // Populate event scope dropdown from project's configured event IDs
-  const proj       = _projects.find(p => p.id === _activeProjectId);
+  // Populate event scope dropdown — seed with short UUID labels immediately,
+  // then replace with real event names once the API responds
+  const proj         = _projects.find(p => p.id === _activeProjectId);
   const projEventIds = proj?.eventIds?.length ? proj.eventIds : (proj?.eventId ? [proj.eventId] : []);
-  const scopeSel   = document.getElementById('rule-event-scope');
-  const labelMap   = _guestSchema?.labelMap || {};
-  scopeSel.innerHTML = `<option value="">— Global (all events) —</option>` +
-    projEventIds.map(eid => {
-      const label = labelMap[eid] || `Event ${eid.slice(0,8)}…`;
-      const sel   = _editingRuleScope === eid ? 'selected' : '';
-      return `<option value="${eid}" ${sel}>${label}</option>`;
-    }).join('');
-  // Set global selection
+  const scopeSel     = document.getElementById('rule-event-scope');
+
+  function buildScopeOptions(nameMap) {
+    return `<option value="">— Global (all events) —</option>` +
+      projEventIds.map(eid => {
+        const label = nameMap[eid] || `Event ${eid.slice(0,8)}…`;
+        const sel   = _editingRuleScope === eid ? 'selected' : '';
+        return `<option value="${eid}" ${sel}>${escHtml(label)}</option>`;
+      }).join('');
+  }
+
+  // Seed immediately with short UUIDs so the modal is usable right away
+  scopeSel.innerHTML = buildScopeOptions({});
   if (_editingRuleScope === 'global') scopeSel.value = '';
+
+  // Fetch real event names in the background and update the dropdown
+  if (projEventIds.length) {
+    fetch(`/api/events/names?ids=${projEventIds.map(encodeURIComponent).join(',')}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data?.names) {
+          scopeSel.innerHTML = buildScopeOptions(data.names);
+          if (_editingRuleScope === 'global') scopeSel.value = '';
+          else scopeSel.value = _editingRuleScope;
+        }
+      })
+      .catch(() => {}); // non-critical — short UUID labels remain
+  }
 
   populateRuleTemplateSelect(r?.template || '');
   await ensureGuestSchema();
@@ -2730,12 +2773,14 @@ async function switchProject(projectId) {
     if (!data.ok) throw new Error(data.error);
     _activeProjectId = projectId;
     // Reset badge cache and reload
-    _badgeCache.templates = null;
-    _badgeCache.rules = null;
-    _badgeCache.fallback = null;
-    _badgeCache.images = {};
-    _badgeCache.ready = false;
-    _guestSchema = null; // invalidate schema cache — new project has a different event
+    _badgeCache.templates   = null;
+    _badgeCache.eventGroups = null;
+    _badgeCache.rules       = null;
+    _badgeCache.fallback    = null;
+    _badgeCache.images      = {};
+    _badgeCache.ready       = false;
+    _guestSchema    = null; // invalidate schema cache — new project has a different event
+    _eventNameCache = {};   // clear event name cache for new project
     // Update event ID from project (use first event ID for badge display)
     const firstEventId = data.eventIds?.[0] || data.eventId || '';
     if (firstEventId) {
