@@ -81,6 +81,43 @@ function saveProjectBadgeConfig(id, cfg) {
   fs.writeFileSync(projectConfigPath(id), JSON.stringify(cfg, null, 2));
 }
 
+// ─── Default badge config (mirrors frontend DEFAULT_TEMPLATES / DEFAULT_RULES) ─
+const DEFAULT_TEMPLATES = [
+  { key:'awf_sb',        name:'AWF + Stimmberechtigt',          width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
+  { key:'awf_standard',  name:'AWF Standard',                   width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
+  { key:'awf_member_sb', name:'AWF + Member + Stimmberechtigt', width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
+  { key:'awf_member',    name:'AWF Member (Standard)',          width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
+  { key:'gv_sb',         name:'GV + Stimmberechtigt',           width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
+  { key:'gv_gast',       name:'GV Gast',                        width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
+  { key:'swissrail',     name:'Swissrail',                      width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
+  { key:'swissrail_mbr', name:'Swissrail + Member',             width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
+  { key:'swissmem',      name:'Swissmem',                       width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
+  { key:'swissmem_mbr',  name:'Swissmem + Member',              width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
+];
+const DEFAULT_RULES = [
+  { id:'r1', name:'Swissrail + AWF + Stimmberechtigt', logic:'AND', template:'awf_member_sb', conditions:[{attr:'guest_x_member',op:'eq',value:'21996a6d-1db3-48ab-aeda-9bdcb80c4ac1'},{attr:'guest_x_awf_teilnehmer',op:'eq',value:'true'},{attr:'guest_x_Stimmberechtigt',op:'eq',value:'true'}] },
+  { id:'r2', name:'Swissrail + AWF',                   logic:'AND', template:'swissrail_mbr', conditions:[{attr:'guest_x_member',op:'eq',value:'21996a6d-1db3-48ab-aeda-9bdcb80c4ac1'},{attr:'guest_x_awf_teilnehmer',op:'eq',value:'true'}] },
+  { id:'r3', name:'Swissrail',                         logic:'AND', template:'swissrail',     conditions:[{attr:'guest_x_member',op:'eq',value:'21996a6d-1db3-48ab-aeda-9bdcb80c4ac1'}] },
+  { id:'r4', name:'Swissmem + AWF + Stimmberechtigt',  logic:'AND', template:'awf_member_sb', conditions:[{attr:'guest_x_member',op:'eq',value:'73d58ee3-e715-4b9d-9412-1c33d5ddc563'},{attr:'guest_x_awf_teilnehmer',op:'eq',value:'true'},{attr:'guest_x_Stimmberechtigt',op:'eq',value:'true'}] },
+  { id:'r5', name:'Swissmem + AWF',                    logic:'AND', template:'swissmem_mbr',  conditions:[{attr:'guest_x_member',op:'eq',value:'73d58ee3-e715-4b9d-9412-1c33d5ddc563'},{attr:'guest_x_awf_teilnehmer',op:'eq',value:'true'}] },
+  { id:'r6', name:'Swissmem',                          logic:'AND', template:'swissmem',      conditions:[{attr:'guest_x_member',op:'eq',value:'73d58ee3-e715-4b9d-9412-1c33d5ddc563'}] },
+  { id:'r7', name:'AWF + Stimmberechtigt',             logic:'AND', template:'awf_sb',        conditions:[{attr:'guest_x_awf_teilnehmer',op:'eq',value:'true'},{attr:'guest_x_Stimmberechtigt',op:'eq',value:'true'}] },
+  { id:'r8', name:'AWF',                               logic:'AND', template:'awf_standard',  conditions:[{attr:'guest_x_awf_teilnehmer',op:'eq',value:'true'}] },
+  { id:'r9', name:'GV + Stimmberechtigt',              logic:'AND', template:'gv_sb',         conditions:[{attr:'guest_x_Stimmberechtigt',op:'eq',value:'true'}] },
+];
+const DEFAULT_FALLBACK = 'gv_gast';
+
+// Like loadProjectBadgeConfig but always returns non-null arrays —
+// falls back to DEFAULT_TEMPLATES / DEFAULT_RULES when the file has nulls.
+function loadProjectBadgeConfigWithDefaults(id) {
+  const cfg = loadProjectBadgeConfig(id);
+  return {
+    templates: cfg.templates || DEFAULT_TEMPLATES,
+    rules:     cfg.rules     || DEFAULT_RULES,
+    fallback:  cfg.fallback  || DEFAULT_FALLBACK,
+  };
+}
+
 // ─── Migrate legacy badge-config.json ────────────────────────────────────────
 (function migrateLegacy() {
   const legacyConfig = path.join(__dirname, '../badge-config.json');
@@ -268,8 +305,8 @@ app.post('/api/projects/active', (req, res) => {
 // ─── Badge Config (project-scoped) ────────────────────────────────────────────
 app.get('/api/badge-config', (req, res) => {
   const id = req.query.projectId || getActiveProjectId();
-  if (!id) return res.json({ templates:null, rules:null, fallback:null });
-  res.json(loadProjectBadgeConfig(id));
+  if (!id) return res.json({ templates: DEFAULT_TEMPLATES, rules: DEFAULT_RULES, fallback: DEFAULT_FALLBACK });
+  res.json(loadProjectBadgeConfigWithDefaults(id));
 });
 
 app.post('/api/badge-config', (req, res) => {
@@ -284,6 +321,31 @@ app.post('/api/badge-config', (req, res) => {
     });
     res.json({ ok:true });
   } catch(e) { res.status(500).json({ error:e.message }); }
+});
+
+// ─── Routing debug — read-only, shows exactly what the kiosk scan would use ──
+// GET /api/kiosk/routing-debug
+// Returns the resolved badge config (with defaults) plus the raw file content,
+// so you can confirm rules are populated without performing an actual scan.
+app.get('/api/kiosk/routing-debug', (req, res) => {
+  const id = getActiveProjectId();
+  if (!id) return res.status(400).json({ error: 'no active project' });
+  const raw  = loadProjectBadgeConfig(id);
+  const resolved = loadProjectBadgeConfigWithDefaults(id);
+  res.json({
+    activeProjectId: id,
+    rawFromDisk: {
+      templatesCount: raw.templates?.length ?? null,
+      rulesCount:     raw.rules?.length     ?? null,
+      fallback:       raw.fallback          ?? null,
+    },
+    resolvedForKiosk: {
+      templatesCount: resolved.templates.length,
+      rulesCount:     resolved.rules.length,
+      fallback:       resolved.fallback,
+      rules:          resolved.rules,
+    },
+  });
 });
 
 // ─── Badge Images (project-scoped) ────────────────────────────────────────────
@@ -814,7 +876,7 @@ app.post('/api/kiosk/scan', async (req, res) => {
     const pr = await fetch(`${checkinBase}/${guest.id}`, { method: 'PATCH', headers, body: JSON.stringify({ attributes: patchAttrs }) });
     if (!pr.ok) throw new Error(`Check-in failed: ${pr.status}`);
 
-    const badgeCfg = loadProjectBadgeConfig(pid);
+    const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
     res.json({
       result: 'success',
       matchedEventId,
