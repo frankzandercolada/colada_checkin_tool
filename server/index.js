@@ -919,8 +919,11 @@ app.post('/api/kiosk/register', async (req, res) => {
     const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
 
     // 1. Create the guest — Colada365 returns 201 Created
+    console.log('[register] POST', base);
+    console.log('[register] body:', JSON.stringify(createBody, null, 2));
     const createRes = await fetch(base, { method: 'POST', headers, body: JSON.stringify(createBody) });
     const createText = await createRes.text();
+    console.log(`[register] response ${createRes.status}:`, createText.slice(0, 500));
     if (createRes.status !== 201 && !createRes.ok) {
       throw new Error(`Registration failed (${createRes.status}): ${createText.slice(0, 300)}`);
     }
