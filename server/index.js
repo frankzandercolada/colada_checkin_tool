@@ -112,10 +112,11 @@ const DEFAULT_FALLBACK = 'gv_gast';
 function loadProjectBadgeConfigWithDefaults(id) {
   const cfg = loadProjectBadgeConfig(id);
   return {
-    templates:   cfg.templates   || DEFAULT_TEMPLATES,
-    eventGroups: cfg.eventGroups || [],
-    rules:       cfg.rules       || DEFAULT_RULES,
-    fallback:    cfg.fallback    || DEFAULT_FALLBACK,
+    templates:       cfg.templates       || DEFAULT_TEMPLATES,
+    eventGroups:     cfg.eventGroups     || [],
+    rules:           cfg.rules           || DEFAULT_RULES,
+    fallback:        cfg.fallback        || DEFAULT_FALLBACK,
+    selfRegistration: cfg.selfRegistration || {},
   };
 }
 
@@ -402,10 +403,11 @@ app.post('/api/badge-config', (req, res) => {
     if (!id) return res.status(400).json({ error:'no active project' });
     const existing = loadProjectBadgeConfig(id);
     saveProjectBadgeConfig(id, {
-      templates:   req.body.templates   !== undefined ? req.body.templates   : existing.templates,
-      eventGroups: req.body.eventGroups !== undefined ? req.body.eventGroups : (existing.eventGroups || []),
-      rules:       req.body.rules       !== undefined ? req.body.rules       : existing.rules,
-      fallback:    req.body.fallback    !== undefined ? req.body.fallback    : existing.fallback,
+      templates:        req.body.templates        !== undefined ? req.body.templates        : existing.templates,
+      eventGroups:      req.body.eventGroups      !== undefined ? req.body.eventGroups      : (existing.eventGroups || []),
+      rules:            req.body.rules            !== undefined ? req.body.rules            : existing.rules,
+      fallback:         req.body.fallback         !== undefined ? req.body.fallback         : existing.fallback,
+      selfRegistration: req.body.selfRegistration !== undefined ? req.body.selfRegistration : (existing.selfRegistration || {}),
     });
     res.json({ ok:true });
   } catch(e) { res.status(500).json({ error:e.message }); }
@@ -834,25 +836,16 @@ app.get('/api/kiosk/registration-config', async (req, res) => {
     const stations = loadKioskStations(pid);
     const stationId = req.query.stationId;
     const station = stationId ? stations.find(s => s.id === stationId) : null;
-    const reg = station?.selfRegistration;
-    if (!reg?.enabled) return res.json({ enabled: false });
+    if (!station?.selfRegistration?.enabled) return res.json({ enabled: false });
 
     const token = await getToken(pid);
     const { apiBase } = getEffectiveCredentials(pid);
 
-    // Resolve option labels for choice fields in the form
-    const fields = reg.fields || [];
-    const choiceFields = fields.filter(f => f.type === 'choice' && f.options?.length);
-    // Build a flat labelMap from all options already stored in the field config
-    const labelMap = {};
-    for (const f of choiceFields) {
-      for (const opt of f.options) {
-        if (opt.value && opt.label) labelMap[opt.value] = opt.label;
-      }
-    }
+    // Self-reg config (participant group + fields) lives in badge-config per event
+    const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
+    const selfReg  = badgeCfg.selfRegistration || {}; // { [eventId]: { participantGroup, fields } }
 
-    // Resolve event names — fetch each event individually in parallel.
-    // Listing all events risks pagination gaps; direct ID lookup is always exact.
+    // Resolve event names — fetch each event individually in parallel
     const projects = loadProjects();
     const project  = projects.find(p => p.id === pid);
     const eventIds = getProjectEventIds(project);
@@ -872,14 +865,25 @@ app.get('/api/kiosk/registration-config', async (req, res) => {
             })
         )
       );
-      // Log any resolution failures without crashing the whole response
       settled.forEach((s, i) => {
         if (s.status === 'rejected')
           console.warn(`[reg-config] Could not resolve event name for ${eventIds[i]}:`, s.reason?.message);
       });
     }
 
-    res.json({ enabled: true, reg, eventIds, eventNames, labelMap });
+    // Build a flat labelMap from all choice field options across all events
+    const labelMap = {};
+    for (const evCfg of Object.values(selfReg)) {
+      for (const f of (evCfg.fields || [])) {
+        if (f.type === 'choice') {
+          for (const opt of (f.options || [])) {
+            if (opt.value && opt.label) labelMap[opt.value] = opt.label;
+          }
+        }
+      }
+    }
+
+    res.json({ enabled: true, selfReg, eventIds, eventNames, labelMap });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -897,10 +901,9 @@ app.post('/api/kiosk/register', async (req, res) => {
       return res.status(400).json({ error: 'firstName, lastName and email are required' });
     }
 
-    // Load the station's self-registration config
-    const stations = loadKioskStations(pid);
-    const station  = stationId ? stations.find(s => s.id === stationId) : null;
-    const reg      = station?.selfRegistration || {};
+    // Load self-registration config for this event from badge-config (not station)
+    const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
+    const evSelfReg = (badgeCfg.selfRegistration || {})[eventId] || {};
 
     // Build the attributes payload — strip any top-level structural fields
     // that Colada365 expects at the body root, not inside attributes
@@ -910,7 +913,7 @@ app.post('/api/kiosk/register', async (req, res) => {
 
     // Build the Colada365 POST body — participantGroupId is top-level, not in attributes
     const createBody = {
-      participantGroupId: reg.participantGroup || null,
+      participantGroupId: evSelfReg.participantGroup || null,
       departmentId:       null,
       attributes:         attrs,
     };
@@ -985,7 +988,6 @@ app.post('/api/kiosk/register', async (req, res) => {
       _matchedEventId:     eventId,
     };
 
-    const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
     const selectedTemplate = selectTemplateKey(responseAttrs, badgeCfg);
 
     res.json({
@@ -1109,7 +1111,7 @@ app.post('/api/kiosk/stations', (req, res) => {
     printEndpoint: printEndpoint || null,
     cameraMode:    cameraMode    || false,
     lightMode:     lightMode     || false,
-    selfRegistration: req.body.selfRegistration || { enabled: false },
+    selfRegistration: { enabled: !!(req.body.selfRegistration?.enabled) },
   };
   if (existing >= 0) stations[existing] = station; else stations.push(station);
   saveKioskStations(id, stations);

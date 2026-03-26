@@ -572,39 +572,12 @@
           <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 0;">
             <div>
               <div class="form-label" style="margin-bottom:2px;">Enable Self-Registration</div>
-              <div style="font-size:11px; color:var(--muted);">Show a Register button on the welcome screen for walk-in guests</div>
+              <div style="font-size:11px; color:var(--muted);">Show a Register button on the welcome screen for walk-in guests. Configure form fields and participant groups per event in the Routing Rules page.</div>
             </div>
             <label class="ks-toggle-wrap">
-              <input type="checkbox" id="ks-reg-enabled" onchange="onRegToggle()"/>
+              <input type="checkbox" id="ks-reg-enabled"/>
               <span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span>
             </label>
-          </div>
-          <div id="ks-reg-config" style="display:none; flex-direction:column; gap:12px;">
-            <div>
-              <label class="form-label">Event for Registration</label>
-              <select class="form-input" id="ks-reg-event" style="font-family:var(--font-mono);font-size:12px;" onchange="loadRegParticipantGroups()">
-                <option value="">— loading events… —</option>
-              </select>
-              <span class="hint">Guests created via self-registration are added to this event</span>
-            </div>
-            <div>
-              <label class="form-label">Participant Group <span style="color:var(--muted);font-weight:400;">(auto-set on creation)</span></label>
-              <select class="form-input" id="ks-reg-participant-group" style="font-family:var(--font-mono);font-size:12px;">
-                <option value="">— select an event first —</option>
-              </select>
-              <span class="hint">Walk-in guests will be created in this participant group</span>
-            </div>
-            <div>
-              <label class="form-label">Registration Form Fields</label>
-              <p style="font-size:11px;color:var(--muted);margin-bottom:8px;">First name, last name, email and language are always required. Add extra fields from the guest schema below.</p>
-              <div id="ks-reg-fields-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px;"></div>
-              <div style="display:flex;gap:8px;align-items:center;">
-                <select class="form-input" id="ks-reg-field-picker" style="font-family:var(--font-mono);font-size:12px;flex:1;">
-                  <option value="">— add field from schema —</option>
-                </select>
-                <button class="btn btn-secondary" style="font-size:12px;flex-shrink:0;" onclick="addRegField()">+ Add</button>
-              </div>
-            </div>
           </div>
 
           <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:8px; padding-bottom:8px; border-bottom:1px solid var(--border);">Welcome Screen</div>
@@ -1544,10 +1517,11 @@ const PT_PER_CM = 28.3465; // 1 cm = 28.3465 pt (PDF points)
 // server (badge-config.json + badge-images/*.txt) so any client gets the same
 // configuration. An in-memory cache avoids redundant fetches.
 const _badgeCache = {
-  templates:   null,
-  eventGroups: null,  // array of { eventId, rules[] } or null
-  rules:       null,
-  fallback:    null,
+  templates:        null,
+  eventGroups:      null,
+  rules:            null,
+  fallback:         null,
+  selfRegistration: null, // { [eventId]: { participantGroup, fields } }
   images: {},
   ready: false,
   _loadPromise: null,
@@ -1561,10 +1535,11 @@ async function ensureBadgeConfigLoaded() {
     try {
       const res = await fetch('/api/badge-config');
       const data = await res.json();
-      if (data.templates)   _badgeCache.templates   = data.templates;
-      if (data.eventGroups) _badgeCache.eventGroups = data.eventGroups;
-      if (data.rules)       _badgeCache.rules       = data.rules;
-      if (data.fallback)    _badgeCache.fallback    = data.fallback;
+      if (data.templates)        _badgeCache.templates        = data.templates;
+      if (data.eventGroups)      _badgeCache.eventGroups      = data.eventGroups;
+      if (data.rules)            _badgeCache.rules            = data.rules;
+      if (data.fallback)         _badgeCache.fallback         = data.fallback;
+      if (data.selfRegistration) _badgeCache.selfRegistration = data.selfRegistration;
 
       // If rules or templates were missing on disk (first run / new project),
       // write defaults back to the server NOW so the kiosk scan route always
@@ -1600,25 +1575,25 @@ async function _saveBadgeConfigToServer() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        templates:   _badgeCache.templates   || loadTemplates(),
-        eventGroups: _badgeCache.eventGroups || [],
-        rules:       _badgeCache.rules       || loadRules(),
-        fallback:    _badgeCache.fallback    || 'gv_gast',
+        templates:        _badgeCache.templates        || loadTemplates(),
+        eventGroups:      _badgeCache.eventGroups      || [],
+        rules:            _badgeCache.rules            || loadRules(),
+        fallback:         _badgeCache.fallback         || 'gv_gast',
+        selfRegistration: _badgeCache.selfRegistration || {},
       }),
     });
   } catch(e) { console.error('[badge-config] save error:', e.message); }
 }
 
-// Force-refresh badge config from server (call after navigating back from badges page
-// or if you suspect stale data). Resets ready flag so ensureBadgeConfigLoaded re-fetches.
 async function refreshBadgeConfigFromServer() {
-  _badgeCache.templates   = null;
-  _badgeCache.eventGroups = null;
-  _badgeCache.rules       = null;
-  _badgeCache.fallback    = null;
-  _badgeCache.images      = {};
-  _badgeCache.ready       = false;
-  _badgeCache._loadPromise = null;
+  _badgeCache.templates        = null;
+  _badgeCache.eventGroups      = null;
+  _badgeCache.rules            = null;
+  _badgeCache.fallback         = null;
+  _badgeCache.selfRegistration = null;
+  _badgeCache.images           = {};
+  _badgeCache.ready            = false;
+  _badgeCache._loadPromise     = null;
   await ensureBadgeConfigLoaded();
 }
 
@@ -1713,6 +1688,16 @@ function saveFallbackTemplate() {
   const v = document.getElementById('fallback-template-select')?.value;
   if (!v) return;
   _badgeCache.fallback = v;
+  _saveBadgeConfigToServer();
+}
+
+// ── Per-event self-registration config ───────────────────────────────────────
+function loadSelfRegForEvent(eventId) {
+  return (_badgeCache.selfRegistration || {})[eventId] || { participantGroup: null, fields: [] };
+}
+function saveSelfRegForEvent(eventId, cfg) {
+  if (!_badgeCache.selfRegistration) _badgeCache.selfRegistration = {};
+  _badgeCache.selfRegistration[eventId] = cfg;
   _saveBadgeConfigToServer();
 }
 
@@ -1859,6 +1844,8 @@ function renderRoutingRulesList() {
         || _guestSchema?.labelMap?.[group.eventId]
         || `Event ${group.eventId.slice(0,8)}…`;
       html += sectionHtml(`⬡ ${escHtml(label)}`, group.eventId, group.rules || [], 'var(--accent)');
+      // Self-registration subsection for this event
+      html += selfRegSectionHtml(group.eventId);
       html += '<div style="border-bottom:1px solid var(--border);margin:10px 0 4px;"></div>';
     }
   }
@@ -1867,9 +1854,136 @@ function renderRoutingRulesList() {
   html += sectionHtml('🌐 Global (all events)', 'global', globalRules, 'var(--muted)');
 
   el.innerHTML = html;
+
+  // Populate participant group dropdowns (async — fires after innerHTML is set)
+  if (groups.length) {
+    for (const group of groups) {
+      populateEventRegGroups(group.eventId);
+    }
+  }
 }
 
-function populateFallbackSelect() {
+function selfRegSectionHtml(eventId) {
+  const cfg = loadSelfRegForEvent(eventId);
+  const FIXED = new Set(['contact_firstName','contact_lastName','contact_email','contact_commLang']);
+  const fields = (cfg.fields || []).filter(f => !FIXED.has(f.attr));
+  const fieldsHtml = fields.length
+    ? fields.map((f, i) => `
+        <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:var(--surface2);border-radius:6px;margin-bottom:4px;">
+          <span style="flex:1;font-size:12px;font-family:var(--font-mono);color:var(--text);">${escHtml(f.label || f.attr)}</span>
+          <span style="font-size:10px;color:var(--muted);font-family:var(--font-mono);">${f.type || 'text'}</span>
+          <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer;">
+            <input type="checkbox" ${f.required ? 'checked' : ''} style="accent-color:var(--accent);width:13px;height:13px;"
+              onchange="toggleEventRegFieldRequired('${eventId}',${i},this.checked)"/>
+            req
+          </label>
+          <button onclick="removeEventRegField('${eventId}',${i})"
+            style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;padding:0;line-height:1;">✕</button>
+        </div>`).join('')
+    : `<div style="font-size:12px;color:var(--muted);padding:4px 0 6px;">No extra fields — first name, last name, email and language are always shown.</div>`;
+
+  return `
+    <div style="margin-top:10px;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);font-family:var(--font-mono);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:10px;">
+        ✎ Self-Registration
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div>
+          <label class="form-label" style="font-size:11px;">Participant Group</label>
+          <select class="form-input" id="sreg-pg-${eventId}" style="font-family:var(--font-mono);font-size:12px;margin-top:4px;"
+            onchange="saveEventRegPg('${eventId}',this.value)">
+            <option value="">— loading… —</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label" style="font-size:11px;">Extra Form Fields</label>
+          <div id="sreg-fields-${eventId}" style="margin-top:4px;">${fieldsHtml}</div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
+            <select class="form-input" id="sreg-picker-${eventId}" style="font-family:var(--font-mono);font-size:12px;flex:1;">
+              <option value="">— add field from schema —</option>
+            </select>
+            <button class="btn btn-secondary" style="font-size:11px;flex-shrink:0;"
+              onclick="addEventRegField('${eventId}')">+ Add</button>
+          </div>
+        </div>
+      </div>
+    </div>`;
+}
+
+async function populateEventRegGroups(eventId) {
+  const sel = document.getElementById(`sreg-pg-${eventId}`);
+  if (!sel) return;
+  const saved = loadSelfRegForEvent(eventId).participantGroup || '';
+  try {
+    const r = await fetch(`/api/events/${encodeURIComponent(eventId)}/participantgroups`);
+    const data = await r.json();
+    const groups = data.groups || [];
+    sel.innerHTML = '<option value="">— none / event default —</option>' +
+      groups.map(g => `<option value="${escHtml(g.id)}" ${g.id === saved ? 'selected' : ''}>${escHtml(g.name || g.id)}</option>`).join('');
+    // Also populate the field picker for this event
+    populateEventRegFieldPicker(eventId);
+  } catch(e) {
+    sel.innerHTML = '<option value="">— error loading —</option>';
+  }
+}
+
+async function populateEventRegFieldPicker(eventId) {
+  const picker = document.getElementById(`sreg-picker-${eventId}`);
+  if (!picker) return;
+  picker.innerHTML = '<option value="">— add field from schema —</option>';
+  await ensureGuestSchema();
+  const schema = _guestSchema;
+  if (!schema?.fields) return;
+  const FIXED = new Set(['contact_firstName','contact_lastName','contact_email','contact_commLang',
+    '_matchedEventId','guest_x_checkedin','guest_x_checkedinat']);
+  const existing = new Set((loadSelfRegForEvent(eventId).fields || []).map(f => f.attr));
+  for (const [attr, field] of Object.entries(schema.fields)) {
+    if (FIXED.has(attr) || existing.has(attr)) continue;
+    const label = attr.replace(/^(guest_x_|contact_x_|contact_)/, '').replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+    const opt = document.createElement('option');
+    opt.value = JSON.stringify({
+      attr, type: field.type, label,
+      options: field.type === 'choice'
+        ? field.values.map(v => ({ value: v.value, label: _guestSchema?.labelMap?.[v.value] || v.value.slice(0,8)+'…' }))
+        : [],
+    });
+    opt.textContent = `${label} (${field.type})`;
+    picker.appendChild(opt);
+  }
+}
+
+function saveEventRegPg(eventId, participantGroup) {
+  const cfg = loadSelfRegForEvent(eventId);
+  saveSelfRegForEvent(eventId, { ...cfg, participantGroup: participantGroup || null });
+  toast('Self-registration saved', 'ok', 2000);
+}
+
+function addEventRegField(eventId) {
+  const picker = document.getElementById(`sreg-picker-${eventId}`);
+  if (!picker?.value) return;
+  try {
+    const field = JSON.parse(picker.value);
+    const cfg   = loadSelfRegForEvent(eventId);
+    const fields = [...(cfg.fields || []), { ...field, required: false }];
+    saveSelfRegForEvent(eventId, { ...cfg, fields });
+    renderRoutingRulesList(); // re-render to show updated list
+    toast('Field added', 'ok', 2000);
+  } catch(e) {}
+}
+
+function removeEventRegField(eventId, idx) {
+  const cfg    = loadSelfRegForEvent(eventId);
+  const fields = (cfg.fields || []).filter((_, i) => i !== idx);
+  saveSelfRegForEvent(eventId, { ...cfg, fields });
+  renderRoutingRulesList();
+}
+
+function toggleEventRegFieldRequired(eventId, idx, required) {
+  const cfg    = loadSelfRegForEvent(eventId);
+  const fields = [...(cfg.fields || [])];
+  if (fields[idx]) fields[idx] = { ...fields[idx], required };
+  saveSelfRegForEvent(eventId, { ...cfg, fields });
+}
   const tpls = loadTemplates();
   const fallback = getFallbackTemplate();
   const sel = document.getElementById('fallback-template-select');
@@ -3320,10 +3434,6 @@ function openKioskStationModal() {
   document.getElementById('ks-already-hide-card').checked = false;
   // Self-registration reset
   document.getElementById('ks-reg-enabled').checked = false;
-  document.getElementById('ks-reg-config').style.display = 'none';
-  document.getElementById('ks-reg-participant-group').value = '';
-  renderRegFieldsList([]);
-  loadRegEventOptions('', '');
   ['welcome','success','notfound','already'].forEach(k => {
     document.getElementById('ks-' + k + '-bg-data').value = '';
     document.getElementById('ks-' + k + '-bg-label').textContent = 'Upload image…';
@@ -3347,13 +3457,9 @@ function editKioskStation(stationId) {
   document.getElementById('ks-hide-logo').checked   = s.hideLogoText   || false;
   document.getElementById('ks-bg').value       = s.bgColor      || '#0a0a0a';
   document.getElementById('ks-bg-light').value = s.bgColorLight || '#f0f0f0';
-  // Self-registration
+  // Self-registration — only the enabled flag lives on the station
   const reg = s.selfRegistration || {};
   document.getElementById('ks-reg-enabled').checked = reg.enabled || false;
-  document.getElementById('ks-reg-config').style.display = reg.enabled ? 'flex' : 'none';
-  document.getElementById('ks-reg-participant-group').value = reg.participantGroup || '';
-  renderRegFieldsList(reg.fields || []);
-  loadRegEventOptions(reg.eventId || '', reg.participantGroup || '');
   document.getElementById('ks-welcome-title').value  = s.welcome?.title || '';
   document.getElementById('ks-welcome-sub').value    = s.welcome?.subtitle || '';
   document.getElementById('ks-success-title').value  = s.success?.title || '';
@@ -3396,123 +3502,8 @@ function closeKioskModal() {
   document.getElementById('kiosk-modal').style.display = 'none';
 }
 
-// ── Self-registration admin helpers ──────────────────────────────────────────
-function onRegToggle() {
-  const enabled = document.getElementById('ks-reg-enabled').checked;
-  document.getElementById('ks-reg-config').style.display = enabled ? 'flex' : 'none';
-}
-
-let _regFields = []; // current extra field list
-
-function renderRegFieldsList(fields) {
-  _regFields = JSON.parse(JSON.stringify(fields || []));
-  const el = document.getElementById('ks-reg-fields-list');
-  if (!_regFields.length) {
-    el.innerHTML = '<div style="font-size:12px;color:var(--muted);padding:4px 0;">No extra fields — only first name, last name, email and language will be shown.</div>';
-    return;
-  }
-  el.innerHTML = _regFields.map((f, i) => `
-    <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--surface2);border-radius:6px;">
-      <span style="flex:1;font-size:12px;font-family:var(--font-mono);">${escHtml(f.label || f.attr)}</span>
-      <span style="font-size:10px;color:var(--muted);font-family:var(--font-mono);">${f.type || 'text'}</span>
-      <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer;">
-        <input type="checkbox" ${f.required ? 'checked' : ''} onchange="_regFields[${i}].required=this.checked" style="accent-color:var(--accent);width:14px;height:14px;"/>
-        required
-      </label>
-      <button onclick="_regFields.splice(${i},1);renderRegFieldsList(_regFields)" style="background:none;border:none;color:var(--red);cursor:pointer;font-size:14px;padding:0;line-height:1;">✕</button>
-    </div>`).join('');
-}
-
-async function loadRegEventOptions(selectedId, selectedGroupId) {
-  const sel = document.getElementById('ks-reg-event');
-  const proj = _projects.find(p => p.id === _activeProjectId);
-  const eventIds = proj?.eventIds?.length ? proj.eventIds : (proj?.eventId ? [proj.eventId] : []);
-  if (!eventIds.length) { sel.innerHTML = '<option value="">No events configured</option>'; return; }
-  // Seed with short UUIDs immediately
-  const build = () => eventIds.map(eid => {
-    const label = _eventNameCache[eid] || `Event ${eid.slice(0,8)}…`;
-    return `<option value="${eid}" ${eid === selectedId ? 'selected' : ''}>${escHtml(label)}</option>`;
-  }).join('');
-  sel.innerHTML = build();
-  // Refresh with real names
-  await ensureEventNames();
-  sel.innerHTML = build();
-  // Auto-select single event
-  if (eventIds.length === 1 && !selectedId) sel.value = eventIds[0];
-  // Load participant groups for the selected event
-  await loadRegParticipantGroups(selectedGroupId);
-  loadRegFieldPicker();
-}
-
-async function loadRegParticipantGroups(selectedGroupId) {
-  const sel   = document.getElementById('ks-reg-participant-group');
-  const eventId = document.getElementById('ks-reg-event').value;
-  if (!eventId) {
-    sel.innerHTML = '<option value="">— select an event first —</option>';
-    return;
-  }
-  sel.innerHTML = '<option value="">— loading… —</option>';
-  try {
-    const r = await fetch(`/api/events/${encodeURIComponent(eventId)}/participantgroups`);
-    const data = await r.json();
-    const groups = data.groups || [];
-    if (!groups.length) {
-      sel.innerHTML = '<option value="">— no groups found —</option>';
-      return;
-    }
-    sel.innerHTML = '<option value="">— none / event default —</option>' +
-      groups.map(g =>
-        `<option value="${escHtml(g.id)}" ${g.id === selectedGroupId ? 'selected' : ''}>${escHtml(g.name || g.id)}</option>`
-      ).join('');
-  } catch(e) {
-    sel.innerHTML = '<option value="">— error loading groups —</option>';
-  }
-}
-
-async function loadRegFieldPicker() {
-  const picker = document.getElementById('ks-reg-field-picker');
-  picker.innerHTML = '<option value="">— add field from schema —</option>';
-  await ensureGuestSchema();
-  const schema = _guestSchema;
-  if (!schema?.fields) return;
-  const FIXED = new Set(['contact_firstName','contact_lastName','contact_email','contact_commLang',
-    '_matchedEventId','guest_x_checkedin','guest_x_checkedinat']);
-  const existing = new Set(_regFields.map(f => f.attr));
-  for (const [attr, field] of Object.entries(schema.fields)) {
-    if (FIXED.has(attr) || existing.has(attr)) continue;
-    const label = attr.replace(/^(guest_x_|contact_x_|contact_)/, '').replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
-    const opt = document.createElement('option');
-    opt.value = JSON.stringify({
-      attr, type: field.type, label,
-      options: field.type === 'choice'
-        ? field.values.map(v => ({ value: v.value, label: _guestSchema?.labelMap?.[v.value] || v.value.slice(0,8)+'…' }))
-        : [],
-    });
-    opt.textContent = `${label} (${field.type})`;
-    picker.appendChild(opt);
-  }
-}
-
-function addRegField() {
-  const picker = document.getElementById('ks-reg-field-picker');
-  if (!picker.value) return;
-  try {
-    const field = JSON.parse(picker.value);
-    _regFields.push({ ...field, required: false });
-    renderRegFieldsList(_regFields);
-    loadRegFieldPicker();
-  } catch(e) {}
-}
-
 function collectRegConfig() {
-  const enabled = document.getElementById('ks-reg-enabled').checked;
-  if (!enabled) return { enabled: false };
-  return {
-    enabled: true,
-    eventId:          document.getElementById('ks-reg-event').value,
-    participantGroup: document.getElementById('ks-reg-participant-group').value || null,
-    fields:           _regFields,
-  };
+  return { enabled: document.getElementById('ks-reg-enabled').checked };
 }
 
 // Build a screen payload for saveKioskStation.

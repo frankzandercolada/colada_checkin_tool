@@ -1777,7 +1777,7 @@ async function showRegistration() {
       </button>`;
     }).join('');
   } else {
-    _regEventId = eventIds[0] || _regConfig.reg?.eventId;
+    _regEventId = eventIds[0];
     regShowStep('form');
     renderRegForm();
   }
@@ -1799,7 +1799,9 @@ function regShowStep(step) {
 }
 
 function allRegFields() {
-  const extra = (_regConfig?.reg?.fields || []).filter(f =>
+  // Extra fields come from the per-event self-reg config in badge-config
+  const evCfg = (_regConfig?.selfReg || {})[_regEventId] || {};
+  const extra = (evCfg.fields || []).filter(f =>
     !REG_FIXED_FIELDS.find(ff => ff.attr === f.attr)
   );
   return [...REG_FIXED_FIELDS, ...extra];
