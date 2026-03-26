@@ -821,26 +821,32 @@ app.get('/api/kiosk/registration-config', async (req, res) => {
       }
     }
 
-    // Resolve event names for the event selector
+    // Resolve event names — fetch each event individually in parallel.
+    // Listing all events risks pagination gaps; direct ID lookup is always exact.
     const projects = loadProjects();
     const project  = projects.find(p => p.id === pid);
     const eventIds = getProjectEventIds(project);
     let eventNames = {};
-    if (eventIds.length > 1) {
-      try {
-        const r = await fetch(`${apiBase}/_gw/s-events/external-api/events`, { headers: { Authorization: `Bearer ${token}` } });
-        if (r.ok) {
-          const data = await r.json();
-          const evList = data.events || (Array.isArray(data) ? data : []);
-          for (const ev of evList) {
-            const eid = ev.uid || ev.id;
-            if (eid && eventIds.includes(eid)) {
+    if (eventIds.length) {
+      const settled = await Promise.allSettled(
+        eventIds.map(eid =>
+          fetch(`${apiBase}/_gw/s-events/external-api/events/${eid}`,
+            { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } })
+            .then(r => r.ok ? r.json() : null)
+            .then(ev => {
+              if (!ev) return;
               const props = ev.properties || ev.attributes || {};
-              eventNames[eid] = props.title || props.name || props.event_name || `Event ${eid.slice(0,8)}…`;
-            }
-          }
-        }
-      } catch(e) {}
+              const name  = props.title || props.name || props.event_name
+                         || ev.name || ev.title || null;
+              if (name) eventNames[eid] = name;
+            })
+        )
+      );
+      // Log any resolution failures without crashing the whole response
+      settled.forEach((s, i) => {
+        if (s.status === 'rejected')
+          console.warn(`[reg-config] Could not resolve event name for ${eventIds[i]}:`, s.reason?.message);
+      });
     }
 
     res.json({ enabled: true, reg, eventIds, eventNames, labelMap });
