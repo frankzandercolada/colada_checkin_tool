@@ -794,6 +794,177 @@ app.post('/api/guests/:eventId/:guestId/badge', async (req, res) => {
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
+// ─── Self-registration ────────────────────────────────────────────────────────
+
+// Returns the registration config for the active station + option labels for
+// any choice fields so the kiosk can render dropdowns without extra API calls.
+app.get('/api/kiosk/registration-config', async (req, res) => {
+  try {
+    const pid = getActiveProjectId();
+    const stations = loadKioskStations(pid);
+    const stationId = req.query.stationId;
+    const station = stationId ? stations.find(s => s.id === stationId) : null;
+    const reg = station?.selfRegistration;
+    if (!reg?.enabled) return res.json({ enabled: false });
+
+    const token = await getToken(pid);
+    const { apiBase } = getEffectiveCredentials(pid);
+
+    // Resolve option labels for choice fields in the form
+    const fields = reg.fields || [];
+    const choiceFields = fields.filter(f => f.type === 'choice' && f.options?.length);
+    // Build a flat labelMap from all options already stored in the field config
+    const labelMap = {};
+    for (const f of choiceFields) {
+      for (const opt of f.options) {
+        if (opt.value && opt.label) labelMap[opt.value] = opt.label;
+      }
+    }
+
+    // Resolve event names for the event selector
+    const projects = loadProjects();
+    const project  = projects.find(p => p.id === pid);
+    const eventIds = getProjectEventIds(project);
+    let eventNames = {};
+    if (eventIds.length > 1) {
+      try {
+        const r = await fetch(`${apiBase}/_gw/s-events/external-api/events`, { headers: { Authorization: `Bearer ${token}` } });
+        if (r.ok) {
+          const data = await r.json();
+          const evList = data.events || (Array.isArray(data) ? data : []);
+          for (const ev of evList) {
+            const eid = ev.uid || ev.id;
+            if (eid && eventIds.includes(eid)) {
+              const props = ev.properties || ev.attributes || {};
+              eventNames[eid] = props.title || props.name || props.event_name || `Event ${eid.slice(0,8)}…`;
+            }
+          }
+        }
+      } catch(e) {}
+    }
+
+    res.json({ enabled: true, reg, eventIds, eventNames, labelMap });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Create a new guest registration and immediately check them in + return badge config.
+// Body: { eventId, attributes: { contact_firstName, contact_lastName, contact_email, contact_commLang, … } }
+app.post('/api/kiosk/register', async (req, res) => {
+  try {
+    const pid = getActiveProjectId();
+    const token = await getToken(pid);
+    const { apiBase } = getEffectiveCredentials(pid);
+
+    const { eventId, attributes: inputAttrs = {}, stationId } = req.body;
+    if (!eventId) return res.status(400).json({ error: 'eventId required' });
+    if (!inputAttrs.contact_firstName || !inputAttrs.contact_lastName || !inputAttrs.contact_email) {
+      return res.status(400).json({ error: 'firstName, lastName and email are required' });
+    }
+
+    // Load the station's self-registration config
+    const stations = loadKioskStations(pid);
+    const station  = stationId ? stations.find(s => s.id === stationId) : null;
+    const reg      = station?.selfRegistration || {};
+
+    // Build the attributes payload — strip any top-level structural fields
+    // that Colada365 expects at the body root, not inside attributes
+    const attrs = { ...inputAttrs };
+    // Colada365 convention: include $unset for the check-in date so it starts clean
+    attrs.guest_x_checkedinat = '$unset';
+
+    // Build the Colada365 POST body — participantGroupId is top-level, not in attributes
+    const createBody = {
+      participantGroupId: reg.participantGroup || null,
+      departmentId:       null,
+      attributes:         attrs,
+    };
+
+    const base    = `${apiBase}/_gw/s-events-guests/external-api/events/${eventId}/guests`;
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
+
+    // 1. Create the guest — Colada365 returns 201 Created
+    const createRes = await fetch(base, { method: 'POST', headers, body: JSON.stringify(createBody) });
+    const createText = await createRes.text();
+    if (createRes.status !== 201 && !createRes.ok) {
+      throw new Error(`Registration failed (${createRes.status}): ${createText.slice(0, 300)}`);
+    }
+
+    // Parse whatever body came back — on 201 it may be minimal ({ id } or even empty)
+    let guest = {};
+    try { const parsed = JSON.parse(createText); guest = Array.isArray(parsed) ? parsed[0] : parsed; } catch(e) {}
+
+    // Extract guest ID — may be in body or in Location header
+    let guestId = guest.id || guest.uid;
+    if (!guestId) {
+      const loc = createRes.headers.get('Location') || '';
+      const m   = loc.match(/\/guests\/([^/?]+)/);
+      if (m) guestId = m[1];
+    }
+    if (!guestId) throw new Error('No guest ID returned from Colada365 (no id in body or Location header)');
+
+    // 2. Re-fetch the full guest record if the 201 body didn't include attributes.
+    //    This ensures we have the correct revision for the subsequent PATCH
+    //    and full attributes for badge routing.
+    if (!guest.attributes && !guest.properties) {
+      console.log(`[register] 201 body lacked attributes — re-fetching guest ${guestId}`);
+      try {
+        const fetchRes = await fetch(`${base}/${guestId}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+        if (fetchRes.ok) {
+          const fetched = await fetchRes.json();
+          guest = Array.isArray(fetched) ? fetched[0] : fetched;
+        }
+      } catch(e) { console.warn('[register] re-fetch failed:', e.message); }
+    }
+
+    // 3. Check in the newly created guest
+    const today      = new Date().toISOString().split('T')[0];
+    const guestAttrs = guest.attributes || guest.properties || {};
+    // Strip $unset placeholder from create — use real date in check-in PATCH
+    const { guest_x_checkedinat: _unset, _matchedEventId: _mid, ...cleanGuestAttrs } = guestAttrs;
+    const patchAttrs = { ...cleanGuestAttrs, guest_x_checkedin: true, guest_x_checkedinat: today };
+    const ciHeaders  = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
+    const rev = guest.revision || guestAttrs.revision;
+    if (rev) ciHeaders['If-Match'] = rev;
+    const ciRes = await fetch(`${base}/${guestId}`, { method: 'PATCH', headers: ciHeaders, body: JSON.stringify({ attributes: patchAttrs }) });
+    if (!ciRes.ok) {
+      const ciErr = await ciRes.text();
+      console.warn(`[register] check-in PATCH failed (${ciRes.status}): ${ciErr.slice(0, 200)}`);
+      // Non-fatal — guest is registered, badge will still print
+    }
+
+    // 4. Build response attrs with _matchedEventId for badge routing
+    // Merge inputAttrs (what the user entered) with what Colada365 returned,
+    // so routing rules have all values even if the re-fetch returned a sparse record
+    const responseAttrs = {
+      ...inputAttrs,
+      ...cleanGuestAttrs,
+      guest_x_checkedin:   true,
+      guest_x_checkedinat: today,
+      _matchedEventId:     eventId,
+    };
+
+    const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
+    const selectedTemplate = selectTemplateKey(responseAttrs, badgeCfg);
+
+    res.json({
+      ok: true,
+      guest: {
+        firstName: responseAttrs.contact_firstName || '',
+        lastName:  responseAttrs.contact_lastName  || '',
+        company:   responseAttrs.contact_x_companyName || '',
+        id: guestId,
+        attributes: responseAttrs,
+      },
+      badgeConfig: {
+        templates:   badgeCfg.templates,
+        eventGroups: badgeCfg.eventGroups,
+        rules:       badgeCfg.rules,
+        fallback:    badgeCfg.fallback,
+        _selectedTemplate: selectedTemplate,
+      },
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
 
 // ─── Kiosk stations ───────────────────────────────────────────────────────────
 function kioskStationsPath(projectId) {
@@ -896,6 +1067,7 @@ app.post('/api/kiosk/stations', (req, res) => {
     printEndpoint: printEndpoint || null,
     cameraMode:    cameraMode    || false,
     lightMode:     lightMode     || false,
+    selfRegistration: req.body.selfRegistration || { enabled: false },
   };
   if (existing >= 0) stations[existing] = station; else stations.push(station);
   saveKioskStations(id, stations);

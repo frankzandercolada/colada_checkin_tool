@@ -396,6 +396,17 @@ html, body {
 .cfg-btn.primary { background: var(--accent); color: #fff; }
 .cfg-btn.secondary { background: rgba(255,255,255,0.08); color: #fff; }
 
+/* ── On-screen keyboard ── */
+.kb-btn {
+  background: var(--surface2); border: 1px solid var(--border-tint); border-radius: 8px;
+  color: var(--text); cursor: pointer; font-family: var(--font);
+  font-size: clamp(12px, 2.2vmin, 18px); font-weight: 600;
+  padding: clamp(8px,1.8vmin,14px) clamp(6px,1.5vmin,12px);
+  transition: background 0.1s; -webkit-tap-highlight-color: transparent;
+  user-select: none; -webkit-user-select: none;
+}
+.kb-btn:active { background: var(--accent); color: #fff; }
+
 /* ── Station selector (first load) ── */
 #station-selector {
   display: none; position: fixed; inset: 0; z-index: 200;
@@ -658,6 +669,15 @@ html, body {
     <div style="position:absolute;bottom:0;right:0;width:60px;height:60px;cursor:default;"
          onmousedown="startAdminHold()" onmouseup="cancelAdminHold()" onmouseleave="cancelAdminHold()"
          ontouchstart="startAdminHold()" ontouchend="cancelAdminHold()"></div>
+    <!-- Self-registration button — shown only when enabled -->
+    <button id="reg-btn" onclick="showRegistration()"
+      style="display:none; position:absolute; bottom:clamp(24px,6vmin,60px); left:50%; transform:translateX(-50%);
+             background:transparent; border:2px solid var(--accent); color:var(--accent);
+             border-radius:100px; padding:clamp(10px,2vmin,16px) clamp(24px,6vmin,48px);
+             font-size:clamp(13px,2.5vmin,20px); font-weight:700; cursor:pointer;
+             font-family:var(--font); letter-spacing:0.04em; transition:background 0.2s,color 0.2s;">
+      + Register
+    </button>
   </div>
 
   <!-- Processing -->
@@ -735,6 +755,73 @@ html, body {
     <div class="return-bar" id="already-return">
       <div class="return-track"><div class="return-fill" id="already-fill" style="width:100%"></div></div>
       <div class="return-label" id="already-timer">Returning in 8s</div>
+    </div>
+  </div>
+
+  <!-- Self-Registration -->
+  <div class="screen" id="screen-register" style="padding:0; overflow:hidden;">
+    <div style="width:100%; height:100%; display:flex; flex-direction:column; overflow:hidden;">
+      <!-- Header -->
+      <div style="flex-shrink:0; padding:clamp(16px,4vmin,40px) clamp(20px,5vmin,60px) 0; display:flex; align-items:center; justify-content:space-between;">
+        <div style="font-size:clamp(18px,4vmin,36px); font-weight:800; color:var(--text);" id="reg-title">Register</div>
+        <button onclick="cancelRegistration()"
+          style="background:none;border:1px solid var(--border-tint);border-radius:8px;color:var(--muted);cursor:pointer;
+                 font-size:clamp(12px,2vmin,18px);padding:8px 16px;font-family:var(--font);">✕ Cancel</button>
+      </div>
+
+      <!-- Step: event selector (only shown for multi-event) -->
+      <div id="reg-step-event" style="display:none; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:clamp(12px,3vmin,32px); padding:clamp(16px,4vmin,40px);">
+        <div style="font-size:clamp(14px,3vmin,24px); color:var(--muted); text-align:center;">Which event are you registering for?</div>
+        <div id="reg-event-list" style="display:flex; flex-direction:column; gap:12px; width:100%; max-width:480px;"></div>
+      </div>
+
+      <!-- Step: form -->
+      <div id="reg-step-form" style="display:none; flex-direction:column; flex:1; overflow:hidden;">
+        <div style="flex:1; overflow-y:auto; padding:clamp(12px,3vmin,32px) clamp(20px,5vmin,60px);">
+          <div id="reg-form-fields" style="display:flex; flex-direction:column; gap:clamp(10px,2.5vmin,24px);"></div>
+        </div>
+        <!-- On-screen keyboard for touch input -->
+        <div id="reg-keyboard" style="flex-shrink:0; background:var(--surface); border-top:1px solid var(--border-tint); padding:8px 6px;">
+          <div id="kb-display" style="font-family:var(--mono); font-size:clamp(14px,3vmin,24px); color:var(--text);
+               background:var(--surface2); border:1px solid var(--border-tint); border-radius:8px;
+               padding:10px 16px; margin-bottom:8px; min-height:44px; letter-spacing:0.02em;"></div>
+          <div id="kb-rows" style="display:flex; flex-direction:column; gap:5px;"></div>
+          <div style="display:flex; gap:6px; margin-top:5px;">
+            <button class="kb-btn" style="flex:1;" onclick="kbAction('shift')">⇧</button>
+            <button class="kb-btn" style="flex:3;" onclick="kbAction('space')">Space</button>
+            <button class="kb-btn" style="flex:1;" onclick="kbAction('backspace')">⌫</button>
+            <button class="kb-btn" style="flex:1; background:var(--accent); color:#fff;" onclick="kbAction('done')">Done ✓</button>
+          </div>
+        </div>
+        <div style="flex-shrink:0; padding:10px clamp(20px,5vmin,60px); display:flex; gap:12px;">
+          <button onclick="regPrev()"
+            style="flex:1; padding:14px; border:1px solid var(--border-tint); border-radius:12px;
+                   background:none; color:var(--muted); font-size:clamp(13px,2.5vmin,20px); cursor:pointer; font-family:var(--font);">← Back</button>
+          <button onclick="regNext()"
+            style="flex:2; padding:14px; border:none; border-radius:12px;
+                   background:var(--accent); color:#fff; font-size:clamp(14px,2.5vmin,20px); font-weight:700; cursor:pointer; font-family:var(--font);">Next →</button>
+        </div>
+      </div>
+
+      <!-- Step: confirm -->
+      <div id="reg-step-confirm" style="display:none; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:clamp(12px,3vmin,28px); padding:clamp(16px,4vmin,40px);">
+        <div style="font-size:clamp(14px,3vmin,22px); color:var(--muted);">Please confirm your details:</div>
+        <div id="reg-confirm-details" style="background:var(--surface2); border-radius:14px; padding:clamp(16px,4vmin,32px); width:100%; max-width:440px; display:flex; flex-direction:column; gap:10px;"></div>
+        <div style="display:flex; gap:12px; width:100%; max-width:440px;">
+          <button onclick="regShowStep('form')"
+            style="flex:1; padding:14px; border:1px solid var(--border-tint); border-radius:12px;
+                   background:none; color:var(--muted); font-size:clamp(13px,2.5vmin,20px); cursor:pointer; font-family:var(--font);">← Edit</button>
+          <button onclick="submitRegistration()"
+            style="flex:2; padding:14px; border:none; border-radius:12px;
+                   background:var(--accent); color:#fff; font-size:clamp(14px,2.5vmin,20px); font-weight:700; cursor:pointer; font-family:var(--font);">✓ Register &amp; Print Badge</button>
+        </div>
+      </div>
+
+      <!-- Step: processing -->
+      <div id="reg-step-processing" style="display:none; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:20px;">
+        <div class="spin"></div>
+        <div style="color:var(--muted); font-size:clamp(14px,3vmin,22px);">Registering…</div>
+      </div>
     </div>
   </div>
 
@@ -903,6 +990,10 @@ function applyStation(s, resolvedLogoText) {
       el.textContent = logoText;
     }
   });
+
+  // Show/hide self-registration button on welcome screen
+  const regBtn = document.getElementById('reg-btn');
+  if (regBtn) regBtn.style.display = s.selfRegistration?.enabled ? 'block' : 'none';
 
   // Welcome
   setText('welcome-title', s.welcome?.title || 'Welcome');
@@ -1635,8 +1726,322 @@ function clearKioskScreenBg(screenKey) {
   document.getElementById('cfg-' + screenKey + '-bg-file').value = '';
 }
 
-// ── Boot ──────────────────────────────────────────────────────────────────────
-init();
+// ── Self-Registration ─────────────────────────────────────────────────────────
+let _regConfig    = null;  // loaded from /api/kiosk/registration-config
+let _regFormData  = {};    // { attr: value } accumulated by the form
+let _regEventId   = null;  // selected event (may be pre-set if single event)
+let _regActiveField = null; // attr name currently being edited by keyboard
+let _kbShift      = false;
+
+// Fixed fields always shown in registration (in order)
+const REG_FIXED_FIELDS = [
+  { attr: 'contact_firstName', label: 'First Name',    type: 'text', required: true },
+  { attr: 'contact_lastName',  label: 'Last Name',     type: 'text', required: true },
+  { attr: 'contact_email',     label: 'Email Address', type: 'text', required: true },
+  { attr: 'contact_commLang',  label: 'Language',      type: 'choice', required: true,
+    options: [{ value: 'de', label: 'Deutsch' }, { value: 'en', label: 'English' },
+              { value: 'fr', label: 'Français' }, { value: 'it', label: 'Italiano' }] },
+];
+
+async function showRegistration() {
+  if (!station?.selfRegistration?.enabled) return;
+  stopCamera();
+  cancelReturn();
+
+  // Load registration config (event list + field option labels)
+  try {
+    const r = await fetch(`/api/kiosk/registration-config?stationId=${encodeURIComponent(stationId)}`);
+    _regConfig = await r.json();
+  } catch(e) { showError('Registration unavailable'); return; }
+
+  if (!_regConfig?.enabled) { showError('Registration not configured'); return; }
+
+  _regFormData = {};
+  document.getElementById('reg-title').textContent = 'Register';
+
+  const eventIds = _regConfig.eventIds || [];
+  if (eventIds.length > 1) {
+    // Show event picker first
+    regShowStep('event');
+    const list = document.getElementById('reg-event-list');
+    list.innerHTML = eventIds.map(eid => {
+      const name = _regConfig.eventNames?.[eid] || `Event ${eid.slice(0,8)}…`;
+      return `<button onclick="regSelectEvent('${eid}')"
+        style="padding:clamp(14px,3vmin,24px); border:2px solid var(--border-tint); border-radius:14px;
+               background:var(--surface2); color:var(--text); cursor:pointer; font-family:var(--font);
+               font-size:clamp(14px,2.8vmin,22px); font-weight:700; text-align:left; width:100%;
+               transition:border-color 0.15s, background 0.15s;"
+        onmouseover="this.style.borderColor='var(--accent)'"
+        onmouseout="this.style.borderColor='var(--border-tint)'">
+        ${escKiosk(name)}
+      </button>`;
+    }).join('');
+  } else {
+    _regEventId = eventIds[0] || _regConfig.reg?.eventId;
+    regShowStep('form');
+    renderRegForm();
+  }
+
+  showScreen('register');
+}
+
+function regSelectEvent(eid) {
+  _regEventId = eid;
+  regShowStep('form');
+  renderRegForm();
+}
+
+function regShowStep(step) {
+  ['event','form','confirm','processing'].forEach(s => {
+    document.getElementById('reg-step-' + s).style.display = s === step ? 'flex' : 'none';
+  });
+}
+
+function allRegFields() {
+  const extra = (_regConfig?.reg?.fields || []).filter(f =>
+    !REG_FIXED_FIELDS.find(ff => ff.attr === f.attr)
+  );
+  return [...REG_FIXED_FIELDS, ...extra];
+}
+
+function renderRegForm() {
+  const fields = allRegFields();
+  const labelMap = _regConfig?.labelMap || {};
+  const container = document.getElementById('reg-form-fields');
+  container.innerHTML = fields.map(f => {
+    const val = _regFormData[f.attr] || '';
+    const labelHtml = `<label style="font-size:clamp(11px,2vmin,16px);color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em;">
+      ${escKiosk(f.label)}${f.required ? ' <span style="color:var(--accent)">*</span>' : ''}
+    </label>`;
+
+    if (f.type === 'choice') {
+      const opts = (f.options || []).map(o => {
+        const oLabel = labelMap[o.value] || o.label || o.value;
+        const sel = val === o.value;
+        return `<button onclick="regSetChoice('${f.attr}','${o.value}',this)"
+          style="padding:clamp(8px,1.8vmin,14px) clamp(10px,2vmin,18px); border-radius:10px; cursor:pointer;
+                 font-family:var(--font); font-size:clamp(12px,2.2vmin,18px); font-weight:600;
+                 border:2px solid ${sel ? 'var(--accent)' : 'var(--border-tint)'};
+                 background:${sel ? 'var(--accent)' : 'var(--surface2)'};
+                 color:${sel ? '#fff' : 'var(--text)'}; transition:all 0.15s;"
+          data-attr="${f.attr}" data-val="${o.value}">
+          ${escKiosk(oLabel)}
+        </button>`;
+      }).join('');
+      return `<div style="display:flex;flex-direction:column;gap:8px;">${labelHtml}
+        <div style="display:flex;flex-wrap:wrap;gap:8px;">${opts}</div>
+      </div>`;
+    }
+
+    // text / boolean
+    return `<div style="display:flex;flex-direction:column;gap:6px;">${labelHtml}
+      <div id="reg-field-${f.attr}"
+        onclick="regFocusField('${f.attr}')"
+        style="padding:clamp(10px,2.2vmin,18px) clamp(12px,2.5vmin,20px); border-radius:10px; cursor:text;
+               border:2px solid var(--border-tint); background:var(--surface2); min-height:44px;
+               font-size:clamp(14px,2.8vmin,22px); color:${val ? 'var(--text)' : 'var(--muted)'};
+               font-family:var(--mono); transition:border-color 0.15s;"
+        data-attr="${f.attr}">
+        ${val ? escKiosk(val) : escKiosk('Tap to enter…')}
+      </div>
+    </div>`;
+  }).join('');
+
+  buildKeyboard();
+  hideKeyboard();
+  _regActiveField = null;
+}
+
+function regSetChoice(attr, value, btn) {
+  _regFormData[attr] = value;
+  // Update button styles within the same group
+  const allBtns = document.querySelectorAll(`[data-attr="${attr}"]`);
+  allBtns.forEach(b => {
+    const isSelected = b.dataset.val === value;
+    b.style.border = `2px solid ${isSelected ? 'var(--accent)' : 'var(--border-tint)'}`;
+    b.style.background = isSelected ? 'var(--accent)' : 'var(--surface2)';
+    b.style.color = isSelected ? '#fff' : 'var(--text)';
+  });
+}
+
+function regFocusField(attr) {
+  _regActiveField = attr;
+  // Highlight the focused field
+  document.querySelectorAll('[id^="reg-field-"]').forEach(el => {
+    el.style.borderColor = el.dataset.attr === attr ? 'var(--accent)' : 'var(--border-tint)';
+  });
+  // Show current value in keyboard display
+  document.getElementById('kb-display').textContent = _regFormData[attr] || '';
+  showKeyboard();
+}
+
+// ── On-screen keyboard ────────────────────────────────────────────────────────
+const KB_ROWS_LOWER = [
+  ['q','w','e','r','t','y','u','i','o','p'],
+  ['a','s','d','f','g','h','j','k','l'],
+  ['z','x','c','v','b','n','m'],
+];
+const KB_ROWS_UPPER = KB_ROWS_LOWER.map(row => row.map(k => k.toUpperCase()));
+const KB_NUMS = [['1','2','3','4','5','6','7','8','9','0'],
+                 ['-','_','.','@','#','+','(',')','/','!'],
+                 [',','?',':',';','=','&','%','"',"'"]];
+
+let _kbMode = 'lower'; // 'lower' | 'upper' | 'num'
+
+function buildKeyboard() {
+  const rows = document.getElementById('kb-rows');
+  rows.innerHTML = '';
+  const layout = _kbMode === 'num' ? KB_NUMS : (_kbMode === 'upper' ? KB_ROWS_UPPER : KB_ROWS_LOWER);
+  layout.forEach(row => {
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;gap:5px;justify-content:center;';
+    row.forEach(k => {
+      const btn = document.createElement('button');
+      btn.className = 'kb-btn';
+      btn.style.flex = '1';
+      btn.textContent = k;
+      btn.onclick = () => kbType(k);
+      div.appendChild(btn);
+    });
+    rows.appendChild(div);
+  });
+  // Mode toggle row
+  const modeDiv = document.createElement('div');
+  modeDiv.style.cssText = 'display:flex;gap:5px;margin-top:5px;';
+  [['ABC/abc', 'shift'], ['123', 'num']].forEach(([label, action]) => {
+    const btn = document.createElement('button');
+    btn.className = 'kb-btn';
+    btn.style.flex = '1';
+    btn.textContent = label;
+    btn.onclick = () => kbAction(action);
+    modeDiv.appendChild(btn);
+  });
+  rows.appendChild(modeDiv);
+}
+
+function kbType(char) {
+  if (!_regActiveField) return;
+  _regFormData[_regActiveField] = (_regFormData[_regActiveField] || '') + char;
+  updateFieldDisplay(_regActiveField);
+  // Auto-switch back to lower after one uppercase letter
+  if (_kbMode === 'upper') { _kbMode = 'lower'; buildKeyboard(); }
+}
+
+function kbAction(action) {
+  if (action === 'shift') {
+    _kbMode = _kbMode === 'lower' ? 'upper' : 'lower';
+    buildKeyboard();
+  } else if (action === 'num') {
+    _kbMode = _kbMode === 'num' ? 'lower' : 'num';
+    buildKeyboard();
+  } else if (action === 'space') {
+    kbType(' ');
+  } else if (action === 'backspace') {
+    if (!_regActiveField) return;
+    const v = _regFormData[_regActiveField] || '';
+    _regFormData[_regActiveField] = v.slice(0, -1);
+    updateFieldDisplay(_regActiveField);
+  } else if (action === 'done') {
+    hideKeyboard();
+    _regActiveField = null;
+    document.querySelectorAll('[id^="reg-field-"]').forEach(el => {
+      el.style.borderColor = 'var(--border-tint)';
+    });
+  }
+}
+
+function updateFieldDisplay(attr) {
+  const el = document.getElementById('reg-field-' + attr);
+  const val = _regFormData[attr] || '';
+  if (el) {
+    el.textContent = val || 'Tap to enter…';
+    el.style.color = val ? 'var(--text)' : 'var(--muted)';
+  }
+  document.getElementById('kb-display').textContent = val;
+}
+
+function showKeyboard() {
+  document.getElementById('reg-keyboard').style.display = 'block';
+}
+function hideKeyboard() {
+  document.getElementById('reg-keyboard').style.display = 'none';
+}
+
+function escKiosk(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function regNext() {
+  // Validate required fields
+  const fields = allRegFields();
+  const missing = fields.filter(f => f.required && !_regFormData[f.attr]?.trim());
+  if (missing.length) {
+    // Highlight missing fields
+    missing.forEach(f => {
+      const el = document.getElementById('reg-field-' + f.attr);
+      if (el) el.style.borderColor = '#f87171';
+    });
+    return;
+  }
+  // Build confirm view
+  regShowStep('confirm');
+  const labelMap = _regConfig?.labelMap || {};
+  const fields2 = allRegFields();
+  document.getElementById('reg-confirm-details').innerHTML = fields2.map(f => {
+    let val = _regFormData[f.attr] || '—';
+    if (f.type === 'choice') {
+      const opt = (f.options||[]).find(o => o.value === val);
+      val = labelMap[val] || opt?.label || val;
+    }
+    return `<div style="display:flex;justify-content:space-between;font-size:clamp(13px,2.5vmin,20px);">
+      <span style="color:var(--muted);">${escKiosk(f.label)}</span>
+      <span style="color:var(--text);font-weight:600;">${escKiosk(val)}</span>
+    </div>`;
+  }).join('');
+}
+
+function regPrev() {
+  const eventIds = _regConfig?.eventIds || [];
+  if (eventIds.length > 1) {
+    regShowStep('event');
+  } else {
+    cancelRegistration();
+  }
+}
+
+function cancelRegistration() {
+  showScreen('welcome');
+  applyWelcomeBg();
+  refocusScanInput();
+  if (station?.cameraMode) startCamera();
+}
+
+async function submitRegistration() {
+  regShowStep('processing');
+  try {
+    const attrs = { ..._regFormData };
+    const r = await fetch('/api/kiosk/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ eventId: _regEventId, attributes: attrs, stationId }),
+    });
+    const data = await r.json();
+    if (!data.ok) throw new Error(data.error || 'Registration failed');
+
+    // Show success screen and print badge
+    const g = data.guest || {};
+    setText('success-name', [g.firstName, g.lastName].filter(Boolean).join(' ') || '—');
+    setText('success-company', g.company || '');
+    showScreen('success');
+    applyScreenBg(station?.success);
+    startReturn('success', getReturnSecs(station?.success));
+
+    // Print badge
+    try { await printKioskBadge(data); } catch(e) { console.warn('[reg] badge error:', e); }
+  } catch(e) {
+    showError('Registration failed: ' + (e.message || 'Unknown error'));
+  }
+}
 </script>
 </body>
 </html>
