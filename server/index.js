@@ -919,11 +919,8 @@ app.post('/api/kiosk/register', async (req, res) => {
     const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
 
     // 1. Create the guest — Colada365 returns 201 Created
-    console.log('[register] POST', base);
-    console.log('[register] body:', JSON.stringify(createBody, null, 2));
     const createRes = await fetch(base, { method: 'POST', headers, body: JSON.stringify(createBody) });
     const createText = await createRes.text();
-    console.log(`[register] response ${createRes.status}:`, createText.slice(0, 500));
     if (createRes.status !== 201 && !createRes.ok) {
       throw new Error(`Registration failed (${createRes.status}): ${createText.slice(0, 300)}`);
     }
@@ -941,24 +938,17 @@ app.post('/api/kiosk/register', async (req, res) => {
     }
     if (!guestId) throw new Error('No guest ID returned from Colada365 (no id in body or Location header)');
 
-    // 2. Always re-fetch the full guest record after creation.
-    //    The 201 body is a summary without attributes, and Colada365 may increment
-    //    the revision internally after creation — using the 201 revision causes a 409.
-    console.log(`[register] re-fetching guest ${guestId} to get current revision + attributes`);
+    // 2. Always re-fetch the full guest record after creation to get the current
+    //    revision — Colada365 increments it internally after creation (assigning
+    //    guest_code, triggering workflows), so the 201 revision is already stale.
     try {
       const fetchRes = await fetch(`${base}/${guestId}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
-      if (fetchRes.ok) {
-        const fetched = await fetchRes.json();
-        guest = Array.isArray(fetched) ? fetched[0] : fetched;
-        console.log(`[register] re-fetch OK, revision=${guest.revision}`);
-      } else {
-        console.warn(`[register] re-fetch failed: ${fetchRes.status}`);
-      }
+      if (fetchRes.ok) guest = await fetchRes.json();
     } catch(e) { console.warn('[register] re-fetch error:', e.message); }
 
     // 3. Check in the newly created guest.
-    // Colada365 may update the guest internally (assign guest_code, trigger workflows)
-    // between our re-fetch and our PATCH, causing a 409. Retry with a fresh fetch on conflict.
+    // Colada365 may still be updating the guest (workflows, guest_code assignment)
+    // between our re-fetch and PATCH — retry with a fresh fetch on each 409.
     const today = new Date().toISOString().split('T')[0];
     let checkedIn = false;
     for (let attempt = 1; attempt <= 5; attempt++) {
@@ -969,27 +959,21 @@ app.post('/api/kiosk/register', async (req, res) => {
       const ciHeaders  = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
       const rev = guest.revision || guestAttrs.revision;
       if (rev) ciHeaders['If-Match'] = rev;
-      console.log(`[register] check-in PATCH attempt ${attempt}, revision=${rev}`);
       const ciRes = await fetch(`${base}/${guestId}`, { method: 'PATCH', headers: ciHeaders, body: JSON.stringify({ attributes: patchAttrs }) });
-      if (ciRes.ok) {
-        console.log(`[register] check-in PATCH OK on attempt ${attempt}`);
-        checkedIn = true;
-        break;
-      }
+      if (ciRes.ok) { checkedIn = true; break; }
       const ciErr = await ciRes.text();
-      console.warn(`[register] check-in PATCH failed attempt ${attempt} (${ciRes.status}): ${ciErr.slice(0, 200)}`);
       if (ciRes.status === 409 && attempt < 5) {
-        // Re-fetch to get the latest revision before retrying
         await new Promise(r => setTimeout(r, 300 * attempt));
         try {
           const refetch = await fetch(`${base}/${guestId}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
-          if (refetch.ok) { guest = await refetch.json(); console.log(`[register] re-fetched revision=${guest.revision}`); }
-        } catch(e) { console.warn('[register] re-fetch error:', e.message); }
+          if (refetch.ok) guest = await refetch.json();
+        } catch(e) {}
       } else {
-        break; // non-409 error — don't retry
+        console.warn(`[register] check-in PATCH failed (${ciRes.status}): ${ciErr.slice(0, 200)}`);
+        break;
       }
     }
-    if (!checkedIn) console.warn('[register] check-in could not complete — guest created but not checked in');
+    if (!checkedIn) console.warn('[register] guest created but check-in did not complete');
 
     // 4. Build response attrs with _matchedEventId for badge routing
     const finalGuestAttrs = guest.attributes || guest.properties || {};
