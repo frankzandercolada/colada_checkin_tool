@@ -941,19 +941,20 @@ app.post('/api/kiosk/register', async (req, res) => {
     }
     if (!guestId) throw new Error('No guest ID returned from Colada365 (no id in body or Location header)');
 
-    // 2. Re-fetch the full guest record if the 201 body didn't include attributes.
-    //    This ensures we have the correct revision for the subsequent PATCH
-    //    and full attributes for badge routing.
-    if (!guest.attributes && !guest.properties) {
-      console.log(`[register] 201 body lacked attributes — re-fetching guest ${guestId}`);
-      try {
-        const fetchRes = await fetch(`${base}/${guestId}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
-        if (fetchRes.ok) {
-          const fetched = await fetchRes.json();
-          guest = Array.isArray(fetched) ? fetched[0] : fetched;
-        }
-      } catch(e) { console.warn('[register] re-fetch failed:', e.message); }
-    }
+    // 2. Always re-fetch the full guest record after creation.
+    //    The 201 body is a summary without attributes, and Colada365 may increment
+    //    the revision internally after creation — using the 201 revision causes a 409.
+    console.log(`[register] re-fetching guest ${guestId} to get current revision + attributes`);
+    try {
+      const fetchRes = await fetch(`${base}/${guestId}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+      if (fetchRes.ok) {
+        const fetched = await fetchRes.json();
+        guest = Array.isArray(fetched) ? fetched[0] : fetched;
+        console.log(`[register] re-fetch OK, revision=${guest.revision}`);
+      } else {
+        console.warn(`[register] re-fetch failed: ${fetchRes.status}`);
+      }
+    } catch(e) { console.warn('[register] re-fetch error:', e.message); }
 
     // 3. Check in the newly created guest
     const today      = new Date().toISOString().split('T')[0];
