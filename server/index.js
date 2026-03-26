@@ -599,38 +599,22 @@ app.get('/api/events/:eventId/participantgroups', async (req, res) => {
     const { eventId } = req.params;
     const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
 
-    // Try candidate endpoint patterns in order — return first successful result
-    const candidates = [
-      `${apiBase}/_gw/s-events-guests/external-api/events/${eventId}/participantgroups`,
-      `${apiBase}/_gw/s-events/external-api/events/${eventId}/participantgroups`,
-      `${apiBase}/_gw/s-events-guests/external-api/events/${eventId}/participant-groups`,
-      `${apiBase}/_gw/s-events/external-api/events/${eventId}/participant-groups`,
-    ];
+    const url = `${apiBase}/_gw/s-events-participant-groups/external-api/events/${eventId}/participantgroups`;
+    const r = await fetch(url, { headers });
+    if (!r.ok) throw new Error(`API error ${r.status}: ${(await r.text()).slice(0, 200)}`);
+    const data = await r.json();
 
-    function extractGroups(data) {
-      const arr = Array.isArray(data) ? data
-        : (data.participantGroups || data.participantgroups
-        || data.groups || data.items || data.data || []);
-      return arr.map(g => {
-        const props = g.properties || g.attributes || {};
-        const name  = props.name || props.title || g.name || g.title
-                   || props.displayName || g.displayName || g.id;
-        return { id: g.id || g.uid, name };
-      }).filter(g => g.id);
-    }
+    const arr = Array.isArray(data) ? data
+      : (data.participantGroups || data.participantgroups || data.groups || data.items || data.data || []);
 
-    for (const url of candidates) {
-      try {
-        const r = await fetch(url, { headers });
-        if (!r.ok) continue;
-        const data = await r.json();
-        const groups = extractGroups(data);
-        if (groups.length > 0) return res.json({ groups, source: url });
-      } catch(e) { continue; }
-    }
+    const groups = arr.map(g => {
+      const props = g.properties || g.attributes || {};
+      const name  = props.name || props.title || props.displayName
+                 || g.name || g.title || g.displayName || g.id;
+      return { id: g.id || g.uid, name };
+    }).filter(g => g.id);
 
-    // No candidate returned groups — return empty so UI can still function
-    res.json({ groups: [] });
+    res.json({ groups });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
