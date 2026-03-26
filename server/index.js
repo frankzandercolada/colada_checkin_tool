@@ -956,31 +956,46 @@ app.post('/api/kiosk/register', async (req, res) => {
       }
     } catch(e) { console.warn('[register] re-fetch error:', e.message); }
 
-    // 3. Check in the newly created guest
-    // Use inputAttrs as the base (what was submitted at creation) since the
-    // re-fetched Colada365 guest object returns a flat summary without .attributes.
-    // This mirrors what the regular scan check-in route does.
-    const today      = new Date().toISOString().split('T')[0];
-    const guestAttrs = guest.attributes || guest.properties || {};
-    const baseAttrs  = Object.keys(guestAttrs).length ? guestAttrs : inputAttrs;
-    const { guest_x_checkedinat: _unset, _matchedEventId: _mid, ...cleanBaseAttrs } = baseAttrs;
-    const patchAttrs = { ...cleanBaseAttrs, guest_x_checkedin: true, guest_x_checkedinat: today };
-    const ciHeaders  = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
-    const rev = guest.revision || guestAttrs.revision;
-    console.log(`[register] check-in PATCH revision=${rev}, attrs keys:`, Object.keys(patchAttrs));
-    if (rev) ciHeaders['If-Match'] = rev;
-    const ciRes = await fetch(`${base}/${guestId}`, { method: 'PATCH', headers: ciHeaders, body: JSON.stringify({ attributes: patchAttrs }) });
-    if (!ciRes.ok) {
+    // 3. Check in the newly created guest.
+    // Colada365 may update the guest internally (assign guest_code, trigger workflows)
+    // between our re-fetch and our PATCH, causing a 409. Retry with a fresh fetch on conflict.
+    const today = new Date().toISOString().split('T')[0];
+    let checkedIn = false;
+    for (let attempt = 1; attempt <= 5; attempt++) {
+      const guestAttrs = guest.attributes || guest.properties || {};
+      const baseAttrs  = Object.keys(guestAttrs).length ? guestAttrs : inputAttrs;
+      const { guest_x_checkedinat: _unset, _matchedEventId: _mid, ...cleanBaseAttrs } = baseAttrs;
+      const patchAttrs = { ...cleanBaseAttrs, guest_x_checkedin: true, guest_x_checkedinat: today };
+      const ciHeaders  = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
+      const rev = guest.revision || guestAttrs.revision;
+      if (rev) ciHeaders['If-Match'] = rev;
+      console.log(`[register] check-in PATCH attempt ${attempt}, revision=${rev}`);
+      const ciRes = await fetch(`${base}/${guestId}`, { method: 'PATCH', headers: ciHeaders, body: JSON.stringify({ attributes: patchAttrs }) });
+      if (ciRes.ok) {
+        console.log(`[register] check-in PATCH OK on attempt ${attempt}`);
+        checkedIn = true;
+        break;
+      }
       const ciErr = await ciRes.text();
-      console.warn(`[register] check-in PATCH failed (${ciRes.status}): ${ciErr.slice(0, 200)}`);
-    } else {
-      console.log(`[register] check-in PATCH OK`);
+      console.warn(`[register] check-in PATCH failed attempt ${attempt} (${ciRes.status}): ${ciErr.slice(0, 200)}`);
+      if (ciRes.status === 409 && attempt < 5) {
+        // Re-fetch to get the latest revision before retrying
+        await new Promise(r => setTimeout(r, 300 * attempt));
+        try {
+          const refetch = await fetch(`${base}/${guestId}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+          if (refetch.ok) { guest = await refetch.json(); console.log(`[register] re-fetched revision=${guest.revision}`); }
+        } catch(e) { console.warn('[register] re-fetch error:', e.message); }
+      } else {
+        break; // non-409 error — don't retry
+      }
     }
+    if (!checkedIn) console.warn('[register] check-in could not complete — guest created but not checked in');
 
     // 4. Build response attrs with _matchedEventId for badge routing
+    const finalGuestAttrs = guest.attributes || guest.properties || {};
     const responseAttrs = {
       ...inputAttrs,
-      ...cleanBaseAttrs,
+      ...finalGuestAttrs,
       guest_x_checkedin:   true,
       guest_x_checkedinat: today,
       _matchedEventId:     eventId,
