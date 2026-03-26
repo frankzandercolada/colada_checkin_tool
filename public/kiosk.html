@@ -1783,6 +1783,7 @@ async function showRegistration() {
   }
 
   showScreen('register');
+  applyScreenBg(null); // registration screen has no background image
 }
 
 function regSelectEvent(eid) {
@@ -1833,7 +1834,28 @@ function renderRegForm() {
       </div>`;
     }
 
-    // text / boolean
+    if (f.type === 'boolean') {
+      const checked = val === true || val === 'true';
+      return `<div style="display:flex;align-items:center;justify-content:space-between;
+                   padding:clamp(12px,2.5vmin,24px) clamp(14px,3vmin,28px);
+                   border-radius:12px; border:2px solid var(--border-tint); background:var(--surface2);
+                   cursor:pointer; transition:border-color 0.15s;"
+               id="reg-bool-wrap-${f.attr}"
+               onclick="regToggleBool('${f.attr}')">
+        <span style="font-size:clamp(13px,2.8vmin,22px);color:var(--text);font-weight:600;">${escKiosk(f.label)}</span>
+        <div id="reg-bool-${f.attr}" style="
+          width:clamp(44px,7vmin,72px); height:clamp(24px,4vmin,40px); border-radius:100px;
+          background:${checked ? 'var(--accent)' : 'var(--border-tint)'};
+          position:relative; transition:background 0.2s; flex-shrink:0;">
+          <div style="
+            position:absolute; top:3px; left:${checked ? 'calc(100% - clamp(20px,3.5vmin,34px) - 3px)' : '3px'};
+            width:clamp(18px,3.5vmin,34px); height:clamp(18px,3.5vmin,34px);
+            border-radius:50%; background:#fff; transition:left 0.2s;"></div>
+        </div>
+      </div>`;
+    }
+
+    // text
     return `<div style="display:flex;flex-direction:column;gap:6px;">${labelHtml}
       <div id="reg-field-${f.attr}"
         onclick="regFocusField('${f.attr}')"
@@ -1854,7 +1876,6 @@ function renderRegForm() {
 
 function regSetChoice(attr, value, btn) {
   _regFormData[attr] = value;
-  // Update button styles within the same group
   const allBtns = document.querySelectorAll(`[data-attr="${attr}"]`);
   allBtns.forEach(b => {
     const isSelected = b.dataset.val === value;
@@ -1862,6 +1883,20 @@ function regSetChoice(attr, value, btn) {
     b.style.background = isSelected ? 'var(--accent)' : 'var(--surface2)';
     b.style.color = isSelected ? '#fff' : 'var(--text)';
   });
+}
+
+function regToggleBool(attr) {
+  const current = _regFormData[attr] === true || _regFormData[attr] === 'true';
+  const next = !current;
+  _regFormData[attr] = next;
+  // Update the toggle visually
+  const knob   = document.querySelector(`#reg-bool-${attr} div`);
+  const track  = document.getElementById(`reg-bool-${attr}`);
+  if (track)  track.style.background = next ? 'var(--accent)' : 'var(--border-tint)';
+  if (knob) {
+    const size = 'clamp(18px,3.5vmin,34px)';
+    knob.style.left = next ? `calc(100% - ${size} - 3px)` : '3px';
+  }
 }
 
 function regFocusField(attr) {
@@ -1972,11 +2007,15 @@ function escKiosk(s) {
 }
 
 function regNext() {
-  // Validate required fields
   const fields = allRegFields();
-  const missing = fields.filter(f => f.required && !_regFormData[f.attr]?.trim());
+  // Validate required fields — booleans are always "filled" (false is a valid value)
+  const missing = fields.filter(f => {
+    if (!f.required) return false;
+    if (f.type === 'boolean') return false;
+    const v = _regFormData[f.attr];
+    return v === undefined || v === null || String(v).trim() === '';
+  });
   if (missing.length) {
-    // Highlight missing fields
     missing.forEach(f => {
       const el = document.getElementById('reg-field-' + f.attr);
       if (el) el.style.borderColor = '#f87171';
@@ -1986,16 +2025,20 @@ function regNext() {
   // Build confirm view
   regShowStep('confirm');
   const labelMap = _regConfig?.labelMap || {};
-  const fields2 = allRegFields();
-  document.getElementById('reg-confirm-details').innerHTML = fields2.map(f => {
-    let val = _regFormData[f.attr] || '—';
-    if (f.type === 'choice') {
+  document.getElementById('reg-confirm-details').innerHTML = fields.map(f => {
+    let val = _regFormData[f.attr];
+    let display;
+    if (f.type === 'boolean') {
+      display = (val === true || val === 'true') ? '✓ Yes' : '✕ No';
+    } else if (f.type === 'choice') {
       const opt = (f.options||[]).find(o => o.value === val);
-      val = labelMap[val] || opt?.label || val;
+      display = labelMap[val] || opt?.label || val || '—';
+    } else {
+      display = val || '—';
     }
     return `<div style="display:flex;justify-content:space-between;font-size:clamp(13px,2.5vmin,20px);">
       <span style="color:var(--muted);">${escKiosk(f.label)}</span>
-      <span style="color:var(--text);font-weight:600;">${escKiosk(val)}</span>
+      <span style="color:var(--text);font-weight:600;">${escKiosk(display)}</span>
     </div>`;
   }).join('');
 }
