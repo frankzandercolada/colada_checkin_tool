@@ -3244,6 +3244,7 @@ async function loadKioskStations() {
           <div style="display:flex; gap:8px;">
             <a href="/kiosk/${s.id}" target="_blank" class="btn btn-secondary" style="font-size:12px; padding:5px 12px;">⊡ Open</a>
             <button class="btn btn-secondary" style="font-size:12px; padding:5px 12px;" onclick="editKioskStation('${s.id}')">Edit</button>
+            <button class="btn btn-ghost" style="font-size:12px; padding:5px 10px;" title="Duplicate station" onclick="duplicateKioskStation('${s.id}')">⎘</button>
             <button class="btn btn-danger" style="font-size:12px; padding:5px 12px;" onclick="deleteKioskStation('${s.id}')">✕</button>
           </div>
         </div>
@@ -3418,6 +3419,26 @@ async function deleteKioskStation(id) {
   await fetch('/api/kiosk/stations/' + id, { method: 'DELETE' });
   loadKioskStations();
   toast('Station deleted', 'ok');
+}
+
+async function duplicateKioskStation(id) {
+  const src = _kioskStationCache[id];
+  const defaultName = (src?.name || 'Station') + ' (copy)';
+  const name = prompt('Duplicate station as:', defaultName);
+  if (name === null) return; // cancelled
+  try {
+    const res  = await fetch(`/api/kiosk/stations/${id}/duplicate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim() || defaultName }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error || 'Duplicate failed');
+    loadKioskStations();
+    toast(`Station duplicated as "${data.station.name}"`, 'ok');
+  } catch(e) {
+    toast('Duplicate failed: ' + e.message, 'error');
+  }
 }
 
 </script>

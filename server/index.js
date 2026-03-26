@@ -910,6 +910,53 @@ app.delete('/api/kiosk/stations/:stationId', (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/api/kiosk/stations/:stationId/duplicate', (req, res) => {
+  const pid = getActiveProjectId();
+  if (!pid) return res.status(400).json({ error: 'no active project' });
+  const stations = loadKioskStations(pid);
+  const src = stations.find(s => s.id === req.params.stationId);
+  if (!src) return res.status(404).json({ error: 'station not found' });
+
+  const newId   = uuidv4();
+  const newName = (req.body.name || src.name + ' (copy)').trim();
+  const imgDir  = projectImagesDir(pid);
+
+  // Deep-clone the source station, assign new id and name
+  const copy = JSON.parse(JSON.stringify(src));
+  copy.id   = newId;
+  copy.name = newName;
+
+  // For each screen, copy the image file and update the bgImageKey reference
+  const SCREENS = [
+    { key: 'welcome',          screenKey: 'welcome'  },
+    { key: 'success',          screenKey: 'success'  },
+    { key: 'notFound',         screenKey: 'notfound' },
+    { key: 'alreadyCheckedIn', screenKey: 'already'  },
+  ];
+  for (const { key, screenKey } of SCREENS) {
+    const screen = copy[key];
+    if (!screen?.bgImageKey) continue;
+    const srcFile = path.join(imgDir, `${screen.bgImageKey}.txt`);
+    const newKey  = `kiosk-${newId}-${screenKey}`;
+    const dstFile = path.join(imgDir, `${newKey}.txt`);
+    try {
+      if (fs.existsSync(srcFile)) {
+        ensureProjectDirs(pid);
+        fs.copyFileSync(srcFile, dstFile);
+        screen.bgImageKey = newKey;
+      } else {
+        delete screen.bgImageKey;
+      }
+    } catch(e) {
+      delete screen.bgImageKey; // non-fatal — skip image if copy fails
+    }
+  }
+
+  stations.push(copy);
+  saveKioskStations(pid, stations);
+  res.json({ ok: true, station: copy });
+});
+
 app.post('/api/kiosk/scan', async (req, res) => {
   try {
     const pid = getActiveProjectId();
