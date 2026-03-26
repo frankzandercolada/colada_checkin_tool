@@ -588,6 +588,52 @@ app.get('/api/events/names', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// Fetch participant groups for a given event.
+// GET /api/events/:eventId/participantgroups
+// Returns { groups: [{ id, name }] }
+app.get('/api/events/:eventId/participantgroups', async (req, res) => {
+  try {
+    const pid = getActiveProjectId();
+    const token = await getToken(pid);
+    const { apiBase } = getEffectiveCredentials(pid);
+    const { eventId } = req.params;
+    const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+
+    // Try candidate endpoint patterns in order — return first successful result
+    const candidates = [
+      `${apiBase}/_gw/s-events-guests/external-api/events/${eventId}/participantgroups`,
+      `${apiBase}/_gw/s-events/external-api/events/${eventId}/participantgroups`,
+      `${apiBase}/_gw/s-events-guests/external-api/events/${eventId}/participant-groups`,
+      `${apiBase}/_gw/s-events/external-api/events/${eventId}/participant-groups`,
+    ];
+
+    function extractGroups(data) {
+      const arr = Array.isArray(data) ? data
+        : (data.participantGroups || data.participantgroups
+        || data.groups || data.items || data.data || []);
+      return arr.map(g => {
+        const props = g.properties || g.attributes || {};
+        const name  = props.name || props.title || g.name || g.title
+                   || props.displayName || g.displayName || g.id;
+        return { id: g.id || g.uid, name };
+      }).filter(g => g.id);
+    }
+
+    for (const url of candidates) {
+      try {
+        const r = await fetch(url, { headers });
+        if (!r.ok) continue;
+        const data = await r.json();
+        const groups = extractGroups(data);
+        if (groups.length > 0) return res.json({ groups, source: url });
+      } catch(e) { continue; }
+    }
+
+    // No candidate returned groups — return empty so UI can still function
+    res.json({ groups: [] });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // Schema endpoint — scans all guests and infers field types + unique values
 app.get('/api/guests/:eventId/schema', async (req, res) => {
   try {

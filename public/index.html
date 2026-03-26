@@ -582,15 +582,17 @@
           <div id="ks-reg-config" style="display:none; flex-direction:column; gap:12px;">
             <div>
               <label class="form-label">Event for Registration</label>
-              <select class="form-input" id="ks-reg-event" style="font-family:var(--font-mono);font-size:12px;">
+              <select class="form-input" id="ks-reg-event" style="font-family:var(--font-mono);font-size:12px;" onchange="loadRegParticipantGroups()">
                 <option value="">— loading events… —</option>
               </select>
               <span class="hint">Guests created via self-registration are added to this event</span>
             </div>
             <div>
-              <label class="form-label">Participant Group UUID <span style="color:var(--muted);font-weight:400;">(auto-set on creation)</span></label>
-              <input class="form-input" id="ks-reg-participant-group" style="font-family:var(--font-mono);font-size:12px;" placeholder="UUID of the participant group"/>
-              <span class="hint">Leave blank to use the event default</span>
+              <label class="form-label">Participant Group <span style="color:var(--muted);font-weight:400;">(auto-set on creation)</span></label>
+              <select class="form-input" id="ks-reg-participant-group" style="font-family:var(--font-mono);font-size:12px;">
+                <option value="">— select an event first —</option>
+              </select>
+              <span class="hint">Walk-in guests will be created in this participant group</span>
             </div>
             <div>
               <label class="form-label">Registration Form Fields</label>
@@ -3321,7 +3323,7 @@ function openKioskStationModal() {
   document.getElementById('ks-reg-config').style.display = 'none';
   document.getElementById('ks-reg-participant-group').value = '';
   renderRegFieldsList([]);
-  loadRegEventOptions('');
+  loadRegEventOptions('', '');
   ['welcome','success','notfound','already'].forEach(k => {
     document.getElementById('ks-' + k + '-bg-data').value = '';
     document.getElementById('ks-' + k + '-bg-label').textContent = 'Upload image…';
@@ -3351,7 +3353,7 @@ function editKioskStation(stationId) {
   document.getElementById('ks-reg-config').style.display = reg.enabled ? 'flex' : 'none';
   document.getElementById('ks-reg-participant-group').value = reg.participantGroup || '';
   renderRegFieldsList(reg.fields || []);
-  loadRegEventOptions(reg.eventId || '');
+  loadRegEventOptions(reg.eventId || '', reg.participantGroup || '');
   document.getElementById('ks-welcome-title').value  = s.welcome?.title || '';
   document.getElementById('ks-welcome-sub').value    = s.welcome?.subtitle || '';
   document.getElementById('ks-success-title').value  = s.success?.title || '';
@@ -3421,7 +3423,7 @@ function renderRegFieldsList(fields) {
     </div>`).join('');
 }
 
-async function loadRegEventOptions(selectedId) {
+async function loadRegEventOptions(selectedId, selectedGroupId) {
   const sel = document.getElementById('ks-reg-event');
   const proj = _projects.find(p => p.id === _activeProjectId);
   const eventIds = proj?.eventIds?.length ? proj.eventIds : (proj?.eventId ? [proj.eventId] : []);
@@ -3437,7 +3439,34 @@ async function loadRegEventOptions(selectedId) {
   sel.innerHTML = build();
   // Auto-select single event
   if (eventIds.length === 1 && !selectedId) sel.value = eventIds[0];
+  // Load participant groups for the selected event
+  await loadRegParticipantGroups(selectedGroupId);
   loadRegFieldPicker();
+}
+
+async function loadRegParticipantGroups(selectedGroupId) {
+  const sel   = document.getElementById('ks-reg-participant-group');
+  const eventId = document.getElementById('ks-reg-event').value;
+  if (!eventId) {
+    sel.innerHTML = '<option value="">— select an event first —</option>';
+    return;
+  }
+  sel.innerHTML = '<option value="">— loading… —</option>';
+  try {
+    const r = await fetch(`/api/events/${encodeURIComponent(eventId)}/participantgroups`);
+    const data = await r.json();
+    const groups = data.groups || [];
+    if (!groups.length) {
+      sel.innerHTML = '<option value="">— no groups found —</option>';
+      return;
+    }
+    sel.innerHTML = '<option value="">— none / event default —</option>' +
+      groups.map(g =>
+        `<option value="${escHtml(g.id)}" ${g.id === selectedGroupId ? 'selected' : ''}>${escHtml(g.name || g.id)}</option>`
+      ).join('');
+  } catch(e) {
+    sel.innerHTML = '<option value="">— error loading groups —</option>';
+  }
 }
 
 async function loadRegFieldPicker() {
@@ -3481,7 +3510,7 @@ function collectRegConfig() {
   return {
     enabled: true,
     eventId:          document.getElementById('ks-reg-event').value,
-    participantGroup: document.getElementById('ks-reg-participant-group').value.trim() || null,
+    participantGroup: document.getElementById('ks-reg-participant-group').value || null,
     fields:           _regFields,
   };
 }
