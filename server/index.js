@@ -957,27 +957,30 @@ app.post('/api/kiosk/register', async (req, res) => {
     } catch(e) { console.warn('[register] re-fetch error:', e.message); }
 
     // 3. Check in the newly created guest
+    // Use inputAttrs as the base (what was submitted at creation) since the
+    // re-fetched Colada365 guest object returns a flat summary without .attributes.
+    // This mirrors what the regular scan check-in route does.
     const today      = new Date().toISOString().split('T')[0];
     const guestAttrs = guest.attributes || guest.properties || {};
-    // Strip $unset placeholder from create — use real date in check-in PATCH
-    const { guest_x_checkedinat: _unset, _matchedEventId: _mid, ...cleanGuestAttrs } = guestAttrs;
-    const patchAttrs = { ...cleanGuestAttrs, guest_x_checkedin: true, guest_x_checkedinat: today };
+    const baseAttrs  = Object.keys(guestAttrs).length ? guestAttrs : inputAttrs;
+    const { guest_x_checkedinat: _unset, _matchedEventId: _mid, ...cleanBaseAttrs } = baseAttrs;
+    const patchAttrs = { ...cleanBaseAttrs, guest_x_checkedin: true, guest_x_checkedinat: today };
     const ciHeaders  = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
     const rev = guest.revision || guestAttrs.revision;
+    console.log(`[register] check-in PATCH revision=${rev}, attrs keys:`, Object.keys(patchAttrs));
     if (rev) ciHeaders['If-Match'] = rev;
     const ciRes = await fetch(`${base}/${guestId}`, { method: 'PATCH', headers: ciHeaders, body: JSON.stringify({ attributes: patchAttrs }) });
     if (!ciRes.ok) {
       const ciErr = await ciRes.text();
       console.warn(`[register] check-in PATCH failed (${ciRes.status}): ${ciErr.slice(0, 200)}`);
-      // Non-fatal — guest is registered, badge will still print
+    } else {
+      console.log(`[register] check-in PATCH OK`);
     }
 
     // 4. Build response attrs with _matchedEventId for badge routing
-    // Merge inputAttrs (what the user entered) with what Colada365 returned,
-    // so routing rules have all values even if the re-fetch returned a sparse record
     const responseAttrs = {
       ...inputAttrs,
-      ...cleanGuestAttrs,
+      ...cleanBaseAttrs,
       guest_x_checkedin:   true,
       guest_x_checkedinat: today,
       _matchedEventId:     eventId,
