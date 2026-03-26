@@ -812,22 +812,19 @@ async function init() {
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
-function applyTheme({ accentColor, bgColor, lightMode }) {
+function applyTheme({ accentColor, bgColor, bgColorLight, lightMode }) {
   const root = document.documentElement;
   if (accentColor) root.style.setProperty('--accent', accentColor);
   // Set data-theme FIRST so CSS variables are in the right set
   root.setAttribute('data-theme', lightMode ? 'light' : 'dark');
-  // In dark mode, apply the station bgColor to --bg.
-  // In light mode, remove any inline --bg override so the CSS light values win.
   if (lightMode) {
-    root.style.removeProperty('--bg');
-    root.style.removeProperty('--text');
-    root.style.removeProperty('--muted');
-    root.style.removeProperty('--surface-tint');
-    root.style.removeProperty('--border-tint');
-    root.style.removeProperty('--subtle-tint');
+    // Apply the light background colour (or fall back to CSS default)
+    if (bgColorLight) root.style.setProperty('--bg', bgColorLight);
+    else root.style.removeProperty('--bg');
   } else {
+    // Apply the dark background colour
     if (bgColor) root.style.setProperty('--bg', bgColor);
+    else root.style.removeProperty('--bg');
   }
 }
 
@@ -867,7 +864,7 @@ async function applyScreenBg(screenCfg) {
 }
 
 function applyStation(s, resolvedLogoText) {
-  applyTheme({ accentColor: s.accentColor, bgColor: s.bgColor, lightMode: s.lightMode });
+  applyTheme({ accentColor: s.accentColor, bgColor: s.bgColor, bgColorLight: s.bgColorLight, lightMode: s.lightMode });
   const logoText = s.logoText || resolvedLogoText || s.name || 'Check-in';
 
   // Apply font size overrides

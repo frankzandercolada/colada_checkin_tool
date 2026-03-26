@@ -244,12 +244,36 @@ async function getToken(projectId) {
       params.append('client_id', creds.clientId);
       params.append('client_secret', creds.clientSecret);
       params.append('scope','email profile');
-      const res = await fetch(creds.tokenUrl, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:params });
-      if (!res.ok) throw new Error(`Token fetch failed (${res.status}): ${await res.text()}`);
-      const data = await res.json();
-      cache.token = data.access_token;
-      cache.expires = Date.now() + (data.expires_in||300)*1000;
-      return cache.token;
+
+      // Retry loop — on Raspberry Pi, the system clock may not be synced yet
+      // after a cold boot (no hardware RTC), causing TLS cert validation to fail
+      // with CERT_DATE_INVALID / unknown issuer. Retry for up to 2 minutes.
+      const MAX_ATTEMPTS = 12;
+      const RETRY_DELAY_MS = 10000; // 10s between retries
+      let lastErr;
+      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+        try {
+          const res = await fetch(creds.tokenUrl, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:params });
+          if (!res.ok) throw new Error(`Token fetch failed (${res.status}): ${await res.text()}`);
+          const data = await res.json();
+          cache.token = data.access_token;
+          cache.expires = Date.now() + (data.expires_in||300)*1000;
+          if (attempt > 1) console.log(`[token] Succeeded on attempt ${attempt} (clock sync likely completed)`);
+          return cache.token;
+        } catch(err) {
+          lastErr = err;
+          const msg = err.message || '';
+          // Detect TLS/cert errors that are caused by clock skew — retry those
+          const isClockError = /CERT_DATE_INVALID|UNABLE_TO_VERIFY_LEAF|UNKNOWN_ISSUER|SEC_ERROR|certificate|ssl|tls/i.test(msg);
+          if (isClockError && attempt < MAX_ATTEMPTS) {
+            console.warn(`[token] TLS error on attempt ${attempt}/${MAX_ATTEMPTS} (possible clock skew — retrying in ${RETRY_DELAY_MS/1000}s): ${msg}`);
+            await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
+          } else {
+            throw err; // non-TLS error or max retries reached — fail immediately
+          }
+        }
+      }
+      throw lastErr;
     } finally {
       cache.inflight = null;
     }
@@ -864,12 +888,13 @@ app.post('/api/kiosk/stations', (req, res) => {
     success:          extractScreenBg(success,          'success',  existingStation.success),
     notFound:         extractScreenBg(notFound,         'notfound', existingStation.notFound),
     alreadyCheckedIn: extractScreenBg(alreadyCheckedIn, 'already',  existingStation.alreadyCheckedIn),
-    accentColor:   accentColor  || '#d3222a',
-    bgColor:       bgColor      || '#0a0a0a',
-    logoText:      logoText     || '',
+    accentColor:   accentColor   || '#d3222a',
+    bgColor:       bgColor       || '#0a0a0a',
+    bgColorLight:  req.body.bgColorLight || '#f0f0f0',
+    logoText:      logoText      || '',
     printEndpoint: printEndpoint || null,
-    cameraMode:    cameraMode   || false,
-    lightMode:     lightMode    || false,
+    cameraMode:    cameraMode    || false,
+    lightMode:     lightMode     || false,
   };
   if (existing >= 0) stations[existing] = station; else stations.push(station);
   saveKioskStations(id, stations);
