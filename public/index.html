@@ -517,6 +517,18 @@
         <div style="display:flex; flex-direction:column; gap:14px;">
           <div><label class="form-label">Station Name *</label><input class="form-input" id="ks-name" placeholder="e.g. Entrance A"/></div>
           <div><label class="form-label">Logo / Event Text</label><input class="form-input" id="ks-logo" placeholder="e.g. AWF 2025"/></div>
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
+            <div>
+              <div class="form-label" style="margin-bottom:2px;">Hide Logo / Event Text</div>
+              <div style="font-size:11px; color:var(--muted);">Use when the background image already contains the event name</div>
+            </div>
+            <label class="ks-toggle-wrap">
+              <input type="checkbox" id="ks-hide-logo"/>
+              <span class="ks-toggle-track">
+                <span class="ks-toggle-knob"></span>
+              </span>
+            </label>
+          </div>
           <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
             <div><label class="form-label">Accent Color</label><input class="form-input" id="ks-accent" type="color" value="#d3222a" style="height:40px; padding:4px 8px;"/></div>
             <div><label class="form-label">Background (Dark)</label><input class="form-input" id="ks-bg" type="color" value="#0a0a0a" style="height:40px; padding:4px 8px;"/></div>
@@ -3252,6 +3264,7 @@ function openKioskStationModal() {
   document.getElementById('ks-print-endpoint').value = '';
   document.getElementById('ks-camera-mode').checked = false;
   document.getElementById('ks-light-mode').checked  = false;
+  document.getElementById('ks-hide-logo').checked   = false;
   ['ks-name','ks-logo','ks-welcome-title','ks-welcome-sub','ks-success-title','ks-success-sub','ks-notfound-title','ks-notfound-sub','ks-already-title','ks-already-sub',
    'ks-welcome-title-size','ks-welcome-sub-size','ks-success-title-size','ks-success-sub-size',
    'ks-notfound-title-size','ks-notfound-sub-size','ks-already-title-size','ks-already-sub-size'].forEach(id => {
@@ -3283,7 +3296,8 @@ function editKioskStation(stationId) {
   document.getElementById('ks-accent').value         = s.accentColor || '#d3222a';
   document.getElementById('ks-print-endpoint').value = s.printEndpoint || '';
   document.getElementById('ks-camera-mode').checked = s.cameraMode || false;
-  document.getElementById('ks-light-mode').checked  = s.lightMode  || false;
+  document.getElementById('ks-light-mode').checked  = s.lightMode      || false;
+  document.getElementById('ks-hide-logo').checked   = s.hideLogoText   || false;
   document.getElementById('ks-bg').value       = s.bgColor      || '#0a0a0a';
   document.getElementById('ks-bg-light').value = s.bgColorLight || '#f0f0f0';
   document.getElementById('ks-welcome-title').value  = s.welcome?.title || '';
@@ -3354,7 +3368,8 @@ async function saveKioskStation() {
   const payload = {
     id: _editingKioskId || undefined,
     name,
-    logoText:    document.getElementById('ks-logo').value.trim(),
+    logoText:     document.getElementById('ks-logo').value.trim(),
+    hideLogoText: document.getElementById('ks-hide-logo').checked,
     accentColor:  document.getElementById('ks-accent').value,
     bgColor:      document.getElementById('ks-bg').value,
     bgColorLight: document.getElementById('ks-bg-light').value,

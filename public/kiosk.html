@@ -448,6 +448,12 @@ html, body {
       <input id="cfg-logo" type="text" placeholder="e.g. AWF 2025"/>
     </div>
     <div class="cfg-row">
+      <label style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;">
+        <input type="checkbox" id="cfg-hide-logo" style="width:16px;height:16px;accent-color:var(--accent);"/>
+        Hide logo text (background image contains event name)
+      </label>
+    </div>
+    <div class="cfg-row">
       <label>Accent Color</label>
       <input id="cfg-accent" type="color" value="#d3222a"/>
     </div>
@@ -886,10 +892,16 @@ function applyStation(s, resolvedLogoText) {
   if (successCard) successCard.style.display = s.success?.hideGuestCard ? 'none' : '';
   if (alreadyCard) alreadyCard.style.display = s.alreadyCheckedIn?.hideGuestCard ? 'none' : '';
 
-  // Apply all logo labels
+  // Apply all logo labels — hide entirely if hideLogoText is set
   ['welcome','success','notfound','already'].forEach(k => {
     const el = document.getElementById(k + '-logo');
-    if (el) el.textContent = logoText;
+    if (!el) return;
+    if (s.hideLogoText) {
+      el.style.display = 'none';
+    } else {
+      el.style.display = '';
+      el.textContent = logoText;
+    }
   });
 
   // Welcome
@@ -1489,6 +1501,7 @@ function openConfig(isNew) {
   const s = (!isNew && station) ? station : {};
   document.getElementById('cfg-name').value           = s.name || '';
   document.getElementById('cfg-logo').value           = s.logoText || '';
+  document.getElementById('cfg-hide-logo').checked    = s.hideLogoText || false;
   document.getElementById('cfg-accent').value         = s.accentColor || '#d3222a';
   document.getElementById('cfg-bg').value             = s.bgColor || '#0a0a0a';
   document.getElementById('cfg-print-endpoint').value = s.printEndpoint || '';
@@ -1541,6 +1554,7 @@ async function saveConfig() {
     id:            (!_configIsNew && station?.id) ? station.id : undefined,
     name:          gv('cfg-name'),
     logoText:      gv('cfg-logo'),
+    hideLogoText:  gvc('cfg-hide-logo'),
     accentColor:   gv('cfg-accent'),
     bgColor:       gv('cfg-bg'),
     printEndpoint: gv('cfg-print-endpoint') || null,
