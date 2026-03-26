@@ -1984,6 +1984,8 @@ function toggleEventRegFieldRequired(eventId, idx, required) {
   if (fields[idx]) fields[idx] = { ...fields[idx], required };
   saveSelfRegForEvent(eventId, { ...cfg, fields });
 }
+
+function populateFallbackSelect() {
   const tpls = loadTemplates();
   const fallback = getFallbackTemplate();
   const sel = document.getElementById('fallback-template-select');
@@ -3156,12 +3158,13 @@ async function switchProject(projectId) {
     if (!data.ok) throw new Error(data.error);
     _activeProjectId = projectId;
     // Reset badge cache and reload
-    _badgeCache.templates   = null;
-    _badgeCache.eventGroups = null;
-    _badgeCache.rules       = null;
-    _badgeCache.fallback    = null;
-    _badgeCache.images      = {};
-    _badgeCache.ready       = false;
+    _badgeCache.templates        = null;
+    _badgeCache.eventGroups      = null;
+    _badgeCache.rules            = null;
+    _badgeCache.fallback         = null;
+    _badgeCache.selfRegistration = null;
+    _badgeCache.images           = {};
+    _badgeCache.ready            = false;
     _guestSchema    = null; // invalidate schema cache — new project has a different event
     _eventNameCache = {};   // clear event name cache for new project
     // Update event ID from project (use first event ID for badge display)
