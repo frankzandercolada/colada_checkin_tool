@@ -331,6 +331,7 @@ html, body {
   margin-bottom: clamp(20px, 7vmin, 80px);
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0; } }
 
 /* ── Success icon animation ── */
 .check-anim {
@@ -678,6 +679,15 @@ html, body {
              font-family:var(--font); letter-spacing:0.04em; transition:background 0.2s,color 0.2s;">
       + Register
     </button>
+    <!-- Guest search button — shown only when enabled -->
+    <button id="search-btn" onclick="showGuestSearch()"
+      style="display:none; position:absolute; bottom:clamp(24px,6vmin,60px); right:clamp(20px,5vmin,48px);
+             background:transparent; border:1px solid var(--border-tint); color:var(--muted);
+             border-radius:100px; padding:clamp(8px,1.5vmin,14px) clamp(16px,4vmin,32px);
+             font-size:clamp(11px,2vmin,17px); font-weight:600; cursor:pointer;
+             font-family:var(--font); letter-spacing:0.03em;">
+      ⌕ Search
+    </button>
   </div>
 
   <!-- Processing -->
@@ -821,6 +831,50 @@ html, body {
       <div id="reg-step-processing" style="display:none; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:20px;">
         <div class="spin"></div>
         <div style="color:var(--muted); font-size:clamp(14px,3vmin,22px);">Registering…</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Guest Search -->
+  <div class="screen" id="screen-search" style="padding:0; overflow:hidden;">
+    <div style="width:100%; height:100%; display:flex; flex-direction:column; overflow:hidden;">
+      <!-- Header -->
+      <div style="flex-shrink:0; padding:clamp(16px,4vmin,40px) clamp(20px,5vmin,60px) 0; display:flex; align-items:center; justify-content:space-between;">
+        <div style="font-size:clamp(18px,4vmin,36px); font-weight:800; color:var(--text);">Guest Search</div>
+        <button onclick="cancelGuestSearch()"
+          style="background:none;border:1px solid var(--border-tint);border-radius:8px;color:var(--muted);cursor:pointer;
+                 font-size:clamp(12px,2vmin,18px);padding:8px 16px;font-family:var(--font);">✕ Cancel</button>
+      </div>
+      <!-- Search input area -->
+      <div style="flex-shrink:0; padding:clamp(12px,3vmin,28px) clamp(20px,5vmin,60px) 0;">
+        <div style="position:relative;">
+          <div id="kiosk-search-display"
+            style="padding:clamp(12px,2.5vmin,22px) clamp(16px,3vmin,28px);
+                   border-radius:12px; border:2px solid var(--accent); background:var(--surface2);
+                   font-size:clamp(16px,3.5vmin,32px); color:var(--text); font-family:var(--mono);
+                   min-height:56px; letter-spacing:0.02em; cursor:default;"
+            onclick="kiosk_searchFocus()">
+            <span id="kiosk-search-text" style="color:var(--muted);">Type a name…</span>
+            <span style="display:inline-block;width:2px;height:1.1em;background:var(--accent);margin-left:2px;vertical-align:middle;animation:blink 1s step-end infinite;"></span>
+          </div>
+        </div>
+        <!-- Native input for mobile -->
+        <input id="kiosk-search-native" type="search" autocomplete="off" autocorrect="off"
+          placeholder="Type a name…"
+          oninput="onKioskSearchInput(this.value)"
+          style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;"/>
+      </div>
+      <!-- Results -->
+      <div id="kiosk-search-results" style="flex:1; overflow-y:auto; padding:clamp(10px,2.5vmin,24px) clamp(20px,5vmin,60px);"></div>
+      <!-- On-screen keyboard (desktop only) -->
+      <div id="kiosk-search-keyboard" style="flex-shrink:0; background:var(--surface); border-top:1px solid var(--border-tint); padding:8px 6px; display:none;">
+        <div id="kiosk-kb-rows" style="display:flex; flex-direction:column; gap:5px;"></div>
+        <div style="display:flex; gap:6px; margin-top:5px;">
+          <button class="kb-btn" style="flex:1;" onclick="kioskKbAction('shift')">⇧</button>
+          <button class="kb-btn" style="flex:3;" onclick="kioskKbAction('space')">Space</button>
+          <button class="kb-btn" style="flex:1;" onclick="kioskKbAction('backspace')">⌫</button>
+          <button class="kb-btn" style="flex:1;" onclick="kioskKbAction('clear')">✕</button>
+        </div>
       </div>
     </div>
   </div>
@@ -998,6 +1052,10 @@ function applyStation(s, resolvedLogoText) {
   const regBtn = document.getElementById('reg-btn');
   if (regBtn) regBtn.style.display = s.selfRegistration?.enabled ? 'block' : 'none';
 
+  // Show/hide guest search button on welcome screen
+  const searchBtn = document.getElementById('search-btn');
+  if (searchBtn) searchBtn.style.display = s.guestSearch?.enabled ? 'block' : 'none';
+
   // Welcome
   setText('welcome-title', s.welcome?.title || 'Welcome');
   setText('welcome-sub',   s.welcome?.subtitle || 'Please scan your QR code to check in.');
@@ -1161,8 +1219,10 @@ function setupScanInput() {
   // Keep focus on the hidden input — but NOT when the registration form is open
   // (user needs to interact with form fields / custom keyboard without scan interference)
   function reFocus() {
-    const regScreen = document.getElementById('screen-register');
-    if (regScreen && regScreen.classList.contains('active')) return;
+    const regScreen    = document.getElementById('screen-register');
+    const searchScreen = document.getElementById('screen-search');
+    if ((regScreen    && regScreen.classList.contains('active'))    ||
+        (searchScreen && searchScreen.classList.contains('active'))) return;
     if (!isProcessing) input.focus();
   }
   document.addEventListener('click', reFocus);
@@ -1170,10 +1230,12 @@ function setupScanInput() {
   input.addEventListener('blur', () => setTimeout(reFocus, 80));
   reFocus();
 
-  // Accumulate keyboard input — ignore when registration screen is active
+  // Accumulate keyboard input — ignore when registration or search screen is active
   input.addEventListener('input', () => {
-    const regScreen = document.getElementById('screen-register');
-    if (regScreen && regScreen.classList.contains('active')) { input.value = ''; return; }
+    const regScreen    = document.getElementById('screen-register');
+    const searchScreen = document.getElementById('screen-search');
+    if ((regScreen    && regScreen.classList.contains('active'))    ||
+        (searchScreen && searchScreen.classList.contains('active'))) { input.value = ''; return; }
     scanBuffer += input.value;
     input.value = '';
     clearTimeout(scanTimer);
@@ -1184,10 +1246,12 @@ function setupScanInput() {
     }, SCAN_DEBOUNCE_MS);
   });
 
-  // Enter key — also guard against firing during registration
+  // Enter key — guard against firing during registration or search
   input.addEventListener('keydown', (e) => {
-    const regScreen = document.getElementById('screen-register');
-    if (regScreen && regScreen.classList.contains('active')) return;
+    const regScreen    = document.getElementById('screen-register');
+    const searchScreen = document.getElementById('screen-search');
+    if ((regScreen    && regScreen.classList.contains('active'))    ||
+        (searchScreen && searchScreen.classList.contains('active'))) return;
     if (e.key === 'Enter') {
       if (input.value) { scanBuffer += input.value; input.value = ''; }
       clearTimeout(scanTimer);
@@ -2135,6 +2199,251 @@ async function submitRegistration() {
     try { await printKioskBadge(data); } catch(e) { console.warn('[reg] badge error:', e); }
   } catch(e) {
     showError('Registration failed: ' + (e.message || 'Unknown error'));
+  }
+}
+
+// ── Guest Search ──────────────────────────────────────────────────────────────
+let _searchQuery   = '';
+let _searchTimer   = null;
+let _kbSearchMode  = 'lower';
+
+function showGuestSearch() {
+  if (!station?.guestSearch?.enabled) return;
+  cancelReturn();
+  stopCamera();
+  _searchQuery = '';
+  updateKioskSearchDisplay();
+  document.getElementById('kiosk-search-results').innerHTML =
+    `<div style="color:var(--muted);font-size:clamp(13px,2.8vmin,22px);text-align:center;padding:clamp(20px,5vmin,48px) 0;">Start typing to search for a guest</div>`;
+  showScreen('search');
+  applyScreenBg(null);
+
+  if (isMobileDevice()) {
+    // Use native keyboard on mobile
+    document.getElementById('kiosk-search-keyboard').style.display = 'none';
+    const ni = document.getElementById('kiosk-search-native');
+    ni.style.cssText = 'position:static;opacity:1;pointer-events:auto;width:100%;font-size:16px;padding:12px;border-radius:8px;border:none;background:transparent;color:transparent;caret-color:transparent;outline:none;';
+    ni.value = '';
+    setTimeout(() => ni.focus(), 100);
+  } else {
+    document.getElementById('kiosk-search-keyboard').style.display = 'block';
+    buildKioskSearchKeyboard();
+  }
+}
+
+function cancelGuestSearch() {
+  showScreen('welcome');
+  applyWelcomeBg();
+  refocusScanInput();
+  if (station?.cameraMode) startCamera();
+}
+
+function kiosk_searchFocus() {
+  if (isMobileDevice()) document.getElementById('kiosk-search-native').focus();
+}
+
+function onKioskSearchInput(val) {
+  _searchQuery = val;
+  updateKioskSearchDisplay();
+  scheduleKioskSearch();
+}
+
+function updateKioskSearchDisplay() {
+  const el = document.getElementById('kiosk-search-text');
+  if (!el) return;
+  if (_searchQuery) {
+    el.textContent = _searchQuery;
+    el.style.color = 'var(--text)';
+  } else {
+    el.textContent = 'Type a name…';
+    el.style.color = 'var(--muted)';
+  }
+}
+
+function scheduleKioskSearch() {
+  clearTimeout(_searchTimer);
+  if (_searchQuery.length < 2) {
+    document.getElementById('kiosk-search-results').innerHTML =
+      `<div style="color:var(--muted);font-size:clamp(13px,2.8vmin,22px);text-align:center;padding:clamp(20px,5vmin,48px) 0;">Keep typing…</div>`;
+    return;
+  }
+  _searchTimer = setTimeout(runKioskSearch, 400);
+}
+
+async function runKioskSearch() {
+  const q = _searchQuery.trim();
+  if (q.length < 2) return;
+  const resultsEl = document.getElementById('kiosk-search-results');
+  resultsEl.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;gap:12px;padding:clamp(20px,5vmin,48px) 0;"><div class="spin" style="width:32px;height:32px;border-width:3px;margin:0;"></div><span style="color:var(--muted);font-size:clamp(13px,2.5vmin,20px);">Searching…</span></div>`;
+  try {
+    const r    = await fetch(`/api/kiosk/search?q=${encodeURIComponent(q)}&stationId=${encodeURIComponent(stationId)}`);
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+    renderKioskSearchResults(data);
+  } catch(e) {
+    resultsEl.innerHTML = `<div style="color:#f87171;font-size:clamp(13px,2.5vmin,20px);text-align:center;padding:20px;">Search failed: ${escKiosk(e.message)}</div>`;
+  }
+}
+
+function renderKioskSearchResults(guests) {
+  const el = document.getElementById('kiosk-search-results');
+  if (!guests.length) {
+    el.innerHTML = `<div style="color:var(--muted);font-size:clamp(13px,2.8vmin,22px);text-align:center;padding:clamp(20px,5vmin,48px) 0;">No guests found for "${escKiosk(_searchQuery)}"</div>`;
+    return;
+  }
+  el.innerHTML = guests.map((g, idx) => {
+    const a        = g.attributes || g.properties || {};
+    const first    = a.contact_firstName || '';
+    const last     = a.contact_lastName  || '';
+    const company  = a.contact_x_companyName || '';
+    const status   = g.status || a.status || '';
+    const checkedIn = a.guest_x_checkedin === true ||
+      (a.guest_x_checkedinat && a.guest_x_checkedinat !== false && a.guest_x_checkedinat !== 'false' && a.guest_x_checkedinat !== '');
+    const statusColor = checkedIn ? 'var(--green)' : (status === 'REGISTERED' || status === 'PENDING' ? 'var(--orange)' : 'var(--muted)');
+    const statusLabel = checkedIn ? '✓ Checked in' : status;
+    return `<div onclick="selectKioskSearchResult(${idx})"
+      style="display:flex;align-items:center;justify-content:space-between;
+             padding:clamp(12px,2.5vmin,22px) clamp(14px,3vmin,28px);
+             background:var(--surface2); border:1px solid var(--border-tint); border-radius:12px;
+             margin-bottom:10px; cursor:pointer; transition:border-color 0.15s;"
+      onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border-tint)'"
+      data-idx="${idx}">
+      <div>
+        <div style="font-size:clamp(15px,3vmin,26px);font-weight:700;color:var(--text);">${escKiosk(first)} ${escKiosk(last)}</div>
+        ${company ? `<div style="font-size:clamp(11px,2vmin,18px);color:var(--muted);">${escKiosk(company)}</div>` : ''}
+      </div>
+      <div style="font-size:clamp(10px,1.8vmin,15px);font-family:var(--mono);color:${statusColor};flex-shrink:0;margin-left:12px;">${escKiosk(statusLabel)}</div>
+    </div>`;
+  }).join('');
+  // Store results for selection
+  document.getElementById('kiosk-search-results')._results = guests;
+}
+
+async function selectKioskSearchResult(idx) {
+  const el      = document.getElementById('kiosk-search-results');
+  const guests  = el._results || [];
+  const guest   = guests[idx];
+  if (!guest) return;
+
+  const a           = guest.attributes || guest.properties || {};
+  const matchedEid  = a._matchedEventId;
+  const guestId     = guest.id || guest.uid;
+  const status      = guest.status || a.status || '';
+  const isEligible  = status === 'REGISTERED' || status === 'PENDING';
+  const checkedIn   = a.guest_x_checkedin === true ||
+    (a.guest_x_checkedinat && a.guest_x_checkedinat !== false && a.guest_x_checkedinat !== 'false' && a.guest_x_checkedinat !== '');
+
+  if (!isEligible) {
+    handleNotFound(`Status: ${status} — not eligible for check-in`);
+    return;
+  }
+  if (checkedIn) {
+    // Show already-checked-in screen
+    const first = a.contact_firstName || '';
+    const last  = a.contact_lastName  || '';
+    setText('already-name', `${first} ${last}`.trim() || '—');
+    setText('already-company', a.contact_x_companyName || '');
+    const dateEl = document.getElementById('already-date');
+    if (dateEl) dateEl.textContent = a.guest_x_checkedinat ? `Checked in ${a.guest_x_checkedinat}` : 'Already checked in';
+    showScreen('already');
+    applyScreenBg(station?.alreadyCheckedIn);
+    startReturn('already', getReturnSecs(station?.alreadyCheckedIn));
+    return;
+  }
+
+  // Check in the guest
+  showScreen('processing');
+  try {
+    const r = await fetch(`/api/guests/${encodeURIComponent(matchedEid)}/${guestId}/checkin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(guest),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+
+    const first = a.contact_firstName || '';
+    const last  = a.contact_lastName  || '';
+    setText('success-name', `${first} ${last}`.trim() || '—');
+    setText('success-company', a.contact_x_companyName || '');
+    showScreen('success');
+    applyScreenBg(station?.success);
+    startReturn('success', getReturnSecs(station?.success));
+
+    // Print badge — inject _matchedEventId for routing
+    try {
+      const badgeRes = await fetch('/api/badge-config');
+      const badgeCfg = await badgeRes.json();
+      await printKioskBadge({
+        guest: {
+          firstName: first, lastName: last,
+          company: a.contact_x_companyName || '',
+          attributes: { ...a, _matchedEventId: matchedEid },
+        },
+        badgeConfig: badgeCfg,
+      });
+    } catch(e) { console.warn('[search checkin] badge error:', e); }
+  } catch(e) {
+    showError('Check-in failed: ' + (e.message || 'Unknown error'));
+  }
+}
+
+// ── On-screen keyboard for kiosk search (desktop only) ───────────────────────
+function buildKioskSearchKeyboard() {
+  const rows   = document.getElementById('kiosk-kb-rows');
+  rows.innerHTML = '';
+  const layout = _kbSearchMode === 'num' ? KB_NUMS
+    : (_kbSearchMode === 'upper' ? KB_ROWS_UPPER : KB_ROWS_LOWER);
+  layout.forEach(row => {
+    const div = document.createElement('div');
+    div.style.cssText = 'display:flex;gap:5px;justify-content:center;';
+    row.forEach(k => {
+      const btn = document.createElement('button');
+      btn.className = 'kb-btn';
+      btn.style.flex = '1';
+      btn.textContent = k;
+      btn.onclick = () => kioskKbType(k);
+      div.appendChild(btn);
+    });
+    rows.appendChild(div);
+  });
+  const modeDiv = document.createElement('div');
+  modeDiv.style.cssText = 'display:flex;gap:5px;margin-top:5px;';
+  [['ABC/abc','shift'],['123','num']].forEach(([label, action]) => {
+    const btn = document.createElement('button');
+    btn.className = 'kb-btn'; btn.style.flex = '1';
+    btn.textContent = label;
+    btn.onclick = () => kioskKbAction(action);
+    modeDiv.appendChild(btn);
+  });
+  rows.appendChild(modeDiv);
+}
+
+function kioskKbType(char) {
+  _searchQuery += char;
+  if (_kbSearchMode === 'upper') { _kbSearchMode = 'lower'; buildKioskSearchKeyboard(); }
+  updateKioskSearchDisplay();
+  scheduleKioskSearch();
+}
+
+function kioskKbAction(action) {
+  if (action === 'shift') {
+    _kbSearchMode = _kbSearchMode === 'lower' ? 'upper' : 'lower';
+    buildKioskSearchKeyboard();
+  } else if (action === 'num') {
+    _kbSearchMode = _kbSearchMode === 'num' ? 'lower' : 'num';
+    buildKioskSearchKeyboard();
+  } else if (action === 'space') {
+    kioskKbType(' ');
+  } else if (action === 'backspace') {
+    _searchQuery = _searchQuery.slice(0, -1);
+    updateKioskSearchDisplay();
+    scheduleKioskSearch();
+  } else if (action === 'clear') {
+    _searchQuery = '';
+    updateKioskSearchDisplay();
+    document.getElementById('kiosk-search-results').innerHTML =
+      `<div style="color:var(--muted);font-size:clamp(13px,2.8vmin,22px);text-align:center;padding:clamp(20px,5vmin,48px) 0;">Start typing to search for a guest</div>`;
   }
 }
 

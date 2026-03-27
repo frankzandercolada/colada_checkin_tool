@@ -1112,6 +1112,7 @@ app.post('/api/kiosk/stations', (req, res) => {
     cameraMode:    cameraMode    || false,
     lightMode:     lightMode     || false,
     selfRegistration: { enabled: !!(req.body.selfRegistration?.enabled) },
+    guestSearch:      { enabled: !!(req.body.guestSearch?.enabled) },
   };
   if (existing >= 0) stations[existing] = station; else stations.push(station);
   saveKioskStations(id, stations);
@@ -1171,6 +1172,67 @@ app.post('/api/kiosk/stations/:stationId/duplicate', (req, res) => {
   stations.push(copy);
   saveKioskStations(pid, stations);
   res.json({ ok: true, station: copy });
+});
+
+// Kiosk name search — searches across all project events in parallel.
+// GET /api/kiosk/search?q=name&stationId=...
+// Returns up to 10 guests (deduplicated by id) with _matchedEventId injected.
+app.get('/api/kiosk/search', async (req, res) => {
+  try {
+    const pid = getActiveProjectId();
+    const q   = (req.query.q || '').trim();
+    if (!q || q.length < 2) return res.json([]);
+
+    const token = await getToken(pid);
+    const { apiBase } = getEffectiveCredentials(pid);
+    const projects = loadProjects();
+    const project  = projects.find(p => p.id === pid);
+    const eventIds = getProjectEventIds(project);
+    if (!eventIds.length) return res.json([]);
+
+    // Search each event in parallel
+    const results = await Promise.allSettled(
+      eventIds.map(eid =>
+        fetch(`${apiBase}/_gw/s-events-guests/external-api/events/${eid}/guests?filter[name]=${encodeURIComponent(q)}`,
+          { headers: { Authorization: `Bearer ${token}`, Range: 'guests 0-9' } })
+          .then(r => r.ok ? r.json() : [])
+          .then(data => {
+            const arr = Array.isArray(data) ? data : [];
+            // Inject _matchedEventId and filter by name client-side as fallback
+            const term = q.toLowerCase();
+            return arr
+              .filter(g => {
+                const a = g.attributes || g.properties || {};
+                const full = [a.contact_firstName, a.contact_lastName,
+                  (a.contact_firstName||'')+' '+(a.contact_lastName||''),
+                  a.contact_x_companyName, a.contact_email].join(' ').toLowerCase();
+                return full.includes(term);
+              })
+              .map(g => {
+                const attrs = g.attributes || g.properties || {};
+                attrs._matchedEventId = eid;
+                if (g.attributes) g.attributes = attrs;
+                else g.properties = attrs;
+                return g;
+              });
+          })
+      )
+    );
+
+    // Merge, deduplicate by guest id, limit to 10
+    const seen = new Set();
+    const merged = [];
+    for (const r of results) {
+      if (r.status !== 'fulfilled') continue;
+      for (const g of r.value) {
+        const id = g.id || g.uid;
+        if (id && !seen.has(id)) { seen.add(id); merged.push(g); }
+        if (merged.length >= 10) break;
+      }
+      if (merged.length >= 10) break;
+    }
+    res.json(merged);
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/kiosk/scan', async (req, res) => {

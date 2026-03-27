@@ -542,6 +542,19 @@
             </label>
           </div>
 
+          <!-- ── Guest Search ── -->
+          <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:8px; padding-bottom:8px; border-bottom:1px solid var(--border);">Guest Search</div>
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 0;">
+            <div>
+              <div class="form-label" style="margin-bottom:2px;">Enable Guest Search</div>
+              <div style="font-size:11px; color:var(--muted);">Show a Search button on the welcome screen so staff can look up guests by name</div>
+            </div>
+            <label class="ks-toggle-wrap">
+              <input type="checkbox" id="ks-search-enabled"/>
+              <span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span>
+            </label>
+          </div>
+
           <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:8px; padding-bottom:8px; border-bottom:1px solid var(--border);">Welcome Screen</div>
           <div><label class="form-label">Heading</label><input class="form-input" id="ks-welcome-title" placeholder="Welcome"/></div>
           <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-welcome-sub" style="min-height:64px; resize:vertical;" placeholder="Please scan your QR code to check in."></textarea></div>
@@ -3447,7 +3460,8 @@ function openKioskStationModal() {
   document.getElementById('ks-success-hide-card').checked = false;
   document.getElementById('ks-already-hide-card').checked = false;
   // Self-registration reset
-  document.getElementById('ks-reg-enabled').checked = false;
+  document.getElementById('ks-reg-enabled').checked    = false;
+  document.getElementById('ks-search-enabled').checked = false;
   ['welcome','success','notfound','already'].forEach(k => {
     document.getElementById('ks-' + k + '-bg-data').value = '';
     document.getElementById('ks-' + k + '-bg-label').textContent = 'Upload image…';
@@ -3473,7 +3487,8 @@ function editKioskStation(stationId) {
   document.getElementById('ks-bg-light').value = s.bgColorLight || '#f0f0f0';
   // Self-registration — only the enabled flag lives on the station
   const reg = s.selfRegistration || {};
-  document.getElementById('ks-reg-enabled').checked = reg.enabled || false;
+  document.getElementById('ks-reg-enabled').checked    = reg.enabled || false;
+  document.getElementById('ks-search-enabled').checked = s.guestSearch?.enabled || false;
   document.getElementById('ks-welcome-title').value  = s.welcome?.title || '';
   document.getElementById('ks-welcome-sub').value    = s.welcome?.subtitle || '';
   document.getElementById('ks-success-title').value  = s.success?.title || '';
@@ -3555,6 +3570,7 @@ async function saveKioskStation() {
     cameraMode:     document.getElementById('ks-camera-mode').checked,
     lightMode:      document.getElementById('ks-light-mode').checked,
     selfRegistration: collectRegConfig(),
+    guestSearch: { enabled: document.getElementById('ks-search-enabled').checked },
     welcome:          ksScreen('welcome',  { returnSecs: parseInt(document.getElementById('ks-welcome-return-secs').value)||null }),
     success:          ksScreen('success',  { returnSecs: parseInt(document.getElementById('ks-success-return-secs').value)||null,  hideGuestCard: document.getElementById('ks-success-hide-card').checked }),
     notFound:         ksScreen('notfound', { returnSecs: parseInt(document.getElementById('ks-notfound-return-secs').value)||null }),
