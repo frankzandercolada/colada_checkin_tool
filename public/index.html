@@ -509,25 +509,33 @@
 
               <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; padding-bottom:6px; border-bottom:1px solid var(--border); margin-top:4px;">Display</div>
 
-              ${['hide-logo:Hide Logo / Event Text:Use when the background image already contains the event name',
-                 'hide-icon:Hide QR Code Icon:Hide the QR code icon on the welcome screen (e.g. when using a custom background image)',
-                 'light-mode:Light Mode:Switch kiosk to light colour scheme',
-                 'camera-mode:Camera Scan Mode:Enable QR scanning via device camera (iPad / iPhone)',
-              ].map(s => { const [id,label,desc] = s.split(':'); return `
               <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
-                <div><div class="form-label" style="margin-bottom:2px;">${label}</div><div style="font-size:11px; color:var(--muted);">${desc}</div></div>
-                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-${id}"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
-              </div>`; }).join('')}
+                <div><div class="form-label" style="margin-bottom:2px;">Hide Logo / Event Text</div><div style="font-size:11px; color:var(--muted);">Use when the background image already contains the event name</div></div>
+                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-hide-logo"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
+              </div>
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
+                <div><div class="form-label" style="margin-bottom:2px;">Hide QR Code Icon</div><div style="font-size:11px; color:var(--muted);">Hide the QR code icon on the welcome screen (e.g. when using a custom background image)</div></div>
+                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-hide-icon"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
+              </div>
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
+                <div><div class="form-label" style="margin-bottom:2px;">Light Mode</div><div style="font-size:11px; color:var(--muted);">Switch kiosk to light colour scheme</div></div>
+                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-light-mode"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
+              </div>
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
+                <div><div class="form-label" style="margin-bottom:2px;">Camera Scan Mode</div><div style="font-size:11px; color:var(--muted);">Enable QR scanning via device camera (iPad / iPhone)</div></div>
+                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-camera-mode"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
+              </div>
 
               <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; padding-bottom:6px; border-bottom:1px solid var(--border); margin-top:4px;">Features</div>
 
-              ${['reg-enabled:Self-Registration:Show a Register button for walk-in guests. Configure fields per event in Badges &amp; Routing.',
-                 'search-enabled:Guest Search:Show a Search button so staff can look up guests by name.',
-              ].map(s => { const [id,label,desc] = s.split(':'); return `
               <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
-                <div><div class="form-label" style="margin-bottom:2px;">${label}</div><div style="font-size:11px; color:var(--muted);">${desc}</div></div>
-                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-${id}"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
-              </div>`; }).join('')}
+                <div><div class="form-label" style="margin-bottom:2px;">Self-Registration</div><div style="font-size:11px; color:var(--muted);">Show a Register button for walk-in guests. Configure fields per event in Badges &amp; Routing.</div></div>
+                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-reg-enabled"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
+              </div>
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
+                <div><div class="form-label" style="margin-bottom:2px;">Guest Search</div><div style="font-size:11px; color:var(--muted);">Show a Search button so staff can look up guests by name.</div></div>
+                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-search-enabled"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
+              </div>
 
               <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; padding-bottom:6px; border-bottom:1px solid var(--border); margin-top:4px;">Print</div>
 
