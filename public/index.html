@@ -473,179 +473,191 @@
 
     <!-- Kiosk station modal -->
     <div id="kiosk-modal" style="display:none; position:fixed; inset:0; z-index:90; background:rgba(0,0,0,0.7); backdrop-filter:blur(8px); align-items:center; justify-content:center;">
-      <div style="background:var(--surface); border:1px solid var(--border2); border-radius:16px; padding:32px; width:min(520px,92vw); max-height:88vh; overflow-y:auto;">
-        <div style="font-size:18px; font-weight:700; margin-bottom:24px;" id="kiosk-modal-title">New Station</div>
+      <div style="background:var(--surface); border:1px solid var(--border2); border-radius:16px; width:min(580px,94vw); max-height:90vh; display:flex; flex-direction:column; overflow:hidden;">
 
-        <div style="display:flex; flex-direction:column; gap:14px;">
-          <div><label class="form-label">Station Name *</label><input class="form-input" id="ks-name" placeholder="e.g. Entrance A"/></div>
-          <div><label class="form-label">Logo / Event Text</label><input class="form-input" id="ks-logo" placeholder="e.g. AWF 2025"/></div>
-          <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
-            <div>
-              <div class="form-label" style="margin-bottom:2px;">Hide Logo / Event Text</div>
-              <div style="font-size:11px; color:var(--muted);">Use when the background image already contains the event name</div>
-            </div>
-            <label class="ks-toggle-wrap">
-              <input type="checkbox" id="ks-hide-logo"/>
-              <span class="ks-toggle-track">
-                <span class="ks-toggle-knob"></span>
-              </span>
-            </label>
-          </div>
-          <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
-            <div><label class="form-label">Accent Color</label><input class="form-input" id="ks-accent" type="color" value="#d3222a" style="height:40px; padding:4px 8px;"/></div>
-            <div><label class="form-label">Background (Dark)</label><input class="form-input" id="ks-bg" type="color" value="#0a0a0a" style="height:40px; padding:4px 8px;"/></div>
-            <div><label class="form-label">Background (Light)</label><input class="form-input" id="ks-bg-light" type="color" value="#f0f0f0" style="height:40px; padding:4px 8px;"/></div>
-          </div>
+        <!-- Modal header -->
+        <div style="padding:20px 24px 0; flex-shrink:0;">
+          <div style="font-size:18px; font-weight:700; margin-bottom:16px;" id="kiosk-modal-title">New Station</div>
 
-
-          <div>
-            <label class="form-label">Print Endpoint (optional)</label>
-            <input class="form-input" id="ks-print-endpoint" placeholder="http://printer-host/print (leave blank to use browser print)"/>
-            <div style="font-size:11px; color:var(--muted); margin-top:4px;">If set, the badge PDF will be PUT to this URL instead of opening the browser print dialog.</div>
+          <!-- Tabs -->
+          <div style="display:flex; gap:2px; border-bottom:1px solid var(--border);">
+            <button class="ks-tab active" data-tab="general"  onclick="switchKsTab('general')">General</button>
+            <button class="ks-tab"        data-tab="welcome"  onclick="switchKsTab('welcome')">Welcome</button>
+            <button class="ks-tab"        data-tab="success"  onclick="switchKsTab('success')">Success</button>
+            <button class="ks-tab"        data-tab="notfound" onclick="switchKsTab('notfound')">Not Found</button>
+            <button class="ks-tab"        data-tab="already"  onclick="switchKsTab('already')">Already In</button>
           </div>
-
-          <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 0;">
-            <div>
-              <div class="form-label" style="margin-bottom:2px;">Camera Scan Mode</div>
-              <div style="font-size:11px; color:var(--muted);">Enable QR scanning via device camera (iPad / iPhone)</div>
-            </div>
-            <label class="ks-toggle-wrap">
-              <input type="checkbox" id="ks-camera-mode"/>
-              <span class="ks-toggle-track">
-                <span class="ks-toggle-knob"></span>
-              </span>
-            </label>
-          </div>
-          <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 0;">
-            <div>
-              <div class="form-label" style="margin-bottom:2px;">Light Mode</div>
-              <div style="font-size:11px; color:var(--muted);">Switch kiosk to light colour scheme</div>
-            </div>
-            <label class="ks-toggle-wrap">
-              <input type="checkbox" id="ks-light-mode"/>
-              <span class="ks-toggle-track">
-                <span class="ks-toggle-knob"></span>
-              </span>
-            </label>
-          </div>
-
-          <!-- ── Self-Registration ── -->
-          <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:8px; padding-bottom:8px; border-bottom:1px solid var(--border);">Self-Registration</div>
-          <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 0;">
-            <div>
-              <div class="form-label" style="margin-bottom:2px;">Enable Self-Registration</div>
-              <div style="font-size:11px; color:var(--muted);">Show a Register button on the welcome screen for walk-in guests. Configure form fields and participant groups per event in the Routing Rules page.</div>
-            </div>
-            <label class="ks-toggle-wrap">
-              <input type="checkbox" id="ks-reg-enabled"/>
-              <span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span>
-            </label>
-          </div>
-
-          <!-- ── Guest Search ── -->
-          <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:8px; padding-bottom:8px; border-bottom:1px solid var(--border);">Guest Search</div>
-          <div style="display:flex; align-items:center; justify-content:space-between; padding:8px 0;">
-            <div>
-              <div class="form-label" style="margin-bottom:2px;">Enable Guest Search</div>
-              <div style="font-size:11px; color:var(--muted);">Show a Search button on the welcome screen so staff can look up guests by name</div>
-            </div>
-            <label class="ks-toggle-wrap">
-              <input type="checkbox" id="ks-search-enabled"/>
-              <span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span>
-            </label>
-          </div>
-
-          <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:8px; padding-bottom:8px; border-bottom:1px solid var(--border);">Welcome Screen</div>
-          <div><label class="form-label">Heading</label><input class="form-input" id="ks-welcome-title" placeholder="Welcome"/></div>
-          <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-welcome-sub" style="min-height:64px; resize:vertical;" placeholder="Please scan your QR code to check in."></textarea></div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-welcome-title-size" type="number" min="20" max="120" placeholder="default"/></div>
-            <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-welcome-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
-          </div>
-          <div>
-            <label class="form-label">Background Image</label>
-            <div style="display:flex;gap:8px;align-items:center;">
-              <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
-                <span id="ks-welcome-bg-label">Upload image…</span>
-                <input type="file" id="ks-welcome-bg-file" accept="image/*" style="display:none;" onchange="loadKioskAdminScreenBg(this,'welcome')"/>
-              </label>
-              <button class="btn btn-secondary" id="ks-welcome-bg-clear" onclick="clearKioskAdminScreenBg('welcome')" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
-            </div>
-            <input type="hidden" id="ks-welcome-bg-data"/>
-          </div>
-          <div><label class="form-label">Auto-return delay (seconds)</label><input class="form-input" id="ks-welcome-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/></div>
-          <div><label class="form-label">Background image top offset (px)</label><input class="form-input" id="ks-welcome-bg-top" type="number" min="-2000" max="2000" placeholder="0" style="width:160px;"/></div>
-
-          <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:4px; padding-bottom:8px; border-bottom:1px solid var(--border);">Success Screen</div>
-          <div><label class="form-label">Heading</label><input class="form-input" id="ks-success-title" placeholder="Checked In!"/></div>
-          <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-success-sub" style="min-height:64px; resize:vertical;" placeholder="Your badge is printing. Welcome!"></textarea></div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-success-title-size" type="number" min="20" max="120" placeholder="default"/></div>
-            <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-success-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
-          </div>
-          <div><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-success-hide-card" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide guest name card</label></div>
-          <div>
-            <label class="form-label">Background Image</label>
-            <div style="display:flex;gap:8px;align-items:center;">
-              <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
-                <span id="ks-success-bg-label">Upload image…</span>
-                <input type="file" id="ks-success-bg-file" accept="image/*" style="display:none;" onchange="loadKioskAdminScreenBg(this,'success')"/>
-              </label>
-              <button class="btn btn-secondary" id="ks-success-bg-clear" onclick="clearKioskAdminScreenBg('success')" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
-            </div>
-            <input type="hidden" id="ks-success-bg-data"/>
-          </div>
-          <div><label class="form-label">Auto-return delay (seconds)</label><input class="form-input" id="ks-success-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/></div>
-          <div><label class="form-label">Background image top offset (px)</label><input class="form-input" id="ks-success-bg-top" type="number" min="-2000" max="2000" placeholder="0" style="width:160px;"/></div>
-
-          <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:4px; padding-bottom:8px; border-bottom:1px solid var(--border);">Not Found / Invalid Status</div>
-          <div><label class="form-label">Heading</label><input class="form-input" id="ks-notfound-title" placeholder="Guest Not Found"/></div>
-          <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-notfound-sub" style="min-height:64px; resize:vertical;" placeholder="Please see the registration desk for assistance."></textarea></div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-notfound-title-size" type="number" min="20" max="120" placeholder="default"/></div>
-            <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-notfound-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
-          </div>
-          <div>
-            <label class="form-label">Background Image</label>
-            <div style="display:flex;gap:8px;align-items:center;">
-              <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
-                <span id="ks-notfound-bg-label">Upload image…</span>
-                <input type="file" id="ks-notfound-bg-file" accept="image/*" style="display:none;" onchange="loadKioskAdminScreenBg(this,'notfound')"/>
-              </label>
-              <button class="btn btn-secondary" id="ks-notfound-bg-clear" onclick="clearKioskAdminScreenBg('notfound')" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
-            </div>
-            <input type="hidden" id="ks-notfound-bg-data"/>
-          </div>
-          <div><label class="form-label">Auto-return delay (seconds)</label><input class="form-input" id="ks-notfound-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/></div>
-          <div><label class="form-label">Background image top offset (px)</label><input class="form-input" id="ks-notfound-bg-top" type="number" min="-2000" max="2000" placeholder="0" style="width:160px;"/></div>
-
-          <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:4px; padding-bottom:8px; border-bottom:1px solid var(--border);">Already Checked In</div>
-          <div><label class="form-label">Heading</label><input class="form-input" id="ks-already-title" placeholder="Already Checked In"/></div>
-          <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-already-sub" style="min-height:64px; resize:vertical;" placeholder="Your badge was already printed. See the desk if you need a reprint."></textarea></div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-            <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-already-title-size" type="number" min="20" max="120" placeholder="default"/></div>
-            <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-already-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
-          </div>
-          <div><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-already-hide-card" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide guest name card</label></div>
-          <div>
-            <label class="form-label">Background Image</label>
-            <div style="display:flex;gap:8px;align-items:center;">
-              <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
-                <span id="ks-already-bg-label">Upload image…</span>
-                <input type="file" id="ks-already-bg-file" accept="image/*" style="display:none;" onchange="loadKioskAdminScreenBg(this,'already')"/>
-              </label>
-              <button class="btn btn-secondary" id="ks-already-bg-clear" onclick="clearKioskAdminScreenBg('already')" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
-            </div>
-            <input type="hidden" id="ks-already-bg-data"/>
-          </div>
-          <div><label class="form-label">Auto-return delay (seconds)</label><input class="form-input" id="ks-already-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/></div>
-          <div><label class="form-label">Background image top offset (px)</label><input class="form-input" id="ks-already-bg-top" type="number" min="-2000" max="2000" placeholder="0" style="width:160px;"/></div>
         </div>
 
-        <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:24px;">
+        <!-- Tab content (scrollable) -->
+        <div style="flex:1; overflow-y:auto; padding:20px 24px;">
+
+          <!-- ── General tab ── -->
+          <div class="ks-tab-panel active" id="ks-panel-general">
+            <div style="display:flex; flex-direction:column; gap:14px;">
+
+              <div><label class="form-label">Station Name *</label><input class="form-input" id="ks-name" placeholder="e.g. Entrance A"/></div>
+
+              <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; padding-bottom:6px; border-bottom:1px solid var(--border);">Branding</div>
+
+              <div><label class="form-label">Logo / Event Text</label><input class="form-input" id="ks-logo" placeholder="e.g. AWF 2025"/></div>
+              <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
+                <div><label class="form-label">Accent</label><input class="form-input" id="ks-accent" type="color" value="#d3222a" style="height:40px; padding:4px 8px;"/></div>
+                <div><label class="form-label">BG Dark</label><input class="form-input" id="ks-bg" type="color" value="#0a0a0a" style="height:40px; padding:4px 8px;"/></div>
+                <div><label class="form-label">BG Light</label><input class="form-input" id="ks-bg-light" type="color" value="#f0f0f0" style="height:40px; padding:4px 8px;"/></div>
+              </div>
+
+              <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; padding-bottom:6px; border-bottom:1px solid var(--border); margin-top:4px;">Display</div>
+
+              ${['hide-logo:Hide Logo / Event Text:Use when the background image already contains the event name',
+                 'hide-icon:Hide QR Code Icon:Hide the QR code icon on the welcome screen (e.g. when using a custom background image)',
+                 'light-mode:Light Mode:Switch kiosk to light colour scheme',
+                 'camera-mode:Camera Scan Mode:Enable QR scanning via device camera (iPad / iPhone)',
+              ].map(s => { const [id,label,desc] = s.split(':'); return `
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
+                <div><div class="form-label" style="margin-bottom:2px;">${label}</div><div style="font-size:11px; color:var(--muted);">${desc}</div></div>
+                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-${id}"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
+              </div>`; }).join('')}
+
+              <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; padding-bottom:6px; border-bottom:1px solid var(--border); margin-top:4px;">Features</div>
+
+              ${['reg-enabled:Self-Registration:Show a Register button for walk-in guests. Configure fields per event in Badges &amp; Routing.',
+                 'search-enabled:Guest Search:Show a Search button so staff can look up guests by name.',
+              ].map(s => { const [id,label,desc] = s.split(':'); return `
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
+                <div><div class="form-label" style="margin-bottom:2px;">${label}</div><div style="font-size:11px; color:var(--muted);">${desc}</div></div>
+                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-${id}"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
+              </div>`; }).join('')}
+
+              <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; padding-bottom:6px; border-bottom:1px solid var(--border); margin-top:4px;">Print</div>
+
+              <div>
+                <label class="form-label">Print Endpoint (optional)</label>
+                <input class="form-input" id="ks-print-endpoint" placeholder="http://printer-host/print"/>
+                <div style="font-size:11px; color:var(--muted); margin-top:4px;">If set, the badge PDF will be PUT to this URL instead of opening the browser print dialog.</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Screen tab helper macro ── -->
+          <!-- Welcome -->
+          <div class="ks-tab-panel" id="ks-panel-welcome">
+            <div style="display:flex; flex-direction:column; gap:14px;">
+              <div><label class="form-label">Heading</label><input class="form-input" id="ks-welcome-title" placeholder="Welcome"/></div>
+              <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-welcome-sub" style="min-height:64px; resize:vertical;" placeholder="Please scan your QR code to check in."></textarea></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-welcome-title-size" type="number" min="20" max="120" placeholder="default"/></div>
+                <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-welcome-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
+              </div>
+              <div>
+                <label class="form-label">Background Image</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
+                    <span id="ks-welcome-bg-label">Upload image…</span>
+                    <input type="file" id="ks-welcome-bg-file" accept="image/*" style="display:none;" onchange="loadKioskAdminScreenBg(this,'welcome')"/>
+                  </label>
+                  <button class="btn btn-secondary" id="ks-welcome-bg-clear" onclick="clearKioskAdminScreenBg('welcome')" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
+                </div>
+                <input type="hidden" id="ks-welcome-bg-data"/>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div><label class="form-label">Auto-return (seconds)</label><input class="form-input" id="ks-welcome-return-secs" type="number" min="3" max="60" placeholder="8"/></div>
+                <div><label class="form-label">Image top offset (px)</label><input class="form-input" id="ks-welcome-bg-top" type="number" min="-2000" max="2000" placeholder="0"/></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Success -->
+          <div class="ks-tab-panel" id="ks-panel-success">
+            <div style="display:flex; flex-direction:column; gap:14px;">
+              <div><label class="form-label">Heading</label><input class="form-input" id="ks-success-title" placeholder="Checked In!"/></div>
+              <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-success-sub" style="min-height:64px; resize:vertical;" placeholder="Your badge is printing. Welcome!"></textarea></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-success-title-size" type="number" min="20" max="120" placeholder="default"/></div>
+                <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-success-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
+              </div>
+              <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-success-hide-card" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide guest name card</label>
+              <div>
+                <label class="form-label">Background Image</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
+                    <span id="ks-success-bg-label">Upload image…</span>
+                    <input type="file" id="ks-success-bg-file" accept="image/*" style="display:none;" onchange="loadKioskAdminScreenBg(this,'success')"/>
+                  </label>
+                  <button class="btn btn-secondary" id="ks-success-bg-clear" onclick="clearKioskAdminScreenBg('success')" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
+                </div>
+                <input type="hidden" id="ks-success-bg-data"/>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div><label class="form-label">Auto-return (seconds)</label><input class="form-input" id="ks-success-return-secs" type="number" min="3" max="60" placeholder="8"/></div>
+                <div><label class="form-label">Image top offset (px)</label><input class="form-input" id="ks-success-bg-top" type="number" min="-2000" max="2000" placeholder="0"/></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Not Found -->
+          <div class="ks-tab-panel" id="ks-panel-notfound">
+            <div style="display:flex; flex-direction:column; gap:14px;">
+              <div><label class="form-label">Heading</label><input class="form-input" id="ks-notfound-title" placeholder="Guest Not Found"/></div>
+              <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-notfound-sub" style="min-height:64px; resize:vertical;" placeholder="Please see the registration desk for assistance."></textarea></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-notfound-title-size" type="number" min="20" max="120" placeholder="default"/></div>
+                <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-notfound-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
+              </div>
+              <div>
+                <label class="form-label">Background Image</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
+                    <span id="ks-notfound-bg-label">Upload image…</span>
+                    <input type="file" id="ks-notfound-bg-file" accept="image/*" style="display:none;" onchange="loadKioskAdminScreenBg(this,'notfound')"/>
+                  </label>
+                  <button class="btn btn-secondary" id="ks-notfound-bg-clear" onclick="clearKioskAdminScreenBg('notfound')" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
+                </div>
+                <input type="hidden" id="ks-notfound-bg-data"/>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div><label class="form-label">Auto-return (seconds)</label><input class="form-input" id="ks-notfound-return-secs" type="number" min="3" max="60" placeholder="8"/></div>
+                <div><label class="form-label">Image top offset (px)</label><input class="form-input" id="ks-notfound-bg-top" type="number" min="-2000" max="2000" placeholder="0"/></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Already Checked In -->
+          <div class="ks-tab-panel" id="ks-panel-already">
+            <div style="display:flex; flex-direction:column; gap:14px;">
+              <div><label class="form-label">Heading</label><input class="form-input" id="ks-already-title" placeholder="Already Checked In"/></div>
+              <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-already-sub" style="min-height:64px; resize:vertical;" placeholder="Your badge was already printed. See the desk if you need a reprint."></textarea></div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-already-title-size" type="number" min="20" max="120" placeholder="default"/></div>
+                <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-already-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
+              </div>
+              <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-already-hide-card" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide guest name card</label>
+              <div>
+                <label class="form-label">Background Image</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
+                    <span id="ks-already-bg-label">Upload image…</span>
+                    <input type="file" id="ks-already-bg-file" accept="image/*" style="display:none;" onchange="loadKioskAdminScreenBg(this,'already')"/>
+                  </label>
+                  <button class="btn btn-secondary" id="ks-already-bg-clear" onclick="clearKioskAdminScreenBg('already')" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
+                </div>
+                <input type="hidden" id="ks-already-bg-data"/>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div><label class="form-label">Auto-return (seconds)</label><input class="form-input" id="ks-already-return-secs" type="number" min="3" max="60" placeholder="8"/></div>
+                <div><label class="form-label">Image top offset (px)</label><input class="form-input" id="ks-already-bg-top" type="number" min="-2000" max="2000" placeholder="0"/></div>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- end scrollable content -->
+
+        <!-- Modal footer -->
+        <div style="padding:16px 24px; border-top:1px solid var(--border); display:flex; gap:10px; justify-content:flex-end; flex-shrink:0;">
           <button class="btn btn-secondary" onclick="closeKioskModal()">Cancel</button>
           <button class="btn btn-primary" onclick="saveKioskStation()">Save Station</button>
         </div>
+
       </div>
     </div>
 
@@ -3462,6 +3474,7 @@ function openKioskStationModal() {
   // Self-registration reset
   document.getElementById('ks-reg-enabled').checked    = false;
   document.getElementById('ks-search-enabled').checked = false;
+  document.getElementById('ks-hide-icon').checked      = false;
   ['welcome','success','notfound','already'].forEach(k => {
     document.getElementById('ks-' + k + '-bg-data').value = '';
     document.getElementById('ks-' + k + '-bg-label').textContent = 'Upload image…';
@@ -3489,6 +3502,7 @@ function editKioskStation(stationId) {
   const reg = s.selfRegistration || {};
   document.getElementById('ks-reg-enabled').checked    = reg.enabled || false;
   document.getElementById('ks-search-enabled').checked = s.guestSearch?.enabled || false;
+  document.getElementById('ks-hide-icon').checked      = s.hideIcon || false;
   document.getElementById('ks-welcome-title').value  = s.welcome?.title || '';
   document.getElementById('ks-welcome-sub').value    = s.welcome?.subtitle || '';
   document.getElementById('ks-success-title').value  = s.success?.title || '';
@@ -3529,6 +3543,13 @@ function editKioskStation(stationId) {
 
 function closeKioskModal() {
   document.getElementById('kiosk-modal').style.display = 'none';
+  // Reset tabs back to General when closing
+  switchKsTab('general');
+}
+
+function switchKsTab(name) {
+  document.querySelectorAll('.ks-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
+  document.querySelectorAll('.ks-tab-panel').forEach(p => p.classList.toggle('active', p.id === `ks-panel-${name}`));
 }
 
 function collectRegConfig() {
@@ -3571,6 +3592,7 @@ async function saveKioskStation() {
     lightMode:      document.getElementById('ks-light-mode').checked,
     selfRegistration: collectRegConfig(),
     guestSearch: { enabled: document.getElementById('ks-search-enabled').checked },
+    hideIcon:    document.getElementById('ks-hide-icon').checked,
     welcome:          ksScreen('welcome',  { returnSecs: parseInt(document.getElementById('ks-welcome-return-secs').value)||null }),
     success:          ksScreen('success',  { returnSecs: parseInt(document.getElementById('ks-success-return-secs').value)||null,  hideGuestCard: document.getElementById('ks-success-hide-card').checked }),
     notFound:         ksScreen('notfound', { returnSecs: parseInt(document.getElementById('ks-notfound-return-secs').value)||null }),

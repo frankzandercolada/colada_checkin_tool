@@ -1048,6 +1048,10 @@ function applyStation(s, resolvedLogoText) {
     }
   });
 
+  // Show/hide the QR icon ring on the welcome screen
+  const iconRingEl = document.getElementById('welcome-icon-ring');
+  if (iconRingEl) iconRingEl.style.display = s.hideIcon ? 'none' : '';
+
   // Show/hide self-registration button on welcome screen
   const regBtn = document.getElementById('reg-btn');
   if (regBtn) regBtn.style.display = s.selfRegistration?.enabled ? 'block' : 'none';

@@ -1113,6 +1113,7 @@ app.post('/api/kiosk/stations', (req, res) => {
     lightMode:     lightMode     || false,
     selfRegistration: { enabled: !!(req.body.selfRegistration?.enabled) },
     guestSearch:      { enabled: !!(req.body.guestSearch?.enabled) },
+    hideIcon:         !!(req.body.hideIcon),
   };
   if (existing >= 0) stations[existing] = station; else stations.push(station);
   saveKioskStations(id, stations);

@@ -762,3 +762,16 @@ html, body {
 .ks-toggle-wrap input:checked + .ks-toggle-track .ks-toggle-knob { background: #fff; }
 .ks-toggle-wrap input:checked + .ks-toggle-track { background: var(--accent); }
 .ks-toggle-wrap input:checked + .ks-toggle-track .ks-toggle-knob { transform: translateX(20px); }
+
+/* ── Kiosk station modal tabs ── */
+.ks-tab {
+  background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--muted); cursor: pointer; font-family: var(--font);
+  font-size: 12px; font-weight: 600; letter-spacing: 0.03em;
+  padding: 8px 14px; margin-bottom: -1px; transition: color 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.ks-tab:hover { color: var(--text); }
+.ks-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+.ks-tab-panel { display: none; }
+.ks-tab-panel.active { display: block; }
