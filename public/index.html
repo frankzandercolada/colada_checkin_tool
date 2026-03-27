@@ -109,68 +109,30 @@
     <!-- ── Dashboard page ── -->
     <div class="page" id="page-dashboard">
       <div class="page-title">Dashboard</div>
-      <div class="page-subtitle">Event overview and check-in statistics</div>
+      <div class="page-subtitle">Check-in statistics per event</div>
 
-      <div class="stats-grid">
+      <!-- Aggregate totals across all events -->
+      <div class="stats-grid" id="dash-totals-grid" style="display:none;">
         <div class="stat-card">
-          <div class="stat-num" id="stat-total">—</div>
+          <div class="stat-num" id="dash-total-guests">—</div>
           <div class="stat-label">Total Guests</div>
         </div>
         <div class="stat-card">
-          <div class="stat-num" id="stat-checked">—</div>
-          <div class="stat-label">Checked In (Reg/Pend)</div>
+          <div class="stat-num" id="dash-total-eligible">—</div>
+          <div class="stat-label">Registered / Pending</div>
         </div>
         <div class="stat-card">
-          <div class="stat-num" id="stat-awf">—</div>
-          <div class="stat-label">AWF (Reg/Pend)</div>
+          <div class="stat-num" id="dash-total-checked">—</div>
+          <div class="stat-label">Checked In</div>
         </div>
         <div class="stat-card">
-          <div class="stat-num" id="stat-stimm">—</div>
-          <div class="stat-label">Stimmberechtigt (Reg/Pend)</div>
+          <div class="stat-num" id="dash-total-pct" style="color:var(--accent);">—</div>
+          <div class="stat-label">Overall Rate</div>
         </div>
       </div>
 
-      <!-- Check-in progress bar -->
-      <div class="card" id="checkin-progress-card" style="display:none;">
-        <div class="card-title">Check-in Progress · Registered &amp; Pending Guests</div>
-        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
-          <div style="display:flex; gap:20px;">
-            <div>
-              <div style="font-size:28px; font-weight:800; color:var(--green); letter-spacing:-0.02em; font-variant-numeric:tabular-nums;" id="prog-checked">0</div>
-              <div style="font-size:11px; font-family:var(--font-mono); color:var(--muted); text-transform:uppercase; letter-spacing:0.06em;">Checked In</div>
-            </div>
-            <div>
-              <div style="font-size:28px; font-weight:800; color:var(--orange); letter-spacing:-0.02em; font-variant-numeric:tabular-nums;" id="prog-pending">0</div>
-              <div style="font-size:11px; font-family:var(--font-mono); color:var(--muted); text-transform:uppercase; letter-spacing:0.06em;">Not Yet</div>
-            </div>
-            <div>
-              <div style="font-size:28px; font-weight:800; color:var(--text); letter-spacing:-0.02em; font-variant-numeric:tabular-nums;" id="prog-total">0</div>
-              <div style="font-size:11px; font-family:var(--font-mono); color:var(--muted); text-transform:uppercase; letter-spacing:0.06em;">Total (Reg+Pend)</div>
-            </div>
-          </div>
-          <div style="font-size:36px; font-weight:800; color:var(--accent); letter-spacing:-0.03em;" id="prog-pct">0%</div>
-        </div>
-        <!-- Stacked bar -->
-        <div style="height:14px; border-radius:7px; background:var(--surface3); overflow:hidden; position:relative;">
-          <div id="prog-bar-checked" style="position:absolute; left:0; top:0; height:100%; background:var(--green); border-radius:7px 0 0 7px; transition:width 0.8s cubic-bezier(0.4,0,0.2,1); width:0%;"></div>
-          <div id="prog-bar-pending" style="position:absolute; top:0; height:100%; background:var(--orange); transition:left 0.8s cubic-bezier(0.4,0,0.2,1), width 0.8s cubic-bezier(0.4,0,0.2,1); left:0%; width:0%;"></div>
-        </div>
-        <!-- Legend -->
-        <div style="display:flex; gap:16px; margin-top:10px; font-size:11px; font-family:var(--font-mono); color:var(--muted);">
-          <span style="display:flex; align-items:center; gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:var(--green);display:inline-block;"></span> Checked in</span>
-          <span style="display:flex; align-items:center; gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:var(--orange);display:inline-block;"></span> Not checked in</span>
-          <span style="display:flex; align-items:center; gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:var(--surface3);display:inline-block;"></span> Other statuses</span>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="card-title">Event Details</div>
-        <div id="event-details">
-          <div class="empty" style="padding:30px;">
-            <p>No event loaded. Configure an Event ID in Settings and refresh.</p>
-          </div>
-        </div>
-      </div>
+      <!-- Per-event cards rendered dynamically -->
+      <div id="dash-events-container"></div>
 
       <div style="margin-top:16px; display:flex; align-items:center; gap:12px;">
         <button class="btn btn-secondary" onclick="loadDashboard(); resetDashboardRefresh();">↺ Refresh</button>
@@ -2999,93 +2961,142 @@ function updateCountdown() {
 }
 
 async function loadDashboard() {
-  if (!state.eventId) {
-    document.getElementById('event-details').innerHTML = '<div class="empty" style="padding:30px;"><p>No event ID configured. Go to Settings.</p></div>';
+  const proj     = _projects.find(p => p.id === _activeProjectId);
+  const eventIds = proj?.eventIds?.length ? proj.eventIds : (proj?.eventId ? [proj.eventId] : []);
+  const container = document.getElementById('dash-events-container');
+
+  if (!eventIds.length) {
+    container.innerHTML = '<div class="card"><div class="empty" style="padding:30px;"><p>No events configured. Go to Settings.</p></div></div>';
+    document.getElementById('dash-totals-grid').style.display = 'none';
     return;
   }
 
-  document.getElementById('event-details').innerHTML = '<div class="empty" style="padding:20px;"><div class="spinner"></div></div>';
+  // Show loading spinners for each event slot
+  container.innerHTML = eventIds.map(eid => `
+    <div class="card" id="dash-event-${eid}" style="margin-bottom:16px;">
+      <div class="empty" style="padding:20px;"><div class="spinner"></div></div>
+    </div>`).join('');
+  document.getElementById('dash-totals-grid').style.display = 'none';
 
-  try {
+  // Fetch event metadata + guests for all events in parallel
+  const results = await Promise.allSettled(eventIds.map(async eid => {
     const [evRes, guestRes] = await Promise.all([
-      fetch(`/api/event/${encodeURIComponent(state.eventId)}`),
-      fetch(`/api/guests/${encodeURIComponent(state.eventId)}`)
+      fetch(`/api/event/${encodeURIComponent(eid)}`),
+      fetch(`/api/guests/${encodeURIComponent(eid)}`),
     ]);
-
-    const evData = await evRes.json();
+    const evData    = await evRes.json();
     const guestData = await guestRes.json();
+    return { eid, evData, guestData };
+  }));
 
-    // Colada365 event response uses properties.title, properties.start, etc.
-    const evProps = evData.properties || evData.attributes || (evData.data||{}).properties || (evData.data||{}).attributes || evData;
+  let aggTotal = 0, aggEligible = 0, aggChecked = 0;
 
-    // Guests: handle { guests: [...] } envelope or flat array
+  results.forEach((result, idx) => {
+    const eid  = eventIds[idx];
+    const card = document.getElementById(`dash-event-${eid}`);
+    if (!card) return;
+
+    if (result.status === 'rejected') {
+      card.innerHTML = `
+        <div class="card-title" style="color:var(--red);">⚠ ${escHtml(_eventNameCache[eid] || eid.slice(0,8)+'…')}</div>
+        <p style="font-size:13px;color:var(--muted);">Error: ${escHtml(result.reason?.message || 'unknown')}</p>`;
+      return;
+    }
+
+    const { evData, guestData } = result.value;
+    const evProps = evData.properties || evData.attributes || (evData.data||{}).properties || evData;
+
     let guests = [];
-    if (guestData.guests && Array.isArray(guestData.guests)) guests = guestData.guests;
-    else if (Array.isArray(guestData)) guests = guestData;
-    else if (guestData.data && Array.isArray(guestData.data)) guests = guestData.data;
+    if (Array.isArray(guestData))            guests = guestData;
+    else if (Array.isArray(guestData.guests)) guests = guestData.guests;
+    else if (Array.isArray(guestData.data))   guests = guestData.data;
 
-    const gp = (g, k) => (g.properties || g.attributes || {})[k];
-
-    // Only count guests in REGISTERED or PENDING status for all stats
-    const isEligible = g => {
-      const status = g.status || gp(g, 'status') || '';
-      return status === 'REGISTERED' || status === 'PENDING';
-    };
-
-    const total = guests.length;
-    const eligible = guests.filter(isEligible);
-    const eligibleTotal = eligible.length;
-    const eligibleChecked = eligible.filter(g => {
+    const gp = (g, k) => (g.attributes || g.properties || {})[k];
+    const isEligible = g => { const s = g.status || gp(g,'status') || ''; return s === 'REGISTERED' || s === 'PENDING'; };
+    const isCheckedIn = g => {
       const bool = gp(g, 'guest_x_checkedin');
       const at   = gp(g, 'guest_x_checkedinat');
-      const atValid = at && at !== false && at !== 'false' && at !== '';
-      return bool === true || atValid;
-    }).length;
-    const eligiblePending = eligibleTotal - eligibleChecked;
-    const awf = eligible.filter(g => gp(g, 'guest_x_awf_teilnehmer') === true).length;
-    const stimm = eligible.filter(g => gp(g, 'guest_x_Stimmberechtigt') === true).length;
-    const pct = eligibleTotal > 0 ? Math.round((eligibleChecked / eligibleTotal) * 100) : 0;
-    const checkedPct = eligibleTotal > 0 ? (eligibleChecked / eligibleTotal * 100) : 0;
-    const pendingPct = eligibleTotal > 0 ? (eligiblePending / eligibleTotal * 100) : 0;
+      return bool === true || (at && at !== false && at !== 'false' && at !== '');
+    };
 
-    document.getElementById('stat-total').textContent = total;
-    document.getElementById('stat-checked').textContent = eligibleChecked;
-    document.getElementById('stat-awf').textContent = awf;
-    document.getElementById('stat-stimm').textContent = stimm;
+    const total    = guests.length;
+    const eligible = guests.filter(isEligible);
+    const checked  = eligible.filter(isCheckedIn);
+    const pending  = eligible.length - checked.length;
+    const pct      = eligible.length > 0 ? Math.round((checked.length / eligible.length) * 100) : 0;
+    const checkedPct = eligible.length > 0 ? (checked.length / eligible.length * 100) : 0;
+    const pendingPct = eligible.length > 0 ? (pending / eligible.length * 100) : 0;
 
-    // ── Check-in progress bar (Registered + Pending only) ──
+    aggTotal   += total;
+    aggEligible += eligible.length;
+    aggChecked  += checked.length;
 
-    document.getElementById('prog-checked').textContent = eligibleChecked;
-    document.getElementById('prog-pending').textContent = eligiblePending;
-    document.getElementById('prog-total').textContent = eligibleTotal;
-    document.getElementById('prog-pct').textContent = pct + '%';
-    document.getElementById('checkin-progress-card').style.display = 'block';
+    const name     = evProps.title || evProps.event_name || evProps.name || eid;
+    const start    = evProps.start || evProps.event_start || '';
+    const end      = evProps.end   || evProps.event_end   || '';
+    const locRaw   = evProps.location || evProps.event_location;
+    const location = !locRaw ? null : (typeof locRaw === 'string' ? locRaw : (locRaw.city || locRaw.name || null));
 
-    // Animate bars after a short delay so CSS transition fires
-    setTimeout(() => {
-      document.getElementById('prog-bar-checked').style.width = checkedPct + '%';
-      document.getElementById('prog-bar-pending').style.left = checkedPct + '%';
-      document.getElementById('prog-bar-pending').style.width = pendingPct + '%';
-    }, 50);
+    const barId = `dash-bar-${eid}`;
+    card.innerHTML = `
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
+        <div>
+          <div class="card-title" style="margin-bottom:4px;">${escHtml(name)}</div>
+          <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono);">
+            ${start ? escHtml(start) + (end ? ' → ' + escHtml(end) : '') : ''}
+            ${location ? ' · ' + escHtml(location) : ''}
+          </div>
+          <div style="font-size:10px;color:var(--muted);font-family:var(--font-mono);margin-top:2px;">${eid}</div>
+        </div>
+        <div style="font-size:36px;font-weight:800;color:var(--accent);letter-spacing:-0.03em;flex-shrink:0;">${pct}%</div>
+      </div>
 
-    const name = evProps.title || evProps.event_name || evProps.name || state.eventId;
-    const start = evProps.start || evProps.event_start || '—';
-    const end = evProps.end || evProps.event_end || '—';
-    const locRaw = evProps.location || evProps.event_location;
-    const location = !locRaw ? '—' : (typeof locRaw === 'string' ? locRaw : (locRaw.city || locRaw.name || JSON.stringify(locRaw)));
+      <!-- Stats row -->
+      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
+        <div style="text-align:center;">
+          <div style="font-size:24px;font-weight:800;color:var(--text);">${total}</div>
+          <div style="font-size:10px;color:var(--muted);font-family:var(--font-mono);text-transform:uppercase;">Total</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:24px;font-weight:800;color:var(--text);">${eligible.length}</div>
+          <div style="font-size:10px;color:var(--muted);font-family:var(--font-mono);text-transform:uppercase;">Reg/Pend</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:24px;font-weight:800;color:var(--green);">${checked.length}</div>
+          <div style="font-size:10px;color:var(--muted);font-family:var(--font-mono);text-transform:uppercase;">Checked In</div>
+        </div>
+        <div style="text-align:center;">
+          <div style="font-size:24px;font-weight:800;color:var(--orange);">${pending}</div>
+          <div style="font-size:10px;color:var(--muted);font-family:var(--font-mono);text-transform:uppercase;">Not Yet</div>
+        </div>
+      </div>
 
-    document.getElementById('event-details').innerHTML = `
-      <div class="guest-attrs" style="grid-template-columns:1fr 1fr 1fr;">
-        <div class="guest-attr"><span class="key">Event Name</span><span class="val" style="font-size:15px;font-weight:700;">${name}</span></div>
-        <div class="guest-attr"><span class="key">Start</span><span class="val">${start}</span></div>
-        <div class="guest-attr"><span class="key">End</span><span class="val">${end}</span></div>
-        <div class="guest-attr"><span class="key">Location</span><span class="val">${location}</span></div>
-        <div class="guest-attr"><span class="key">Event ID</span><span class="val" style="font-family:var(--font-mono);font-size:11px;">${state.eventId}</span></div>
-        <div class="guest-attr"><span class="key">Check-in Rate</span><span class="val" style="color:var(--accent);">${pct}%</span></div>
+      <!-- Progress bar -->
+      <div style="height:10px;border-radius:5px;background:var(--surface3);overflow:hidden;position:relative;" id="${barId}">
+        <div style="position:absolute;left:0;top:0;height:100%;background:var(--green);border-radius:5px 0 0 5px;width:0%;transition:width 0.8s cubic-bezier(0.4,0,0.2,1);" data-w="${checkedPct}"></div>
+        <div style="position:absolute;top:0;height:100%;background:var(--orange);left:0%;width:0%;transition:left 0.8s cubic-bezier(0.4,0,0.2,1),width 0.8s;" data-l="${checkedPct}" data-w="${pendingPct}"></div>
+      </div>
+      <div style="display:flex;gap:14px;margin-top:8px;font-size:11px;font-family:var(--font-mono);color:var(--muted);">
+        <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;"></span>Checked in</span>
+        <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--orange);display:inline-block;"></span>Not yet</span>
+        <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--surface3);display:inline-block;"></span>Other</span>
       </div>`;
-  } catch(e) {
-    document.getElementById('event-details').innerHTML = `<p style="color:var(--red);font-size:13px;">Error loading event: ${e.message}</p>`;
-  }
+
+    // Animate bars after paint
+    setTimeout(() => {
+      const bars = card.querySelectorAll(`#${barId} div`);
+      if (bars[0]) bars[0].style.width  = bars[0].dataset.w + '%';
+      if (bars[1]) { bars[1].style.left = bars[1].dataset.l + '%'; bars[1].style.width = bars[1].dataset.w + '%'; }
+    }, 60);
+  });
+
+  // Update aggregate totals
+  const aggPct = aggEligible > 0 ? Math.round((aggChecked / aggEligible) * 100) : 0;
+  document.getElementById('dash-total-guests').textContent  = aggTotal;
+  document.getElementById('dash-total-eligible').textContent = aggEligible;
+  document.getElementById('dash-total-checked').textContent  = aggChecked;
+  document.getElementById('dash-total-pct').textContent      = aggPct + '%';
+  document.getElementById('dash-totals-grid').style.display = eventIds.length > 1 ? 'grid' : 'none';
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
