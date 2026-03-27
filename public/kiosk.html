@@ -979,15 +979,18 @@ function applyStation(s, resolvedLogoText) {
   if (successCard) successCard.style.display = s.success?.hideGuestCard ? 'none' : '';
   if (alreadyCard) alreadyCard.style.display = s.alreadyCheckedIn?.hideGuestCard ? 'none' : '';
 
-  // Apply all logo labels — hide entirely if hideLogoText is set
+  // Apply all logo labels — hide entire header (dot + text) if hideLogoText is set
   ['welcome','success','notfound','already'].forEach(k => {
-    const el = document.getElementById(k + '-logo');
+    const el     = document.getElementById(k + '-logo');
+    const header = document.querySelector(`#screen-${k} .station-header`);
     if (!el) return;
     if (s.hideLogoText) {
       el.style.display = 'none';
+      if (header) header.style.display = 'none';
     } else {
       el.style.display = '';
       el.textContent = logoText;
+      if (header) header.style.display = '';
     }
   });
 
@@ -1807,9 +1810,16 @@ function allRegFields() {
   return [...REG_FIXED_FIELDS, ...extra];
 }
 
+// Detect touch-based mobile devices (iOS / Android) — use native keyboard on these
+function isMobileDevice() {
+  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
+}
+
 function renderRegForm() {
-  const fields = allRegFields();
-  const labelMap = _regConfig?.labelMap || {};
+  const fields    = allRegFields();
+  const labelMap  = _regConfig?.labelMap || {};
+  const mobile    = isMobileDevice();
   const container = document.getElementById('reg-form-fields');
   container.innerHTML = fields.map(f => {
     const val = _regFormData[f.attr] || '';
@@ -1857,7 +1867,24 @@ function renderRegForm() {
       </div>`;
     }
 
-    // text
+    // Text field — native input on mobile, custom keyboard div on desktop
+    if (mobile) {
+      return `<div style="display:flex;flex-direction:column;gap:6px;">${labelHtml}
+        <input id="reg-field-${f.attr}"
+          type="${f.attr === 'contact_email' ? 'email' : 'text'}"
+          autocomplete="off" autocorrect="off" autocapitalize="${f.attr.includes('email') ? 'none' : 'words'}"
+          value="${escKiosk(val)}"
+          placeholder="${escKiosk('Enter ' + f.label.toLowerCase() + '…')}"
+          oninput="regUpdateFromInput('${f.attr}',this.value)"
+          style="padding:clamp(10px,2.2vmin,18px) clamp(12px,2.5vmin,20px); border-radius:10px;
+                 border:2px solid var(--border-tint); background:var(--surface2); min-height:44px;
+                 font-size:clamp(14px,2.8vmin,22px); color:var(--text);
+                 font-family:var(--mono); outline:none; width:100%; box-sizing:border-box;
+                 -webkit-appearance:none;"
+          data-attr="${f.attr}"/>
+      </div>`;
+    }
+
     return `<div style="display:flex;flex-direction:column;gap:6px;">${labelHtml}
       <div id="reg-field-${f.attr}"
         onclick="regFocusField('${f.attr}')"
@@ -1871,9 +1898,19 @@ function renderRegForm() {
     </div>`;
   }).join('');
 
-  buildKeyboard();
-  hideKeyboard();
+  if (mobile) {
+    hideKeyboard();
+    document.getElementById('reg-keyboard').style.display = 'none';
+  } else {
+    buildKeyboard();
+    hideKeyboard();
+  }
   _regActiveField = null;
+}
+
+// Called by native <input> elements on mobile — keeps _regFormData in sync
+function regUpdateFromInput(attr, value) {
+  _regFormData[attr] = value;
 }
 
 function regSetChoice(attr, value, btn) {
@@ -2010,6 +2047,14 @@ function escKiosk(s) {
 
 function regNext() {
   const fields = allRegFields();
+  // Sync any native <input> values into _regFormData first (mobile path)
+  fields.forEach(f => {
+    if (f.type !== 'text' && f.type !== 'boolean' && f.type !== 'choice') return;
+    if (f.type === 'text') {
+      const el = document.getElementById('reg-field-' + f.attr);
+      if (el && el.tagName === 'INPUT') _regFormData[f.attr] = el.value;
+    }
+  });
   // Validate required fields — booleans are always "filled" (false is a valid value)
   const missing = fields.filter(f => {
     if (!f.required) return false;
