@@ -1158,8 +1158,11 @@ function tickCameraFrame(video, canvas) {
 function setupScanInput() {
   const input = document.getElementById('scan-input');
 
-  // Keep focus on the hidden input always
+  // Keep focus on the hidden input — but NOT when the registration form is open
+  // (user needs to interact with form fields / custom keyboard without scan interference)
   function reFocus() {
+    const regScreen = document.getElementById('screen-register');
+    if (regScreen && regScreen.classList.contains('active')) return;
     if (!isProcessing) input.focus();
   }
   document.addEventListener('click', reFocus);
@@ -1167,8 +1170,10 @@ function setupScanInput() {
   input.addEventListener('blur', () => setTimeout(reFocus, 80));
   reFocus();
 
-  // Accumulate keyboard input (scanner sends Enter at end)
+  // Accumulate keyboard input — ignore when registration screen is active
   input.addEventListener('input', () => {
+    const regScreen = document.getElementById('screen-register');
+    if (regScreen && regScreen.classList.contains('active')) { input.value = ''; return; }
     scanBuffer += input.value;
     input.value = '';
     clearTimeout(scanTimer);
@@ -1179,10 +1184,10 @@ function setupScanInput() {
     }, SCAN_DEBOUNCE_MS);
   });
 
-  // Enter key triggers immediately.
-  // keydown fires before the browser's 'input' event, so we must flush
-  // input.value into scanBuffer ourselves before reading it.
+  // Enter key — also guard against firing during registration
   input.addEventListener('keydown', (e) => {
+    const regScreen = document.getElementById('screen-register');
+    if (regScreen && regScreen.classList.contains('active')) return;
     if (e.key === 'Enter') {
       if (input.value) { scanBuffer += input.value; input.value = ''; }
       clearTimeout(scanTimer);
