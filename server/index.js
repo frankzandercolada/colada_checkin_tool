@@ -1,76 +1,117 @@
 require('dotenv').config();
-const express = require('express');
-const cors    = require('cors');
-const fetch   = require('node-fetch');
-const fs      = require('fs');
-const path    = require('path');
+const express    = require('express');
+const cors       = require('cors');
+const _nodeFetch = require('node-fetch');
+const fs         = require('fs');
+const path       = require('path');
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '20mb' }));
 
-// ─── Traffic monitor middleware ───────────────────────────────────────────────
-// Tracks per-minute request counts and bytes transferred (in + out).
-// Keeps a rolling 60-minute window of per-minute buckets plus all-time totals.
-const TRAFFIC_WINDOW = 60; // minutes to retain
-const _traffic = {
-  buckets: [],        // [{ ts, requests, bytesIn, bytesOut }, ...]  one per minute
-  totals:  { requests: 0, bytesIn: 0, bytesOut: 0 },
-  _current: null,     // bucket currently being written
+// ─── Stats tracker ────────────────────────────────────────────────────────────
+// Tracks outbound Colada API calls (/_gw/ endpoints) per minute and per kiosk
+// station. In-memory only — resets on restart.
+const STATS_WINDOW = 60; // rolling minutes to keep
+const _stats = {
+  // Rolling per-minute buckets for Colada API calls
+  // Each bucket: { ts, calls, bytesIn, bytesOut }
+  buckets:  [],
+  _cur:     null,
+  // Per-station totals: stationId -> { name, scans, checkins, searches, failed, lastSeen }
+  stations: {},
+  // All-time Colada API totals
+  totals: { calls: 0, bytesOut: 0, bytesIn: 0 },
 };
 
-function _getOrCreateBucket() {
-  const now     = Date.now();
-  const bucketTs = Math.floor(now / 60000) * 60000; // floor to current minute
-  if (!_traffic._current || _traffic._current.ts !== bucketTs) {
-    const b = { ts: bucketTs, requests: 0, bytesIn: 0, bytesOut: 0 };
-    _traffic.buckets.push(b);
-    _traffic._current = b;
-    // Trim to window
-    const cutoff = bucketTs - TRAFFIC_WINDOW * 60000;
-    _traffic.buckets = _traffic.buckets.filter(x => x.ts >= cutoff);
+function _statsBucket() {
+  const ts = Math.floor(Date.now() / 60000) * 60000;
+  if (!_stats._cur || _stats._cur.ts !== ts) {
+    const b = { ts, calls: 0, bytesOut: 0, bytesIn: 0 };
+    _stats.buckets.push(b);
+    _stats._cur = b;
+    const cutoff = ts - STATS_WINDOW * 60000;
+    _stats.buckets = _stats.buckets.filter(x => x.ts >= cutoff);
   }
-  return _traffic._current;
+  return _stats._cur;
 }
 
-app.use((req, res, next) => {
-  // Measure request body size from Content-Length header (fast, no buffering)
-  const bytesIn = parseInt(req.headers['content-length'] || '0', 10) || 0;
-  _traffic.totals.bytesIn += bytesIn;
-  _traffic.totals.requests++;
-  const b = _getOrCreateBucket();
-  b.requests++;
-  b.bytesIn += bytesIn;
+// Record a completed Colada API call
+function _recordApiCall({ bytesOut = 0, bytesIn = 0 } = {}) {
+  const b = _statsBucket();
+  b.calls++;
+  b.bytesOut += bytesOut;
+  b.bytesIn  += bytesIn;
+  _stats.totals.calls++;
+  _stats.totals.bytesOut += bytesOut;
+  _stats.totals.bytesIn  += bytesIn;
+}
 
-  // Intercept response to measure bytes out
-  const origWrite = res.write.bind(res);
-  const origEnd   = res.end.bind(res);
-  let bytesOut = 0;
+// Record a kiosk event against a station
+// event: 'scan_success' | 'scan_failed' | 'scan_already' | 'search' | 'register'
+function _recordKiosk(stationId, stationName, event) {
+  if (!stationId) return;
+  if (!_stats.stations[stationId]) {
+    _stats.stations[stationId] = {
+      name: stationName || stationId.slice(0, 8),
+      scans: 0, checkins: 0, already: 0, failed: 0, searches: 0, registers: 0,
+      lastSeen: null,
+    };
+  }
+  const s = _stats.stations[stationId];
+  s.name     = stationName || s.name;
+  s.lastSeen = new Date().toISOString();
+  if (event === 'scan_success') { s.scans++; s.checkins++; }
+  else if (event === 'scan_already') { s.scans++; s.already++; }
+  else if (event === 'scan_failed')  { s.scans++; s.failed++;  }
+  else if (event === 'search')       { s.searches++;           }
+  else if (event === 'register')     { s.registers++;          }
+}
 
-  res.write = function(chunk, ...args) {
-    if (chunk) bytesOut += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
-    return origWrite(chunk, ...args);
-  };
-  res.end = function(chunk, ...args) {
-    if (chunk) bytesOut += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
-    _traffic.totals.bytesOut += bytesOut;
-    b.bytesOut += bytesOut;
-    return origEnd(chunk, ...args);
-  };
+// Wrap node-fetch to measure outbound Colada API calls.
+// Only intercepts /_gw/ URLs — all other fetches pass through unchanged.
+global._trackedFetch = async function(url, options = {}) {
+  const urlStr = typeof url === 'string' ? url : url.href || String(url);
+  if (!urlStr.includes('/_gw/')) return _nodeFetch(url, options);
 
-  next();
-});
+  const bodyStr  = options.body ? String(options.body) : '';
+  const bytesOut = Buffer.byteLength(bodyStr, 'utf8');
 
-// Stats endpoint — returns rolling window + totals + uptime
+  const res = await _nodeFetch(url, options);
+
+  // Clone response to measure size without consuming the original stream
+  const text    = await res.text();
+  const bytesIn = Buffer.byteLength(text, 'utf8');
+  _recordApiCall({ bytesOut, bytesIn });
+
+  // Re-wrap response so callers can still use .json()/.text()
+  const { Response } = _nodeFetch;
+  return new Response(text, { status: res.status, headers: res.headers });
+};
+
+// All route handlers below use this tracked version — /_gw/ calls are
+// automatically measured; non-Colada URLs (token endpoint, etc.) pass through.
+const fetch = global._trackedFetch; // eslint-disable-line no-shadow
+
+// Stats endpoint
 app.get('/api/stats/traffic', (req, res) => {
+  const pid      = getActiveProjectId ? getActiveProjectId() : null;
+  const stations = pid ? loadKioskStations(pid) : [];
+  const enriched = Object.fromEntries(
+    Object.entries(_stats.stations).map(([id, s]) => {
+      const cfg = stations.find(st => st.id === id);
+      return [id, { ...s, name: cfg?.name || s.name }];
+    })
+  );
   res.json({
-    buckets:  _traffic.buckets,
-    totals:   _traffic.totals,
+    buckets:  _stats.buckets,
+    totals:   _stats.totals,
+    stations: enriched,
     uptimeMs: process.uptime() * 1000,
-    pid:      process.pid,
     memMb:    Math.round(process.memoryUsage().rss / 1024 / 1024),
   });
 });
+
 // Serve root CA cert for iOS device enrollment.
 // iOS requires DER format (.cer) with the x509-ca-cert MIME type.
 app.get('/caddy-root.cer', (req, res) => {
@@ -1053,6 +1094,8 @@ app.post('/api/kiosk/register', async (req, res) => {
 
     const selectedTemplate = selectTemplateKey(responseAttrs, badgeCfg);
 
+    _recordKiosk(stationId || null, null, 'register');
+
     res.json({
       ok: true,
       guest: {
@@ -1296,6 +1339,7 @@ app.get('/api/kiosk/search', async (req, res) => {
       }
       if (merged.length >= 10) break;
     }
+    _recordKiosk(req.query.stationId || null, null, 'search');
     res.json(merged);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -1311,6 +1355,7 @@ app.post('/api/kiosk/scan', async (req, res) => {
     if (!eventIds.length) return res.status(400).json({ error: 'no event configured' });
 
     let scanInput = (req.body.scan || '').trim();
+    const scanStationId = req.body.stationId || null;
     if (config.qwertyCorrection && scanInput) scanInput = compensateQwerty(scanInput);
     if (!scanInput) return res.status(400).json({ error: 'scan value required' });
 
@@ -1373,7 +1418,10 @@ app.post('/api/kiosk/scan', async (req, res) => {
       if (hit) { guest = hit.guest; matchedEventId = hit.matchedEventId; }
     }
 
-    if (!guest) return res.json({ result: 'not_found' });
+    if (!guest) {
+      _recordKiosk(scanStationId, null, 'scan_failed');
+      return res.json({ result: 'not_found' });
+    }
 
     // Normalise attributes — Colada365 may return nested (.attributes/.properties)
     // or flat (all fields at top level). Use whichever has the most keys.
@@ -1393,10 +1441,14 @@ app.post('/api/kiosk/scan', async (req, res) => {
     const status = guest.status || attrs.status || '';
     const isEligible = status === 'REGISTERED' || status === 'PENDING';
 
-    if (!isEligible) return res.json({ result: 'invalid_status', status, guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '' } });
+    if (!isEligible) {
+      _recordKiosk(scanStationId, null, 'scan_failed');
+      return res.json({ result: 'invalid_status', status, guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '' } });
+    }
 
     const alreadyIn = attrs.guest_x_checkedin === true || (attrs.guest_x_checkedinat && attrs.guest_x_checkedinat !== false && attrs.guest_x_checkedinat !== 'false' && attrs.guest_x_checkedinat !== '');
     if (alreadyIn) {
+      _recordKiosk(scanStationId, null, 'scan_already');
       const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
       const selectedTemplate = selectTemplateKey(attrs, badgeCfg);
       return res.json({
@@ -1419,6 +1471,7 @@ app.post('/api/kiosk/scan', async (req, res) => {
     const pr = await fetch(`${checkinBase}/${guest.id}`, { method: 'PATCH', headers, body: JSON.stringify({ attributes: patchAttrs }) });
     if (!pr.ok) throw new Error(`Check-in failed: ${pr.status}`);
 
+    _recordKiosk(scanStationId, null, 'scan_success');
     const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
     const selectedTemplate = selectTemplateKey(attrs, badgeCfg);
 

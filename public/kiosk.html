@@ -1293,7 +1293,7 @@ async function handleScan(raw) {
     const res = await fetch('/api/kiosk/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scan: raw })
+      body: JSON.stringify({ scan: raw, stationId })
     });
     const data = await res.json();
 
