@@ -61,7 +61,9 @@ html, body {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  padding: clamp(32px, 10vmin, 120px) clamp(24px, 8vmin, 96px);
+  /* Padding keeps content clear of station-header (top) and return-bar (bottom) */
+  padding: clamp(72px,17vmin,160px) clamp(24px,7vw,96px) clamp(56px,12vmin,110px);
+  overflow: hidden;
   opacity: 0; pointer-events: none;
   transition: opacity 0.4s ease;
 }
@@ -121,9 +123,9 @@ html, body {
 
 /* ── Logo / station name ── */
 .station-header {
-  position: absolute; top: clamp(20px, 6vmin, 88px); left: 0; right: 0;
+  position: absolute; top: clamp(18px, 5vmin, 56px); left: 0; right: 0;
   display: flex; align-items: center; justify-content: center;
-  gap: clamp(8px, 2.4vmin, 28px);
+  gap: clamp(8px, 2vmin, 20px);
 }
 .station-logo {
   font-size: clamp(10px, 3vmin, 32px); font-weight: 700; letter-spacing: 0.2em;
@@ -143,13 +145,19 @@ html, body {
 
 /* ── Icon ring ── */
 .icon-ring {
-  width: clamp(90px, 28vmin, 320px); height: clamp(90px, 28vmin, 320px);
+  /* Size based on the smaller of vw/vh so portrait and landscape both work */
+  --ring-size: min(28vmin, 38vw, 240px);
+  width: var(--ring-size); height: var(--ring-size);
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  margin-bottom: clamp(24px, 8vmin, 96px);
+  flex-shrink: 1; /* yield space if screen is short */
+  margin-bottom: clamp(16px, 5vmin, 56px);
   position: relative;
 }
-.icon-ring svg { width: clamp(40px, 13vmin, 144px); height: clamp(40px, 13vmin, 144px); }
+.icon-ring svg {
+  width: 46%; height: 46%;
+  min-width: 32px; min-height: 32px;
+}
 
 .icon-ring.welcome {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
@@ -178,45 +186,48 @@ html, body {
 
 /* ── Heading ── */
 .screen-title {
-  font-size: clamp(28px, 11vmin, 112px);
+  font-size: clamp(26px, 9vmin, 96px);
   font-weight: 800; line-height: 1.1;
   text-align: center;
   letter-spacing: -0.02em;
-  margin-bottom: clamp(10px, 3.6vmin, 40px);
+  margin-bottom: clamp(8px, 2.5vmin, 28px);
+  flex-shrink: 0;
 }
 .screen-subtitle {
-  font-size: clamp(13px, 4vmin, 44px);
+  font-size: clamp(13px, 3.5vmin, 38px);
   font-weight: 400; color: var(--muted);
   text-align: center; line-height: 1.5;
-  max-width: clamp(300px, 120vmin, 1120px);
+  max-width: min(90vw, 700px);
+  flex-shrink: 1;
 }
 
 /* ── Guest name card (success / already) ── */
 .guest-card {
-  margin-top: clamp(28px, 9vmin, 112px);
+  margin-top: clamp(16px, 5vmin, 56px);
   background: var(--surface-tint);
   border: 1px solid var(--border-tint);
-  border-radius: clamp(14px, 4vmin, 48px);
-  padding: clamp(20px, 7vmin, 80px) clamp(28px, 10vmin, 120px);
+  border-radius: clamp(12px, 3vmin, 32px);
+  padding: clamp(16px, 5vmin, 56px) clamp(24px, 8vmin, 96px);
   text-align: center;
   backdrop-filter: blur(8px);
-  min-width: clamp(260px, 100vmin, 840px);
+  width: min(90vw, 640px);
+  flex-shrink: 1;
 }
 .guest-name {
-  font-size: clamp(22px, 8vmin, 96px);
+  font-size: clamp(20px, 7vmin, 80px);
   font-weight: 700; line-height: 1.1;
   letter-spacing: -0.02em;
-  margin-bottom: clamp(4px, 1.6vmin, 20px);
+  margin-bottom: clamp(4px, 1.4vmin, 16px);
 }
 .guest-company {
-  font-size: clamp(12px, 3.6vmin, 40px);
+  font-size: clamp(12px, 3vmin, 34px);
   color: var(--muted); font-weight: 400;
 }
 .guest-badge-label {
   display: inline-block;
-  margin-top: clamp(10px, 3vmin, 40px);
-  padding: clamp(3px, 1.2vmin, 13px) clamp(10px, 3vmin, 36px); border-radius: 100px;
-  font-size: clamp(10px, 2.4vmin, 28px); font-weight: 600; letter-spacing: 0.08em;
+  margin-top: clamp(8px, 2.5vmin, 28px);
+  padding: clamp(3px, 1vmin, 10px) clamp(10px, 2.5vmin, 28px); border-radius: 100px;
+  font-size: clamp(10px, 2vmin, 22px); font-weight: 600; letter-spacing: 0.08em;
   font-family: var(--mono); text-transform: uppercase;
 }
 .badge-success { background: rgba(34,197,94,0.15); color: #4ade80; }
@@ -278,8 +289,9 @@ html, body {
 
 /* ── Scan prompt (welcome) ── */
 .scan-prompt {
-  margin-top: clamp(32px, 11vmin, 136px);
-  display: flex; flex-direction: column; align-items: center; gap: clamp(8px, 2.8vmin, 36px);
+  margin-top: clamp(20px, 7vmin, 80px);
+  display: flex; flex-direction: column; align-items: center; gap: clamp(8px, 2.5vmin, 28px);
+  flex-shrink: 1;
 }
 .scan-bar {
   width: clamp(140px, 44vmin, 480px); height: 3px; border-radius: 2px;
@@ -304,8 +316,11 @@ html, body {
 
 /* ── Auto-return countdown ── */
 .return-bar {
-  position: absolute; bottom: clamp(20px, 7vmin, 96px); left: clamp(20px, 7vmin, 96px); right: clamp(20px, 7vmin, 96px);
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  position: absolute;
+  bottom: clamp(16px, 4vmin, 48px);
+  left: clamp(20px, 6vw, 80px);
+  right: clamp(20px, 6vw, 80px);
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
 }
 .return-track {
   width: 100%; height: 3px; border-radius: 2px;
@@ -1352,11 +1367,11 @@ async function handleAlready(data) {
   }
 
   if (behaviour === 'deny') {
-    // Show not-found screen with a "code already used" message
-    const subEl = document.getElementById('notfound-sub');
-    if (subEl) subEl.textContent = station?.notFound?.subtitle || 'This code has already been used. Please contact the registration desk.';
+    // Show not-found screen with custom deny message
     const titleEl = document.getElementById('notfound-title');
-    if (titleEl) titleEl.textContent = station?.notFound?.title || 'Code Already Used';
+    const subEl   = document.getElementById('notfound-sub');
+    if (titleEl) titleEl.textContent = station?.alreadyCheckedIn?.denyTitle    || 'Code Already Used';
+    if (subEl)   subEl.textContent   = station?.alreadyCheckedIn?.denySubtitle || 'This code has already been used. Please contact the registration desk.';
     showScreen('notfound');
     applyScreenBg(station?.notFound);
     startReturn('notfound', getReturnSecs(station?.notFound));
