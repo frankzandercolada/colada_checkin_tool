@@ -1332,7 +1332,16 @@ app.post('/api/kiosk/scan', async (req, res) => {
     if (!isEligible) return res.json({ result: 'invalid_status', status, guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '' } });
 
     const alreadyIn = attrs.guest_x_checkedin === true || (attrs.guest_x_checkedinat && attrs.guest_x_checkedinat !== false && attrs.guest_x_checkedinat !== 'false' && attrs.guest_x_checkedinat !== '');
-    if (alreadyIn) return res.json({ result: 'already_checked_in', guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', checkedInAt: attrs.guest_x_checkedinat } });
+    if (alreadyIn) {
+      const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
+      const selectedTemplate = selectTemplateKey(attrs, badgeCfg);
+      return res.json({
+        result: 'already_checked_in',
+        matchedEventId,
+        guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', id: guest.id, attributes: attrs, checkedInAt: attrs.guest_x_checkedinat },
+        badgeConfig: { templates: badgeCfg.templates, eventGroups: badgeCfg.eventGroups, rules: badgeCfg.rules, fallback: badgeCfg.fallback, _selectedTemplate: selectedTemplate },
+      });
+    }
 
     const today = new Date().toISOString().split('T')[0];
     // Build patch — exclude the synthetic _matchedEventId so it is never sent to Colada365

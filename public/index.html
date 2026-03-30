@@ -633,6 +633,29 @@
           <!-- Already Checked In -->
           <div class="ks-tab-panel" id="ks-panel-already">
             <div style="display:flex; flex-direction:column; gap:14px;">
+
+              <div>
+                <label class="form-label">When a checked-in guest scans again</label>
+                <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">
+                  <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);">
+                    <input type="radio" name="ks-already-behaviour" value="show" id="ks-already-show" style="margin-top:2px;accent-color:var(--accent);flex-shrink:0;"/>
+                    <div><div style="font-weight:600;font-size:13px;">Show Already Checked In</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">Display the "already checked in" screen with their name and check-in time (default)</div></div>
+                  </label>
+                  <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);">
+                    <input type="radio" name="ks-already-behaviour" value="reprint" id="ks-already-reprint" style="margin-top:2px;accent-color:var(--accent);flex-shrink:0;"/>
+                    <div><div style="font-weight:600;font-size:13px;">Reprint Badge</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">Silently reprint the badge and show the success screen — useful for self-service events where guests may need a replacement</div></div>
+                  </label>
+                  <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);">
+                    <input type="radio" name="ks-already-behaviour" value="deny" id="ks-already-deny" style="margin-top:2px;accent-color:var(--accent);flex-shrink:0;"/>
+                    <div><div style="font-weight:600;font-size:13px;">Deny — Code Already Used</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">Show a denial screen indicating the code has already been used — suitable for single-entry events</div></div>
+                  </label>
+                </div>
+              </div>
+
+              <div style="border-top:1px solid var(--border);padding-top:14px;">
+                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Screen Content</div>
+              </div>
+
               <div><label class="form-label">Heading</label><input class="form-input" id="ks-already-title" placeholder="Already Checked In"/></div>
               <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-already-sub" style="min-height:64px; resize:vertical;" placeholder="Your badge was already printed. See the desk if you need a reprint."></textarea></div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
@@ -3483,6 +3506,7 @@ function openKioskStationModal() {
   document.getElementById('ks-reg-enabled').checked    = false;
   document.getElementById('ks-search-enabled').checked = false;
   document.getElementById('ks-hide-icon').checked      = false;
+  document.getElementById('ks-already-show').checked   = true; // default
   ['welcome','success','notfound','already'].forEach(k => {
     document.getElementById('ks-' + k + '-bg-data').value = '';
     document.getElementById('ks-' + k + '-bg-label').textContent = 'Upload image…';
@@ -3511,6 +3535,10 @@ function editKioskStation(stationId) {
   document.getElementById('ks-reg-enabled').checked    = reg.enabled || false;
   document.getElementById('ks-search-enabled').checked = s.guestSearch?.enabled || false;
   document.getElementById('ks-hide-icon').checked      = s.hideIcon || false;
+  const behaviour = s.alreadyCheckedIn?.behaviour || 'show';
+  document.getElementById('ks-already-show').checked   = behaviour === 'show';
+  document.getElementById('ks-already-reprint').checked = behaviour === 'reprint';
+  document.getElementById('ks-already-deny').checked   = behaviour === 'deny';
   document.getElementById('ks-welcome-title').value  = s.welcome?.title || '';
   document.getElementById('ks-welcome-sub').value    = s.welcome?.subtitle || '';
   document.getElementById('ks-success-title').value  = s.success?.title || '';
@@ -3604,7 +3632,7 @@ async function saveKioskStation() {
     welcome:          ksScreen('welcome',  { returnSecs: parseInt(document.getElementById('ks-welcome-return-secs').value)||null }),
     success:          ksScreen('success',  { returnSecs: parseInt(document.getElementById('ks-success-return-secs').value)||null,  hideGuestCard: document.getElementById('ks-success-hide-card').checked }),
     notFound:         ksScreen('notfound', { returnSecs: parseInt(document.getElementById('ks-notfound-return-secs').value)||null }),
-    alreadyCheckedIn: ksScreen('already',  { returnSecs: parseInt(document.getElementById('ks-already-return-secs').value)||null,  hideGuestCard: document.getElementById('ks-already-hide-card').checked }),
+    alreadyCheckedIn: ksScreen('already',  { returnSecs: parseInt(document.getElementById('ks-already-return-secs').value)||null, hideGuestCard: document.getElementById('ks-already-hide-card').checked, behaviour: document.querySelector('input[name="ks-already-behaviour"]:checked')?.value || 'show' }),
   };
   try {
     const res = await fetch('/api/kiosk/stations', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });

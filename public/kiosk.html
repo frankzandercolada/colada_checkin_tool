@@ -1336,14 +1336,41 @@ async function handleSuccess(data) {
   startReturn('success', getReturnSecs(station?.success));
 }
 
-function handleAlready(data) {
+async function handleAlready(data) {
+  const behaviour = station?.alreadyCheckedIn?.behaviour || 'show';
+
+  if (behaviour === 'reprint') {
+    // Treat exactly like success — show success screen and reprint badge
+    const g = data.guest || {};
+    setText('success-name', [g.firstName, g.lastName].filter(Boolean).join(' ') || '—');
+    setText('success-company', g.company || '');
+    showScreen('success');
+    try { await printKioskBadge(data); } catch(e) { console.warn('Reprint error:', e); }
+    applyScreenBg(station?.success);
+    startReturn('success', getReturnSecs(station?.success));
+    return;
+  }
+
+  if (behaviour === 'deny') {
+    // Show not-found screen with a "code already used" message
+    const subEl = document.getElementById('notfound-sub');
+    if (subEl) subEl.textContent = station?.notFound?.subtitle || 'This code has already been used. Please contact the registration desk.';
+    const titleEl = document.getElementById('notfound-title');
+    if (titleEl) titleEl.textContent = station?.notFound?.title || 'Code Already Used';
+    showScreen('notfound');
+    applyScreenBg(station?.notFound);
+    startReturn('notfound', getReturnSecs(station?.notFound));
+    return;
+  }
+
+  // Default: show already-checked-in screen
   const g = data.guest || {};
   setText('already-name', [g.firstName, g.lastName].filter(Boolean).join(' ') || '—');
   setText('already-company', g.company || '');
   const dateEl = document.getElementById('already-date');
   if (dateEl) dateEl.textContent = g.checkedInAt ? `Checked in ${g.checkedInAt}` : 'Already checked in';
   showScreen('already');
-  applyScreenBg(station?.alreadyCheckedIn);  // fire-and-forget async
+  applyScreenBg(station?.alreadyCheckedIn);
   startReturn('already', getReturnSecs(station?.alreadyCheckedIn));
 }
 
