@@ -39,6 +39,8 @@
 
 html, body {
   width: 100%; height: 100%;
+  /* dvh accounts for iOS Safari browser chrome — falls back to vh on older browsers */
+  height: 100dvh;
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
@@ -50,7 +52,9 @@ html, body {
 
 /* ── Screen container ── */
 #kiosk {
-  width: 100vw; height: 100vh;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh; /* dynamic viewport — excludes iOS browser chrome */
   position: relative;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
@@ -61,7 +65,6 @@ html, body {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  /* Padding keeps content clear of station-header (top) and return-bar (bottom) */
   padding: clamp(72px,17vmin,160px) clamp(24px,7vw,96px) clamp(56px,12vmin,110px);
   overflow: hidden;
   opacity: 0; pointer-events: none;
@@ -240,6 +243,7 @@ html, body {
   width: 100%; height: 100%;
   min-width: 100%; min-height: 100%;
   object-fit: cover;
+  object-position: center center;
   opacity: 0.75;
   z-index: 0;
   display: none;
@@ -636,7 +640,7 @@ html, body {
 
 <!-- ── Main kiosk ── -->
 <div id="kiosk">
-  <input id="scan-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+  <input id="scan-input" type="text" readonly inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
 
   <!-- Welcome -->
   <div class="screen active" id="screen-welcome">
@@ -1235,48 +1239,45 @@ function tickCameraFrame(video, canvas) {
 function setupScanInput() {
   const input = document.getElementById('scan-input');
 
-  // Keep focus on the hidden input — but NOT when the registration form is open
-  // (user needs to interact with form fields / custom keyboard without scan interference)
+  // Keep focus on the hidden input — but NOT when the registration or search screen is open.
+  // On iOS, focusing a readonly field with inputmode="none" does NOT open the software keyboard.
   function reFocus() {
     const regScreen    = document.getElementById('screen-register');
     const searchScreen = document.getElementById('screen-search');
     if ((regScreen    && regScreen.classList.contains('active'))    ||
         (searchScreen && searchScreen.classList.contains('active'))) return;
-    if (!isProcessing) input.focus();
+    if (!isProcessing) input.focus({ preventScroll: true });
   }
   document.addEventListener('click', reFocus);
   document.addEventListener('touchend', reFocus);
   input.addEventListener('blur', () => setTimeout(reFocus, 80));
   reFocus();
 
-  // Accumulate keyboard input — ignore when registration or search screen is active
-  input.addEventListener('input', () => {
-    const regScreen    = document.getElementById('screen-register');
-    const searchScreen = document.getElementById('screen-search');
-    if ((regScreen    && regScreen.classList.contains('active'))    ||
-        (searchScreen && searchScreen.classList.contains('active'))) { input.value = ''; return; }
-    scanBuffer += input.value;
-    input.value = '';
-    clearTimeout(scanTimer);
-    scanTimer = setTimeout(() => {
-      const val = scanBuffer.trim();
-      scanBuffer = '';
-      if (val) handleScan(val);
-    }, SCAN_DEBOUNCE_MS);
-  });
-
-  // Enter key — guard against firing during registration or search
+  // Accumulate scanner keystrokes via keydown (works on readonly fields unlike 'input' event).
+  // Hardware barcode scanners emulate a keyboard — each character fires keydown.
   input.addEventListener('keydown', (e) => {
     const regScreen    = document.getElementById('screen-register');
     const searchScreen = document.getElementById('screen-search');
     if ((regScreen    && regScreen.classList.contains('active'))    ||
         (searchScreen && searchScreen.classList.contains('active'))) return;
+
     if (e.key === 'Enter') {
-      if (input.value) { scanBuffer += input.value; input.value = ''; }
       clearTimeout(scanTimer);
       const val = scanBuffer.trim();
       scanBuffer = '';
       if (val) handleScan(val);
+      return;
+    }
+
+    // Ignore modifier-only keys, function keys, etc.
+    if (e.key.length === 1) {
+      scanBuffer += e.key;
+      clearTimeout(scanTimer);
+      scanTimer = setTimeout(() => {
+        const val = scanBuffer.trim();
+        scanBuffer = '';
+        if (val) handleScan(val);
+      }, SCAN_DEBOUNCE_MS);
     }
   });
 }
