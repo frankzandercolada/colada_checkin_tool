@@ -2363,7 +2363,7 @@ function renderKioskSearchResults(guests) {
       (a.guest_x_checkedinat && a.guest_x_checkedinat !== false && a.guest_x_checkedinat !== 'false' && a.guest_x_checkedinat !== '');
     const statusColor = checkedIn ? 'var(--green)' : (status === 'REGISTERED' || status === 'PENDING' ? 'var(--orange)' : 'var(--muted)');
     const statusLabel = checkedIn ? '✓ Checked in' : status;
-    return `<div onclick="selectKioskSearchResult(${idx})"
+    return `<div
       style="display:flex;align-items:center;justify-content:space-between;
              padding:clamp(12px,2.5vmin,22px) clamp(14px,3vmin,28px);
              background:var(--surface2); border:1px solid var(--border-tint); border-radius:12px;
@@ -2377,39 +2377,76 @@ function renderKioskSearchResults(guests) {
       <div style="font-size:clamp(10px,1.8vmin,15px);font-family:var(--mono);color:${statusColor};flex-shrink:0;margin-left:12px;">${escKiosk(statusLabel)}</div>
     </div>`;
   }).join('');
-  // Store results for selection
-  document.getElementById('kiosk-search-results')._results = guests;
+
+  // Store results for selection, then attach listeners imperatively.
+  // Using addEventListener (not inline onclick) lets us call preventDefault()
+  // on touchend to stop the reFocus handler from stealing focus mid-selection.
+  el._results = guests;
+  el.querySelectorAll('[data-idx]').forEach(row => {
+    const idx = parseInt(row.dataset.idx, 10);
+    // Touch devices: handle on touchend with preventDefault
+    row.addEventListener('touchend', e => {
+      e.preventDefault();
+      e.stopPropagation();
+      selectKioskSearchResult(idx);
+    }, { passive: false });
+    // Mouse / non-touch fallback
+    row.addEventListener('click', e => {
+      if (e.isTrusted && navigator.maxTouchPoints === 0) {
+        selectKioskSearchResult(idx);
+      }
+    });
+  });
+}
+
+// Fire-and-forget stats recording for events that bypass the scan route
+// (search-driven check-ins, etc.)
+function recordKioskEvent(event) {
+  if (!stationId) return;
+  fetch('/api/kiosk/record-event', {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ stationId, event }),
+  }).catch(() => {});
 }
 
 async function selectKioskSearchResult(idx) {
-  const el      = document.getElementById('kiosk-search-results');
-  const guests  = el._results || [];
-  const guest   = guests[idx];
+  const el     = document.getElementById('kiosk-search-results');
+  const guests = el._results || [];
+  const guest  = guests[idx];
   if (!guest) return;
+  if (isProcessing) return;
+  isProcessing = true;
+  cancelReturn();
 
-  const a           = guest.attributes || guest.properties || {};
-  const matchedEid  = a._matchedEventId;
-  const guestId     = guest.id || guest.uid;
-  const status      = guest.status || a.status || '';
-  const isEligible  = status === 'REGISTERED' || status === 'PENDING';
-  const checkedIn   = a.guest_x_checkedin === true ||
+  const a          = guest.attributes || guest.properties || {};
+  const matchedEid = a._matchedEventId;
+  const guestId    = guest.id || guest.uid;
+  const status     = guest.status || a.status || '';
+  const isEligible = status === 'REGISTERED' || status === 'PENDING';
+  const checkedIn  = a.guest_x_checkedin === true ||
     (a.guest_x_checkedinat && a.guest_x_checkedinat !== false && a.guest_x_checkedinat !== 'false' && a.guest_x_checkedinat !== '');
 
   if (!isEligible) {
+    isProcessing = false;
+    recordKioskEvent('scan_failed');
     handleNotFound(`Status: ${status} — not eligible for check-in`);
     return;
   }
+
   if (checkedIn) {
-    // Show already-checked-in screen
-    const first = a.contact_firstName || '';
-    const last  = a.contact_lastName  || '';
-    setText('already-name', `${first} ${last}`.trim() || '—');
-    setText('already-company', a.contact_x_companyName || '');
-    const dateEl = document.getElementById('already-date');
-    if (dateEl) dateEl.textContent = a.guest_x_checkedinat ? `Checked in ${a.guest_x_checkedinat}` : 'Already checked in';
-    showScreen('already');
-    applyScreenBg(station?.alreadyCheckedIn);
-    startReturn('already', getReturnSecs(station?.alreadyCheckedIn));
+    isProcessing = false;
+    recordKioskEvent('scan_already');
+    handleAlready({
+      result: 'already_checked_in',
+      guest: {
+        firstName:  a.contact_firstName || '',
+        lastName:   a.contact_lastName  || '',
+        company:    a.contact_x_companyName || '',
+        checkedInAt: a.guest_x_checkedinat,
+        attributes: a,
+      },
+    });
     return;
   }
 
@@ -2424,6 +2461,8 @@ async function selectKioskSearchResult(idx) {
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
 
+    recordKioskEvent('scan_success');
+    fireSignal('success');
     const first = a.contact_firstName || '';
     const last  = a.contact_lastName  || '';
     setText('success-name', `${first} ${last}`.trim() || '—');
@@ -2432,21 +2471,27 @@ async function selectKioskSearchResult(idx) {
     applyScreenBg(station?.success);
     startReturn('success', getReturnSecs(station?.success));
 
-    // Print badge — inject _matchedEventId for routing
+    // Print badge
     try {
       const badgeRes = await fetch('/api/badge-config');
       const badgeCfg = await badgeRes.json();
       await printKioskBadge({
         guest: {
-          firstName: first, lastName: last,
-          company: a.contact_x_companyName || '',
+          firstName:  first,
+          lastName:   last,
+          company:    a.contact_x_companyName || '',
           attributes: { ...a, _matchedEventId: matchedEid },
         },
         badgeConfig: badgeCfg,
       });
     } catch(e) { console.warn('[search checkin] badge error:', e); }
   } catch(e) {
+    recordKioskEvent('scan_failed');
+    fireSignal('failed');
     showError('Check-in failed: ' + (e.message || 'Unknown error'));
+  } finally {
+    isProcessing = false;
+    refocusScanInput();
   }
 }
 

@@ -1555,6 +1555,17 @@ app.post('/api/kiosk/signal', express.json(), async (req, res) => {
   }
 });
 
+// ─── Kiosk event recorder ──────────────────────────────────────────────────────
+// Called by the kiosk after search-driven check-ins (which bypass the scan route)
+// so those outcomes also appear in the monitor station table.
+// POST /api/kiosk/record-event  body: { stationId, event }
+// event: 'scan_success' | 'scan_failed' | 'scan_already' | 'search' | 'register'
+app.post('/api/kiosk/record-event', express.json(), (req, res) => {
+  const { stationId, event } = req.body || {};
+  if (stationId && event) _recordKiosk(stationId, null, event);
+  res.json({ ok: true });
+});
+
 app.get('/kiosk/:stationId', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/kiosk.html'));
 });
