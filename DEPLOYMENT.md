@@ -10,8 +10,8 @@ The deployment script (`deploy.sh`) fully automates installation of the Colada36
 
 | Device | URL | Why |
 |--------|-----|-----|
-| **Raspberry Pi kiosk** (hardware scanner) | `http://c365ci.local:3000/kiosk/...` | HTTP on port 3000 — no cert needed, no flags, works out of the box |
-| **iPhone / iPad** (camera mode) | `https://c365ci.local/kiosk/...` | HTTPS via Caddy required for `getUserMedia` camera access |
+| **Raspberry Pi kiosk** (hardware scanner) | `http://c365ci.local:3000/kiosk/STATION_ID` | HTTP on port 3000 — no cert needed, works out of the box |
+| **iPhone / iPad** (camera mode) | `https://c365ci.local/kiosk/STATION_ID` | HTTPS via Caddy required for `getUserMedia` camera access |
 | **Admin UI** (any browser) | `https://c365ci.local` | HTTPS via Caddy |
 
 Raspberry Pi kiosks use hardware barcode scanners so they don't need camera access — plain HTTP on port 3000 works perfectly. iPhones and iPads use the camera and must go through HTTPS.
@@ -28,7 +28,8 @@ Raspberry Pi kiosks use hardware barcode scanners so they don't need camera acce
 | 4 | Runs `npm install` |
 | 5 | Writes the Caddyfile and starts Caddy with a local HTTPS cert |
 | 6 | Converts the Caddy root cert to DER format for iOS enrollment |
-| 7 | Starts the app under PM2 and configures start-on-boot |
+| 7 | Starts the app under PM2 with `--max-old-space-size=256` (Pi-safe memory limit) and configures start-on-boot |
+| 8 | Patches the PM2 systemd unit to wait for NTP time sync before starting (prevents TLS failures on cold boot) |
 
 On re-runs the script is safe — it never overwrites `.env`, `data/config.json`, or the `data/` directory. It pulls the latest code and does a zero-downtime PM2 reload.
 
@@ -51,8 +52,6 @@ No prior download needed. Run this on the host machine:
 ```bash
 curl -fsSL https://raw.githubusercontent.com/frankzandercolada/colada_checkin_tool/main/deploy.sh | bash
 ```
-
-This downloads and runs the script in a single command.
 
 > **Note:** When piping to bash, you can't interactively set variables. To use a custom hostname, set it inline:
 > ```bash
@@ -114,17 +113,17 @@ Exec=chromium-browser --kiosk --noerrdialogs --disable-infobars \
   http://c365ci.local:3000/kiosk/YOUR_STATION_ID
 ```
 
-Replace `c365ci.local` with your server hostname and `YOUR_STATION_ID` with the station UUID from the admin UI.
+Replace `c365ci.local` with your server hostname and `YOUR_STATION_ID` with the station UUID from the admin UI → Kiosk Stations page.
 
 > **Why port 3000 and not 443?** Chromium blocks HTTPS pages with self-signed certificates by default. Routing the Pi kiosks through plain HTTP on port 3000 avoids the cert issue entirely. iPhones and iPads (camera mode) still use HTTPS via Caddy on port 443.
 
 ---
 
-## iOS Camera Setup (one-time per device)
+## iOS / iPad Setup (camera scanning)
 
-For iPhone and iPad camera scanning to work, each device must trust Caddy's root certificate. Do this once per device — it survives app updates.
+iPhones and iPads use the device camera to scan QR codes. Camera access requires HTTPS, so these devices connect via Caddy on port 443.
 
-### Step 1 — Open the cert in Safari
+### Step 1 — Trust the Caddy root certificate (one-time per device)
 
 On the iPhone or iPad open **Safari** (not Chrome) and navigate to:
 
@@ -134,28 +133,17 @@ https://checkin.local/caddy-root.cer
 
 > Replace `checkin.local` with your actual hostname if you changed it.
 
-### Step 2 — Install the profile
+1. Tap **Allow** when Safari asks to download a configuration profile
+2. Open **Settings** → tap the **Profile Downloaded** banner → tap **Install** → enter passcode → **Install** again
+3. **Settings → General → About → Certificate Trust Settings** → find **Caddy Local Authority** → toggle **on** → tap **Continue**
 
-Tap **Allow** when Safari asks to download a configuration profile.
+### Step 2 — Open the kiosk
 
-### Step 3 — Install in Settings
+Navigate to `https://checkin.local/kiosk/YOUR_STATION_ID` in Safari. Camera scanning is now available.
 
-1. Open **Settings**
-2. Tap the banner at the top: **Profile Downloaded**
-3. Tap **Install** (top right)
-4. Enter your device passcode
-5. Tap **Install** again to confirm
+> Enable **Camera Scan Mode** in the station settings (Admin UI → Kiosk Stations → Edit → General tab).
 
-### Step 4 — Enable full trust
-
-1. **Settings → General → About**
-2. Scroll to bottom → **Certificate Trust Settings**
-3. Find **Caddy Local Authority** → toggle **on**
-4. Tap **Continue**
-
-Camera scanning now works on this device.
-
-### Step 5 — Remove the cert file after enrollment
+### Step 3 — Remove the cert file after all devices are enrolled
 
 ```bash
 rm ~/colada_checkin_tool/public/caddy-root.cer
@@ -173,15 +161,40 @@ After deployment, open the admin UI in a browser:
 https://checkin.local
 ```
 
-Go to **Settings** and enter your Colada365 OAuth2 credentials:
+### 1. Connection settings
+
+Go to **Connection** and enter your Colada365 OAuth2 credentials:
 
 - Client ID
 - Client Secret
-- Token URL
-- API Base URL
-- Event ID
+- Token URL (e.g. `https://auth.colada365.com/oauth/token`)
+- API Base URL (e.g. `https://admin.colada365.com`)
 
-Then create a project, configure badge templates, and set up kiosk stations.
+### 2. Create a project
+
+Go to **Settings** → click the project selector at the top → **Manage Projects** → create a new project and enter the Event IDs (one per line) that belong to it. A project can contain multiple events — the check-in tool tracks and routes guests across all of them.
+
+### 3. Configure badges and routing
+
+Go to **Badges & Routing** to:
+
+- Create **badge templates** (dimensions, fonts, background images)
+- Add **event groups** — one per event ID — and define routing rules that assign templates based on guest attributes
+- Configure **self-registration** per event (participant group + form fields) in the same page
+
+### 4. Create kiosk stations
+
+Go to **Kiosk Stations** → **+ New Station**. Each station has five configuration tabs:
+
+| Tab | What you configure |
+|-----|--------------------|
+| **General** | Name, branding colours, logo, display toggles (hide logo, hide QR icon, light mode, camera mode), feature toggles (self-registration, guest search), print endpoint |
+| **Welcome** | Heading, subtitle, font sizes, background image, auto-return delay |
+| **Success** | Same as Welcome, plus option to hide the guest name card |
+| **Not Found** | Heading, subtitle, font sizes, background image, auto-return delay |
+| **Already In** | Behaviour on rescan (show / reprint badge / deny), heading, subtitle, etc. |
+
+After saving, copy the station UUID from the Kiosk Stations list and use it as the path in the kiosk URL: `/kiosk/YOUR_STATION_ID`.
 
 ---
 
@@ -190,7 +203,6 @@ Then create a project, configure badge templates, and set up kiosk stations.
 Simply re-run the deploy script — it detects the existing installation, pulls the latest code, and does a zero-downtime reload:
 
 ```bash
-# One-liner update
 curl -fsSL https://raw.githubusercontent.com/frankzandercolada/colada_checkin_tool/main/deploy.sh | bash
 ```
 
@@ -202,7 +214,7 @@ git pull
 pm2 reload colada365
 ```
 
-Your credentials, badge templates, kiosk stations, and background images in `data/` are never touched.
+Your credentials, projects, badge templates, routing rules, kiosk stations, self-registration config, and background images in `data/` are never touched by an update.
 
 ---
 
@@ -237,28 +249,42 @@ sudo systemctl reload caddy
 ## Directory Structure After Deployment
 
 ```
-~/colada_checkin_tool/        ← cloned from GitHub
+~/colada_checkin_tool/
 ├── server/
-│   └── index.js              # Application server
+│   └── index.js                   # Application server
 ├── public/
-│   ├── index.html            # Admin UI
-│   ├── kiosk.html            # Kiosk display
-│   └── styles.css            # Shared styles
-├── data/                     # Persistent data — NOT in git, never overwritten
-│   ├── config.json           # Global credentials + active project
-│   ├── projects.json         # Project list
+│   ├── index.html                 # Admin UI
+│   ├── kiosk.html                 # Kiosk display
+│   └── styles.css                 # Shared styles
+├── data/                          # Persistent data — NOT in git, never overwritten
+│   ├── config.json                # Global credentials + active project ID
+│   ├── projects.json              # Project list (names + event IDs)
 │   └── projects/{id}/
-│       ├── badge-config.json
-│       ├── kiosk-stations.json
-│       └── badge-images/
-├── .env                      # Secrets — NOT in git, never overwritten
-├── deploy.sh                 # This script
+│       ├── badge-config.json      # Templates, routing rules, self-reg config per event
+│       ├── kiosk-stations.json    # Station configs (branding, screens, features)
+│       └── badge-images/          # Background images for badge templates
+├── .env                           # Secrets — NOT in git, never overwritten
+├── deploy.sh                      # Deployment script
 └── package.json
 ```
 
 ---
 
 ## Troubleshooting
+
+### App not starting
+
+```bash
+pm2 logs colada365 --lines 50
+```
+
+Common causes:
+- Port 3000 already in use → set `APP_PORT=3001` before running the script
+- Missing `node_modules` → run `npm install` in `~/colada_checkin_tool`
+
+### TLS / cert errors on first boot (Raspberry Pi)
+
+The Pi has no hardware RTC. If the app starts before NTP syncs the clock, TLS certificate validation fails. The deploy script patches the PM2 systemd unit to wait for `time-sync.target` on every run, so this should be handled automatically. If you still see errors after a cold boot, wait 30–60 seconds and run `pm2 restart colada365`.
 
 ### "Page not found" for caddy-root.cer
 
@@ -278,25 +304,13 @@ sudo chmod 644 ~/colada_checkin_tool/public/caddy-root.cer
 
 Make sure you're using `/caddy-root.cer` (DER format), not `/caddy-root.crt` (PEM). iOS Safari requires DER.
 
-### App not starting
-
-```bash
-pm2 logs colada365 --lines 50
-```
-
-Common causes:
-- Port 3000 already in use → set `APP_PORT=3001` before running the script
-- Missing `node_modules` → run `npm install` in `~/colada_checkin_tool`
-
-### Caddy not starting
-
-```bash
-sudo caddy validate --config /etc/caddy/Caddyfile
-sudo journalctl -u caddy --no-pager -n 30
-```
-
 ### Camera not working on iOS after cert trust
 
 - Confirm you're on **HTTPS** (`https://` not `http://`)
-- Confirm you completed the full trust step in Certificate Trust Settings (toggle must be ON)
+- Confirm the full trust step was completed in Certificate Trust Settings (toggle must be ON)
+- Confirm **Camera Scan Mode** is enabled on the station (Admin UI → Kiosk Stations → Edit → General tab)
 - Try a hard reload: hold the reload button in Safari → **Reload Without Content Blockers**
+
+### Guest search / self-registration not appearing on kiosk
+
+These are per-station features that must be enabled explicitly. In the admin UI go to **Kiosk Stations → Edit → General tab** and toggle on **Guest Search** and/or **Self-Registration**. Self-registration also requires per-event configuration in **Badges & Routing** (participant group and form fields).

@@ -265,7 +265,8 @@ if pm2 list 2>/dev/null | grep -q "$PM2_NAME"; then
   pm2 reload "$PM2_NAME"
   ok "PM2 process '$PM2_NAME' reloaded"
 else
-  pm2 start server/index.js --name "$PM2_NAME" --cwd "$INSTALL_DIR"
+  pm2 start server/index.js --name "$PM2_NAME" --cwd "$INSTALL_DIR" \
+    --node-args="--max-old-space-size=256"
   ok "PM2 process '$PM2_NAME' started"
 fi
 pm2 save
@@ -275,6 +276,27 @@ if [ "$IS_FRESH" = true ]; then
   if [ -n "$STARTUP_CMD" ]; then
     eval "$STARTUP_CMD"
     ok "PM2 startup on boot configured"
+
+    # ── Patch PM2 systemd unit to wait for NTP time sync ─────────────────────
+    # Raspberry Pi has no hardware RTC — without this, the app starts before
+    # the clock is set, causing TLS cert validation failures (SEC_ERROR_UNKNOWN_ISSUER).
+    PM2_SERVICE=$(systemctl list-unit-files 'pm2-*.service' 2>/dev/null | awk '/pm2-/{print $1}' | head -1)
+    if [ -n "$PM2_SERVICE" ]; then
+      PM2_SERVICE_FILE="/etc/systemd/system/${PM2_SERVICE}"
+      if [ -f "$PM2_SERVICE_FILE" ]; then
+        # Add time-sync.target and network-online.target to After= if not already present
+        if ! grep -q "time-sync.target" "$PM2_SERVICE_FILE"; then
+          sudo sed -i 's/^After=\(.*\)/After=\1 time-sync.target network-online.target/' "$PM2_SERVICE_FILE"
+          sudo sed -i '/^\[Unit\]/a Wants=time-sync.target network-online.target' "$PM2_SERVICE_FILE"
+          sudo systemctl daemon-reload
+          ok "PM2 service patched to wait for NTP time sync before starting"
+        else
+          ok "PM2 service already waits for time-sync.target"
+        fi
+      fi
+    else
+      warn "Could not find PM2 systemd service — run manually after reboot if clock issues persist"
+    fi
   else
     warn "Run 'pm2 startup' manually to enable start-on-boot."
   fi
@@ -282,6 +304,19 @@ fi
 
 # ── Health check ──────────────────────────────────────────────────────────────
 section "Health check"
+
+# Ensure PM2 systemd unit waits for NTP on every deploy (idempotent patch).
+# Raspberry Pi has no RTC — without this, cold boots fail with TLS cert errors.
+PM2_SERVICE=$(systemctl list-unit-files 'pm2-*.service' 2>/dev/null | awk '/pm2-/{print $1}' | head -1)
+if [ -n "$PM2_SERVICE" ]; then
+  PM2_SERVICE_FILE="/etc/systemd/system/${PM2_SERVICE}"
+  if [ -f "$PM2_SERVICE_FILE" ] && ! grep -q "time-sync.target" "$PM2_SERVICE_FILE"; then
+    sudo sed -i 's/^After=\(.*\)/After=\1 time-sync.target network-online.target/' "$PM2_SERVICE_FILE"
+    sudo sed -i '/^\[Unit\]/a Wants=time-sync.target network-online.target' "$PM2_SERVICE_FILE"
+    sudo systemctl daemon-reload
+    ok "PM2 service patched to wait for NTP time sync"
+  fi
+fi
 sleep 2
 if curl -sf "http://localhost:${APP_PORT}/api/config" > /dev/null 2>&1; then
   ok "App responding on http://localhost:${APP_PORT}"
