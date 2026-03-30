@@ -8,6 +8,69 @@ const path    = require('path');
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '20mb' }));
+
+// ─── Traffic monitor middleware ───────────────────────────────────────────────
+// Tracks per-minute request counts and bytes transferred (in + out).
+// Keeps a rolling 60-minute window of per-minute buckets plus all-time totals.
+const TRAFFIC_WINDOW = 60; // minutes to retain
+const _traffic = {
+  buckets: [],        // [{ ts, requests, bytesIn, bytesOut }, ...]  one per minute
+  totals:  { requests: 0, bytesIn: 0, bytesOut: 0 },
+  _current: null,     // bucket currently being written
+};
+
+function _getOrCreateBucket() {
+  const now     = Date.now();
+  const bucketTs = Math.floor(now / 60000) * 60000; // floor to current minute
+  if (!_traffic._current || _traffic._current.ts !== bucketTs) {
+    const b = { ts: bucketTs, requests: 0, bytesIn: 0, bytesOut: 0 };
+    _traffic.buckets.push(b);
+    _traffic._current = b;
+    // Trim to window
+    const cutoff = bucketTs - TRAFFIC_WINDOW * 60000;
+    _traffic.buckets = _traffic.buckets.filter(x => x.ts >= cutoff);
+  }
+  return _traffic._current;
+}
+
+app.use((req, res, next) => {
+  // Measure request body size from Content-Length header (fast, no buffering)
+  const bytesIn = parseInt(req.headers['content-length'] || '0', 10) || 0;
+  _traffic.totals.bytesIn += bytesIn;
+  _traffic.totals.requests++;
+  const b = _getOrCreateBucket();
+  b.requests++;
+  b.bytesIn += bytesIn;
+
+  // Intercept response to measure bytes out
+  const origWrite = res.write.bind(res);
+  const origEnd   = res.end.bind(res);
+  let bytesOut = 0;
+
+  res.write = function(chunk, ...args) {
+    if (chunk) bytesOut += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
+    return origWrite(chunk, ...args);
+  };
+  res.end = function(chunk, ...args) {
+    if (chunk) bytesOut += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
+    _traffic.totals.bytesOut += bytesOut;
+    b.bytesOut += bytesOut;
+    return origEnd(chunk, ...args);
+  };
+
+  next();
+});
+
+// Stats endpoint — returns rolling window + totals + uptime
+app.get('/api/stats/traffic', (req, res) => {
+  res.json({
+    buckets:  _traffic.buckets,
+    totals:   _traffic.totals,
+    uptimeMs: process.uptime() * 1000,
+    pid:      process.pid,
+    memMb:    Math.round(process.memoryUsage().rss / 1024 / 1024),
+  });
+});
 // Serve root CA cert for iOS device enrollment.
 // iOS requires DER format (.cer) with the x509-ca-cert MIME type.
 app.get('/caddy-root.cer', (req, res) => {

@@ -13,6 +13,7 @@
 </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -57,6 +58,9 @@
     </div>
     <div class="nav-item" data-page="kiosk">
       <span class="icon">⊡</span> Kiosk Stations
+    </div>
+    <div class="nav-item" data-page="monitor">
+      <span class="icon">◈</span> Monitor
     </div>
   </nav>
 
@@ -471,6 +475,60 @@
       </div>
     </div>
 
+    <!-- ── Monitor page ── -->
+    <div class="page" id="page-monitor">
+      <div class="page-title">Monitor</div>
+      <div class="page-subtitle">Live request rate and data transfer over the last 60 minutes</div>
+
+      <!-- Summary stat cards -->
+      <div class="stats-grid" id="monitor-stats-grid">
+        <div class="stat-card">
+          <div class="stat-num" id="mon-uptime">—</div>
+          <div class="stat-label">Uptime</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="mon-total-req">—</div>
+          <div class="stat-label">Total Requests</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="mon-total-in">—</div>
+          <div class="stat-label">Data In</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="mon-total-out">—</div>
+          <div class="stat-label">Data Out</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="mon-mem">—</div>
+          <div class="stat-label">Memory (RSS)</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-num" id="mon-rpm">—</div>
+          <div class="stat-label">Req / min (now)</div>
+        </div>
+      </div>
+
+      <!-- Request rate chart -->
+      <div class="card" style="margin-top:16px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <div class="card-title" style="margin:0;">Requests per Minute</div>
+          <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono);" id="mon-last-updated">—</div>
+        </div>
+        <canvas id="mon-chart-req" height="80"></canvas>
+      </div>
+
+      <!-- Bandwidth chart -->
+      <div class="card" style="margin-top:16px;">
+        <div class="card-title" style="margin-bottom:12px;">Bandwidth per Minute (KB)</div>
+        <canvas id="mon-chart-bw" height="80"></canvas>
+      </div>
+
+      <div style="margin-top:16px;display:flex;align-items:center;gap:12px;">
+        <button class="btn btn-secondary" onclick="loadMonitor()">↺ Refresh</button>
+        <span style="font-size:11px;color:var(--muted);font-family:var(--font-mono);">Auto-refreshes every 15 s while this page is open</span>
+      </div>
+    </div>
+
     <!-- Kiosk station modal -->
     <div id="kiosk-modal" style="display:none; position:fixed; inset:0; z-index:90; background:rgba(0,0,0,0.7); backdrop-filter:blur(8px); align-items:center; justify-content:center;">
       <div style="background:var(--surface); border:1px solid var(--border2); border-radius:16px; width:min(580px,94vw); max-height:90vh; display:flex; flex-direction:column; overflow:hidden;">
@@ -750,6 +808,8 @@ document.querySelectorAll('.nav-item').forEach(item => {
     if (page === 'scan') { stopDashboardRefresh(); setTimeout(() => document.getElementById('scan-input').focus(), 100); }
     if (page === 'dashboard') { loadDashboard(); startDashboardRefresh(); }
     if (page !== 'dashboard') stopDashboardRefresh();
+    if (page === 'monitor') startMonitorRefresh();
+    else stopMonitorRefresh();
   });
 });
 
@@ -3022,6 +3082,172 @@ function stopDashboardRefresh() {
   if (el) el.textContent = '';
 }
 
+// ── Monitor ───────────────────────────────────────────────────────────────────
+let _monInterval  = null;
+let _monChartReq  = null;
+let _monChartBw   = null;
+
+function fmtBytes(b) {
+  if (b === 0) return '0 B';
+  const units = ['B','KB','MB','GB'];
+  const i = Math.min(Math.floor(Math.log2(b) / 10), units.length - 1);
+  return (b / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
+}
+function fmtUptime(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const h = Math.floor(m / 60);
+  const d = Math.floor(h / 24);
+  if (d > 0)  return `${d}d ${h % 24}h`;
+  if (h > 0)  return `${h}h ${m % 60}m`;
+  if (m > 0)  return `${m}m ${s % 60}s`;
+  return `${s}s`;
+}
+function _monTheme() {
+  const light = document.documentElement.getAttribute('data-theme') === 'light';
+  return {
+    gridColor:  light ? 'rgba(0,0,0,0.07)'  : 'rgba(255,255,255,0.05)',
+    tickColor:  light ? 'rgba(0,0,0,0.4)'   : 'rgba(255,255,255,0.4)',
+    legendColor:light ? 'rgba(0,0,0,0.5)'   : 'rgba(255,255,255,0.5)',
+  };
+}
+
+function startMonitorRefresh() {
+  loadMonitor();
+  _monInterval = setInterval(loadMonitor, 15000);
+}
+function stopMonitorRefresh() {
+  clearInterval(_monInterval);
+  _monInterval = null;
+  if (_monChartReq) { _monChartReq.destroy(); _monChartReq = null; }
+  if (_monChartBw)  { _monChartBw.destroy();  _monChartBw  = null; }
+}
+
+async function loadMonitor() {
+  if (!document.getElementById('page-monitor')?.classList.contains('active')) return;
+  try {
+    const r    = await fetch('/api/stats/traffic');
+    const data = await r.json();
+    const th   = _monTheme();
+
+    // Summary cards
+    document.getElementById('mon-uptime').textContent     = fmtUptime(data.uptimeMs);
+    document.getElementById('mon-total-req').textContent  = data.totals.requests.toLocaleString();
+    document.getElementById('mon-total-in').textContent   = fmtBytes(data.totals.bytesIn);
+    document.getElementById('mon-total-out').textContent  = fmtBytes(data.totals.bytesOut);
+    document.getElementById('mon-mem').textContent        = data.memMb + ' MB';
+
+    const nowBucket     = Math.floor(Date.now() / 60000) * 60000;
+    const currentBucket = data.buckets.find(b => b.ts === nowBucket);
+    document.getElementById('mon-rpm').textContent = currentBucket ? currentBucket.requests : 0;
+
+    document.getElementById('mon-last-updated').textContent =
+      'Updated ' + new Date().toLocaleTimeString();
+
+    // Build full 60-min label + data arrays, zero-filling missing buckets
+    const labels = [], reqData = [], bwInData = [], bwOutData = [];
+    const bucketMap = Object.fromEntries(data.buckets.map(b => [b.ts, b]));
+    for (let i = 59; i >= 0; i--) {
+      const ts = nowBucket - i * 60000;
+      const b  = bucketMap[ts] || { requests: 0, bytesIn: 0, bytesOut: 0 };
+      const t  = new Date(ts);
+      labels.push(`${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`);
+      reqData.push(b.requests);
+      bwInData.push(+(b.bytesIn  / 1024).toFixed(2));
+      bwOutData.push(+(b.bytesOut / 1024).toFixed(2));
+    }
+
+    const commonScales = (th) => ({
+      x: {
+        ticks: { maxTicksLimit: 12, color: th.tickColor, font: { size: 10 } },
+        grid:  { color: th.gridColor },
+      },
+      y: {
+        beginAtZero: true,
+        ticks: { color: th.tickColor, font: { size: 10 } },
+        grid:  { color: th.gridColor },
+      },
+    });
+
+    // Requests-per-minute bar chart
+    const ctxReq = document.getElementById('mon-chart-req').getContext('2d');
+    if (_monChartReq) {
+      _monChartReq.data.labels = labels;
+      _monChartReq.data.datasets[0].data = reqData;
+      _monChartReq.options.scales.x.ticks.color = th.tickColor;
+      _monChartReq.options.scales.x.grid.color  = th.gridColor;
+      _monChartReq.options.scales.y.ticks.color = th.tickColor;
+      _monChartReq.options.scales.y.grid.color  = th.gridColor;
+      _monChartReq.update('none');
+    } else {
+      _monChartReq = new Chart(ctxReq, {
+        type: 'bar',
+        data: {
+          labels,
+          datasets: [{
+            label: 'Requests',
+            data: reqData,
+            backgroundColor: 'rgba(211,34,42,0.55)',
+            borderColor:     'rgba(211,34,42,0.9)',
+            borderWidth: 1, borderRadius: 2,
+          }]
+        },
+        options: {
+          responsive: true, animation: false,
+          plugins: { legend: { display: false } },
+          scales: commonScales(th),
+        }
+      });
+    }
+
+    // Bandwidth line chart
+    const ctxBw = document.getElementById('mon-chart-bw').getContext('2d');
+    if (_monChartBw) {
+      _monChartBw.data.labels = labels;
+      _monChartBw.data.datasets[0].data = bwInData;
+      _monChartBw.data.datasets[1].data = bwOutData;
+      _monChartBw.options.scales.x.ticks.color    = th.tickColor;
+      _monChartBw.options.scales.x.grid.color     = th.gridColor;
+      _monChartBw.options.scales.y.ticks.color    = th.tickColor;
+      _monChartBw.options.scales.y.grid.color     = th.gridColor;
+      _monChartBw.options.plugins.legend.labels.color = th.legendColor;
+      _monChartBw.update('none');
+    } else {
+      _monChartBw = new Chart(ctxBw, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [
+            {
+              label: 'In (KB)',
+              data: bwInData,
+              borderColor:     'rgba(99,102,241,0.9)',
+              backgroundColor: 'rgba(99,102,241,0.15)',
+              borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.3,
+            },
+            {
+              label: 'Out (KB)',
+              data: bwOutData,
+              borderColor:     'rgba(34,197,94,0.9)',
+              backgroundColor: 'rgba(34,197,94,0.1)',
+              borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.3,
+            }
+          ]
+        },
+        options: {
+          responsive: true, animation: false,
+          plugins: {
+            legend: { labels: { color: th.legendColor, font: { size: 11 }, boxWidth: 12 } },
+          },
+          scales: commonScales(th),
+        }
+      });
+    }
+  } catch(e) {
+    console.error('[monitor]', e.message);
+  }
+}
+
 function resetDashboardRefresh() {
   _dashSecsLeft = DASH_REFRESH_SECS;
   updateCountdown();
@@ -3185,6 +3411,11 @@ function toggleTheme() {
   const next = current === 'dark' ? 'light' : 'dark';
   applyTheme(next);
   try { localStorage.setItem(THEME_KEY, next); } catch(e) {}
+  // Destroy monitor charts so they re-create with the correct colour scheme
+  if (_monChartReq) { _monChartReq.destroy(); _monChartReq = null; }
+  if (_monChartBw)  { _monChartBw.destroy();  _monChartBw  = null; }
+  // Re-draw immediately if monitor page is active
+  if (document.getElementById('page-monitor')?.classList.contains('active')) loadMonitor();
 }
 
 // Load saved theme or fall back to system preference
