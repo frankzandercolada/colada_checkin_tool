@@ -544,6 +544,12 @@
                 <input class="form-input" id="ks-print-endpoint" placeholder="http://printer-host/print"/>
                 <div style="font-size:11px; color:var(--muted); margin-top:4px;">If set, the badge PDF will be PUT to this URL instead of opening the browser print dialog.</div>
               </div>
+
+              <div>
+                <label class="form-label">Signal Endpoint (optional)</label>
+                <input class="form-input" id="ks-signal-endpoint" placeholder="http://led-module-host/signal"/>
+                <div style="font-size:11px; color:var(--muted); margin-top:4px;">If set, a PUT request with <code style="font-family:var(--font-mono);font-size:10px;">{"status":"success"}</code> or <code style="font-family:var(--font-mono);font-size:10px;">{"status":"failed"}</code> is sent after each scan result — use to trigger LEDs or a buzzer.</div>
+              </div>
             </div>
           </div>
 
@@ -3496,7 +3502,8 @@ async function loadKioskStations() {
 function openKioskStationModal() {
   _editingKioskId = null;
   document.getElementById('kiosk-modal-title').textContent = 'New Station';
-  document.getElementById('ks-print-endpoint').value = '';
+  document.getElementById('ks-print-endpoint').value  = '';
+  document.getElementById('ks-signal-endpoint').value = '';
   document.getElementById('ks-camera-mode').checked = false;
   document.getElementById('ks-light-mode').checked  = false;
   document.getElementById('ks-hide-logo').checked   = false;
@@ -3537,7 +3544,8 @@ function editKioskStation(stationId) {
   document.getElementById('ks-name').value   = s.name || '';
   document.getElementById('ks-logo').value           = s.logoText || '';
   document.getElementById('ks-accent').value         = s.accentColor || '#d3222a';
-  document.getElementById('ks-print-endpoint').value = s.printEndpoint || '';
+  document.getElementById('ks-print-endpoint').value  = s.printEndpoint  || '';
+  document.getElementById('ks-signal-endpoint').value = s.signalEndpoint || '';
   document.getElementById('ks-camera-mode').checked = s.cameraMode || false;
   document.getElementById('ks-light-mode').checked  = s.lightMode      || false;
   document.getElementById('ks-hide-logo').checked   = s.hideLogoText   || false;
@@ -3645,7 +3653,8 @@ async function saveKioskStation() {
     accentColor:  document.getElementById('ks-accent').value,
     bgColor:      document.getElementById('ks-bg').value,
     bgColorLight: document.getElementById('ks-bg-light').value,
-    printEndpoint:  document.getElementById('ks-print-endpoint').value.trim() || null,
+    printEndpoint:  document.getElementById('ks-print-endpoint').value.trim()  || null,
+    signalEndpoint: document.getElementById('ks-signal-endpoint').value.trim() || null,
     cameraMode:     document.getElementById('ks-camera-mode').checked,
     lightMode:      document.getElementById('ks-light-mode').checked,
     selfRegistration: collectRegConfig(),

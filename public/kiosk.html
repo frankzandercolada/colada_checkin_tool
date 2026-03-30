@@ -1335,7 +1335,20 @@ async function handleScan(raw) {
 }
 
 // ── Result handlers ───────────────────────────────────────────────────────────
+
+// Fire-and-forget signal to LED/buzzer module if configured on this station.
+// status: 'success' | 'failed'
+function fireSignal(status) {
+  if (!station?.signalEndpoint) return;
+  fetch(`/api/kiosk/signal?stationId=${encodeURIComponent(stationId)}`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    JSON.stringify({ status }),
+  }).catch(e => console.warn('[signal]', e.message));
+}
+
 async function handleSuccess(data) {
+  fireSignal('success');
   const g = data.guest || {};
   setText('success-name', [g.firstName, g.lastName].filter(Boolean).join(' ') || '—');
   setText('success-company', g.company || '');
@@ -1356,7 +1369,7 @@ async function handleAlready(data) {
   const behaviour = station?.alreadyCheckedIn?.behaviour || 'show';
 
   if (behaviour === 'reprint') {
-    // Treat exactly like success — show success screen and reprint badge
+    fireSignal('success');
     const g = data.guest || {};
     setText('success-name', [g.firstName, g.lastName].filter(Boolean).join(' ') || '—');
     setText('success-company', g.company || '');
@@ -1368,7 +1381,7 @@ async function handleAlready(data) {
   }
 
   if (behaviour === 'deny') {
-    // Show not-found screen with custom deny message
+    fireSignal('failed');
     const titleEl = document.getElementById('notfound-title');
     const subEl   = document.getElementById('notfound-sub');
     if (titleEl) titleEl.textContent = station?.alreadyCheckedIn?.denyTitle    || 'Code Already Used';
@@ -1380,6 +1393,7 @@ async function handleAlready(data) {
   }
 
   // Default: show already-checked-in screen
+  fireSignal('failed');
   const g = data.guest || {};
   setText('already-name', [g.firstName, g.lastName].filter(Boolean).join(' ') || '—');
   setText('already-company', g.company || '');
@@ -1391,10 +1405,11 @@ async function handleAlready(data) {
 }
 
 function handleNotFound(msg) {
+  fireSignal('failed');
   const subEl = document.getElementById('notfound-sub');
   if (subEl && msg) subEl.textContent = station?.notFound?.subtitle || msg;
   showScreen('notfound');
-  applyScreenBg(station?.notFound);  // fire-and-forget async
+  applyScreenBg(station?.notFound);
   startReturn('notfound', getReturnSecs(station?.notFound));
 }
 

@@ -1108,7 +1108,8 @@ app.post('/api/kiosk/stations', (req, res) => {
     bgColorLight:  req.body.bgColorLight  || '#f0f0f0',
     logoText:      logoText      || '',
     hideLogoText:  req.body.hideLogoText  || false,
-    printEndpoint: printEndpoint || null,
+    printEndpoint:  printEndpoint  || null,
+    signalEndpoint: req.body.signalEndpoint || null,
     cameraMode:    cameraMode    || false,
     lightMode:     lightMode     || false,
     selfRegistration: { enabled: !!(req.body.selfRegistration?.enabled) },
@@ -1403,6 +1404,37 @@ app.post('/api/kiosk/print', express.text({ limit: '20mb' }), async (req, res) =
     res.json({ ok: true });
   } catch(e) {
     console.error('[print proxy]', e.message);
+    res.status(502).json({ error: e.message });
+  }
+});
+
+// ─── Signal proxy ─────────────────────────────────────────────────────────────
+// Forwards a status signal (success|failed) to the station's signalEndpoint.
+// Using a server-side proxy avoids mixed-content and CORS issues when the
+// signal module is on plain HTTP inside the local network.
+// POST /api/kiosk/signal?stationId=...  body: { status: 'success'|'failed' }
+app.post('/api/kiosk/signal', express.json(), async (req, res) => {
+  const { stationId } = req.query;
+  const { status }    = req.body || {};
+  if (!status) return res.status(400).json({ error: 'status required' });
+
+  const pid = getActiveProjectId();
+  if (!pid) return res.status(400).json({ error: 'no active project' });
+
+  const stations = loadKioskStations(pid);
+  const station  = stations.find(s => s.id === stationId);
+  if (!station?.signalEndpoint) return res.status(400).json({ error: 'no signal endpoint configured' });
+
+  try {
+    const sr = await fetch(station.signalEndpoint, {
+      method:  'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ status }),
+    });
+    if (!sr.ok) throw new Error(`Signal endpoint returned ${sr.status}`);
+    res.json({ ok: true });
+  } catch(e) {
+    console.error('[signal proxy]', e.message);
     res.status(502).json({ error: e.message });
   }
 });
