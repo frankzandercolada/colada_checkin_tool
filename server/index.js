@@ -1535,16 +1535,22 @@ app.post('/api/kiosk/signal', async (req, res) => {
   if (!status)         return res.status(400).json({ error: 'status required' });
   if (!signalEndpoint) return res.status(400).json({ error: 'signalEndpoint required' });
 
+  console.log(`[signal proxy] → ${signalEndpoint}  status=${status}`);
   try {
     const sr = await fetch(signalEndpoint, {
       method:  'PUT',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ status }),
     });
-    if (!sr.ok) throw new Error(`Signal endpoint returned ${sr.status}`);
+    const responseText = await sr.text();
+    if (!sr.ok) {
+      console.error(`[signal proxy] endpoint returned ${sr.status}: ${responseText.slice(0, 200)}`);
+      throw new Error(`Signal endpoint returned ${sr.status}: ${responseText.slice(0, 200)}`);
+    }
+    console.log(`[signal proxy] ✓ delivered (${sr.status})`);
     res.json({ ok: true });
   } catch(e) {
-    console.error('[signal proxy]', e.message);
+    console.error('[signal proxy] fetch failed:', e.message);
     res.status(502).json({ error: e.message });
   }
 });

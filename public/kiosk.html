@@ -1340,11 +1340,17 @@ async function handleScan(raw) {
 // status: 'success' | 'failed'
 function fireSignal(status) {
   if (!station?.signalEndpoint) return;
+  console.log('[signal] firing', status, '→', station.signalEndpoint);
   fetch('/api/kiosk/signal', {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    JSON.stringify({ status, signalEndpoint: station.signalEndpoint }),
-  }).catch(e => console.warn('[signal]', e.message));
+  })
+  .then(r => r.json().then(d => {
+    if (!r.ok) console.warn('[signal] proxy error:', d.error);
+    else console.log('[signal] ✓ delivered');
+  }))
+  .catch(e => console.warn('[signal] fetch failed:', e.message));
 }
 
 async function handleSuccess(data) {
