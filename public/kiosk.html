@@ -1412,8 +1412,12 @@ async function handleAlready(data) {
 
 function handleNotFound(msg) {
   fireSignal('failed');
-  const subEl = document.getElementById('notfound-sub');
-  if (subEl && msg) subEl.textContent = station?.notFound?.subtitle || msg;
+  // Always reset title + subtitle to configured values — clears any deny text
+  // left over from a previous handleAlready(deny) call on the same DOM element
+  const titleEl = document.getElementById('notfound-title');
+  const subEl   = document.getElementById('notfound-sub');
+  if (titleEl) titleEl.textContent = station?.notFound?.title    || 'Guest Not Found';
+  if (subEl)   subEl.textContent   = station?.notFound?.subtitle || msg || 'Please see the registration desk for assistance.';
   showScreen('notfound');
   applyScreenBg(station?.notFound);
   startReturn('notfound', getReturnSecs(station?.notFound));

@@ -1602,32 +1602,31 @@ app.post('/api/kiosk/print', express.text({ limit: '20mb' }), async (req, res) =
 });
 
 // ─── Signal proxy ─────────────────────────────────────────────────────────────
-// Forwards a status signal (success|failed) to the station's signalEndpoint.
-// Using a server-side proxy avoids mixed-content and CORS issues when the
-// signal module is on plain HTTP inside the local network.
-// POST /api/kiosk/signal?stationId=...  body: { status: 'success'|'failed' }
-app.post('/api/kiosk/signal', express.json(), async (req, res) => {
-  const { stationId } = req.query;
-  const { status }    = req.body || {};
-  if (!status) return res.status(400).json({ error: 'status required' });
+// Forwards a status signal (success|failed) to the station's configured endpoint.
+// Accepts signalEndpoint directly in the body (kiosk already has the full config in memory)
+// to avoid stale disk lookups.
+// POST /api/kiosk/signal  body: { status: 'success'|'failed', signalEndpoint: '...' }
+app.post('/api/kiosk/signal', async (req, res) => {
+  const { status, signalEndpoint } = req.body || {};
+  if (!status)         return res.status(400).json({ error: 'status required' });
+  if (!signalEndpoint) return res.status(400).json({ error: 'signalEndpoint required' });
 
-  const pid = getActiveProjectId();
-  if (!pid) return res.status(400).json({ error: 'no active project' });
-
-  const stations = loadKioskStations(pid);
-  const station  = stations.find(s => s.id === stationId);
-  if (!station?.signalEndpoint) return res.status(400).json({ error: 'no signal endpoint configured' });
-
+  console.log(`[signal proxy] → ${signalEndpoint}  status=${status}`);
   try {
-    const sr = await fetch(station.signalEndpoint, {
+    const sr = await fetch(signalEndpoint, {
       method:  'PUT',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ status }),
     });
-    if (!sr.ok) throw new Error(`Signal endpoint returned ${sr.status}`);
+    const responseText = await sr.text();
+    if (!sr.ok) {
+      console.error(`[signal proxy] endpoint returned ${sr.status}: ${responseText.slice(0, 200)}`);
+      throw new Error(`Signal endpoint returned ${sr.status}: ${responseText.slice(0, 200)}`);
+    }
+    console.log(`[signal proxy] ✓ delivered (${sr.status})`);
     res.json({ ok: true });
   } catch(e) {
-    console.error('[signal proxy]', e.message);
+    console.error('[signal proxy] fetch failed:', e.message);
     res.status(502).json({ error: e.message });
   }
 });
