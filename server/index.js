@@ -1,117 +1,13 @@
 require('dotenv').config();
-const express    = require('express');
-const cors       = require('cors');
-const _nodeFetch = require('node-fetch');
-const fs         = require('fs');
-const path       = require('path');
+const express = require('express');
+const cors    = require('cors');
+const fetch   = require('node-fetch');
+const fs      = require('fs');
+const path    = require('path');
 
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '20mb' }));
-
-// ─── Stats tracker ────────────────────────────────────────────────────────────
-// Tracks outbound Colada API calls (/_gw/ endpoints) per minute and per kiosk
-// station. In-memory only — resets on restart.
-const STATS_WINDOW = 60; // rolling minutes to keep
-const _stats = {
-  // Rolling per-minute buckets for Colada API calls
-  // Each bucket: { ts, calls, bytesIn, bytesOut }
-  buckets:  [],
-  _cur:     null,
-  // Per-station totals: stationId -> { name, scans, checkins, searches, failed, lastSeen }
-  stations: {},
-  // All-time Colada API totals
-  totals: { calls: 0, bytesOut: 0, bytesIn: 0 },
-};
-
-function _statsBucket() {
-  const ts = Math.floor(Date.now() / 60000) * 60000;
-  if (!_stats._cur || _stats._cur.ts !== ts) {
-    const b = { ts, calls: 0, bytesOut: 0, bytesIn: 0 };
-    _stats.buckets.push(b);
-    _stats._cur = b;
-    const cutoff = ts - STATS_WINDOW * 60000;
-    _stats.buckets = _stats.buckets.filter(x => x.ts >= cutoff);
-  }
-  return _stats._cur;
-}
-
-// Record a completed Colada API call
-function _recordApiCall({ bytesOut = 0, bytesIn = 0 } = {}) {
-  const b = _statsBucket();
-  b.calls++;
-  b.bytesOut += bytesOut;
-  b.bytesIn  += bytesIn;
-  _stats.totals.calls++;
-  _stats.totals.bytesOut += bytesOut;
-  _stats.totals.bytesIn  += bytesIn;
-}
-
-// Record a kiosk event against a station
-// event: 'scan_success' | 'scan_failed' | 'scan_already' | 'search' | 'register'
-function _recordKiosk(stationId, stationName, event) {
-  if (!stationId) return;
-  if (!_stats.stations[stationId]) {
-    _stats.stations[stationId] = {
-      name: stationName || stationId.slice(0, 8),
-      scans: 0, checkins: 0, already: 0, failed: 0, searches: 0, registers: 0,
-      lastSeen: null,
-    };
-  }
-  const s = _stats.stations[stationId];
-  s.name     = stationName || s.name;
-  s.lastSeen = new Date().toISOString();
-  if (event === 'scan_success') { s.scans++; s.checkins++; }
-  else if (event === 'scan_already') { s.scans++; s.already++; }
-  else if (event === 'scan_failed')  { s.scans++; s.failed++;  }
-  else if (event === 'search')       { s.searches++;           }
-  else if (event === 'register')     { s.registers++;          }
-}
-
-// Wrap node-fetch to measure outbound Colada API calls.
-// Only intercepts /_gw/ URLs — all other fetches pass through unchanged.
-global._trackedFetch = async function(url, options = {}) {
-  const urlStr = typeof url === 'string' ? url : url.href || String(url);
-  if (!urlStr.includes('/_gw/')) return _nodeFetch(url, options);
-
-  const bodyStr  = options.body ? String(options.body) : '';
-  const bytesOut = Buffer.byteLength(bodyStr, 'utf8');
-
-  const res = await _nodeFetch(url, options);
-
-  // Clone response to measure size without consuming the original stream
-  const text    = await res.text();
-  const bytesIn = Buffer.byteLength(text, 'utf8');
-  _recordApiCall({ bytesOut, bytesIn });
-
-  // Re-wrap response so callers can still use .json()/.text()
-  const { Response } = _nodeFetch;
-  return new Response(text, { status: res.status, headers: res.headers });
-};
-
-// All route handlers below use this tracked version — /_gw/ calls are
-// automatically measured; non-Colada URLs (token endpoint, etc.) pass through.
-const fetch = global._trackedFetch; // eslint-disable-line no-shadow
-
-// Stats endpoint
-app.get('/api/stats/traffic', (req, res) => {
-  const pid      = getActiveProjectId ? getActiveProjectId() : null;
-  const stations = pid ? loadKioskStations(pid) : [];
-  const enriched = Object.fromEntries(
-    Object.entries(_stats.stations).map(([id, s]) => {
-      const cfg = stations.find(st => st.id === id);
-      return [id, { ...s, name: cfg?.name || s.name }];
-    })
-  );
-  res.json({
-    buckets:  _stats.buckets,
-    totals:   _stats.totals,
-    stations: enriched,
-    uptimeMs: process.uptime() * 1000,
-    memMb:    Math.round(process.memoryUsage().rss / 1024 / 1024),
-  });
-});
-
 // Serve root CA cert for iOS device enrollment.
 // iOS requires DER format (.cer) with the x509-ca-cert MIME type.
 app.get('/caddy-root.cer', (req, res) => {
@@ -162,15 +58,6 @@ function loadProjects() {
   return [];
 }
 function saveProjects(p) { fs.writeFileSync(PROJECTS_PATH, JSON.stringify(p, null, 2)); }
-
-// Normalise single eventId vs eventIds array — handles legacy records transparently.
-// Always returns a non-empty array of UUIDs, or [] if none configured.
-function getProjectEventIds(project) {
-  if (Array.isArray(project?.eventIds) && project.eventIds.length > 0) return project.eventIds;
-  if (project?.eventId) return [project.eventId];
-  return [];
-}
-
 function projectDir(id)        { return path.join(DATA_DIR, 'projects', id); }
 function projectConfigPath(id) { return path.join(projectDir(id), 'badge-config.json'); }
 function projectImagesDir(id)  { return path.join(projectDir(id), 'badge-images'); }
@@ -183,107 +70,6 @@ function loadProjectBadgeConfig(id) {
 function saveProjectBadgeConfig(id, cfg) {
   ensureProjectDirs(id);
   fs.writeFileSync(projectConfigPath(id), JSON.stringify(cfg, null, 2));
-}
-
-// ─── Default badge config (mirrors frontend DEFAULT_TEMPLATES / DEFAULT_RULES) ─
-const DEFAULT_TEMPLATES = [
-  { key:'awf_sb',        name:'AWF + Stimmberechtigt',          width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
-  { key:'awf_standard',  name:'AWF Standard',                   width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
-  { key:'awf_member_sb', name:'AWF + Member + Stimmberechtigt', width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
-  { key:'awf_member',    name:'AWF Member (Standard)',          width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
-  { key:'gv_sb',         name:'GV + Stimmberechtigt',           width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
-  { key:'gv_gast',       name:'GV Gast',                        width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
-  { key:'swissrail',     name:'Swissrail',                      width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
-  { key:'swissrail_mbr', name:'Swissrail + Member',             width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
-  { key:'swissmem',      name:'Swissmem',                       width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
-  { key:'swissmem_mbr',  name:'Swissmem + Member',              width:580.83, height:990.24, color:'#d3222a', mirror:true, rows:[{field:'contact_x_companyName',fontSize:32,bold:true,marginTop:190,align:'center'},{field:'contact_firstName contact_lastName',fontSize:36,bold:false,marginTop:10,align:'center'}] },
-];
-const DEFAULT_RULES = [
-  { id:'r1', name:'Swissrail + AWF + Stimmberechtigt', logic:'AND', template:'awf_member_sb', conditions:[{attr:'guest_x_member',op:'eq',value:'21996a6d-1db3-48ab-aeda-9bdcb80c4ac1'},{attr:'guest_x_awf_teilnehmer',op:'eq',value:'true'},{attr:'guest_x_Stimmberechtigt',op:'eq',value:'true'}] },
-  { id:'r2', name:'Swissrail + AWF',                   logic:'AND', template:'swissrail_mbr', conditions:[{attr:'guest_x_member',op:'eq',value:'21996a6d-1db3-48ab-aeda-9bdcb80c4ac1'},{attr:'guest_x_awf_teilnehmer',op:'eq',value:'true'}] },
-  { id:'r3', name:'Swissrail',                         logic:'AND', template:'swissrail',     conditions:[{attr:'guest_x_member',op:'eq',value:'21996a6d-1db3-48ab-aeda-9bdcb80c4ac1'}] },
-  { id:'r4', name:'Swissmem + AWF + Stimmberechtigt',  logic:'AND', template:'awf_member_sb', conditions:[{attr:'guest_x_member',op:'eq',value:'73d58ee3-e715-4b9d-9412-1c33d5ddc563'},{attr:'guest_x_awf_teilnehmer',op:'eq',value:'true'},{attr:'guest_x_Stimmberechtigt',op:'eq',value:'true'}] },
-  { id:'r5', name:'Swissmem + AWF',                    logic:'AND', template:'swissmem_mbr',  conditions:[{attr:'guest_x_member',op:'eq',value:'73d58ee3-e715-4b9d-9412-1c33d5ddc563'},{attr:'guest_x_awf_teilnehmer',op:'eq',value:'true'}] },
-  { id:'r6', name:'Swissmem',                          logic:'AND', template:'swissmem',      conditions:[{attr:'guest_x_member',op:'eq',value:'73d58ee3-e715-4b9d-9412-1c33d5ddc563'}] },
-  { id:'r7', name:'AWF + Stimmberechtigt',             logic:'AND', template:'awf_sb',        conditions:[{attr:'guest_x_awf_teilnehmer',op:'eq',value:'true'},{attr:'guest_x_Stimmberechtigt',op:'eq',value:'true'}] },
-  { id:'r8', name:'AWF',                               logic:'AND', template:'awf_standard',  conditions:[{attr:'guest_x_awf_teilnehmer',op:'eq',value:'true'}] },
-  { id:'r9', name:'GV + Stimmberechtigt',              logic:'AND', template:'gv_sb',         conditions:[{attr:'guest_x_Stimmberechtigt',op:'eq',value:'true'}] },
-];
-const DEFAULT_FALLBACK = 'gv_gast';
-
-// Like loadProjectBadgeConfig but always returns non-null arrays —
-// falls back to DEFAULT_TEMPLATES / DEFAULT_RULES when the file has nulls.
-function loadProjectBadgeConfigWithDefaults(id) {
-  const cfg = loadProjectBadgeConfig(id);
-  return {
-    templates:       cfg.templates       || DEFAULT_TEMPLATES,
-    eventGroups:     cfg.eventGroups     || [],
-    rules:           cfg.rules           || DEFAULT_RULES,
-    fallback:        cfg.fallback        || DEFAULT_FALLBACK,
-    selfRegistration: cfg.selfRegistration || {},
-  };
-}
-
-// Shared routing engine — used by both /api/kiosk/scan and future endpoints.
-// Returns the template key to use for a given attrs object.
-function selectTemplateKey(attrs, badgeCfg) {
-  function evalCond(c, a) {
-    const raw = a[c.attr];
-    const sv  = String(raw ?? '').toLowerCase();
-    const cv  = String(c.value ?? '').toLowerCase();
-    switch(c.op) {
-      case 'eq':       return sv === cv;
-      case 'neq':      return sv !== cv;
-      case 'contains': return sv.includes(cv);
-      case 'exists':   return raw !== undefined && raw !== null && raw !== '';
-      case 'true':     return raw === true || sv === 'true';
-      case 'false':    return raw === false || sv === 'false';
-      default:         return false;
-    }
-  }
-  function evalRules(rules, label) {
-    for (const rule of (rules || [])) {
-      const results = rule.conditions.map(c => {
-        const raw  = attrs[c.attr];
-        const sv   = String(raw ?? '').toLowerCase();
-        const cv   = String(c.value ?? '').toLowerCase();
-        const pass = evalCond(c, attrs);
-        console.log(`[routing]   ${label} | rule:"${rule.name}" | ${c.attr} ${c.op} "${c.value}" | attrVal=${JSON.stringify(raw)} | ${pass?'✓':'✗'}`);
-        return pass;
-      });
-      const match = rule.logic === 'OR' ? results.some(Boolean) : results.every(Boolean);
-      if (match) return rule.template;
-    }
-    return null;
-  }
-
-  const matchedEventId = attrs._matchedEventId;
-
-  console.log('[routing] matchedEventId:', matchedEventId);
-  console.log('[routing] eventGroups:', JSON.stringify((badgeCfg.eventGroups||[]).map(g => ({
-    eventId: g.eventId, rulesCount: g.rules?.length || 0
-  }))));
-  console.log('[routing] globalRules:', badgeCfg.rules?.length || 0);
-
-  // 1. Try event-scoped group first
-  if (matchedEventId && Array.isArray(badgeCfg.eventGroups)) {
-    const group = badgeCfg.eventGroups.find(g => g.eventId === matchedEventId);
-    if (group) {
-      console.log('[routing] found group with', group.rules?.length || 0, 'rules');
-      const key = evalRules(group.rules, 'event');
-      if (key) { console.log('[routing] matched event rule ->', key); return key; }
-    } else {
-      console.log('[routing] no group found for event', matchedEventId);
-    }
-  }
-
-  // 2. Fall through to global rules
-  const key = evalRules(badgeCfg.rules, 'global');
-  if (key) { console.log('[routing] matched global rule ->', key); return key; }
-
-  console.log('[routing] no match -> fallback:', badgeCfg.fallback || DEFAULT_FALLBACK);
-  // 3. Final fallback
-  return badgeCfg.fallback || DEFAULT_FALLBACK;
 }
 
 // ─── Migrate legacy badge-config.json ────────────────────────────────────────
@@ -349,36 +135,12 @@ async function getToken(projectId) {
       params.append('client_id', creds.clientId);
       params.append('client_secret', creds.clientSecret);
       params.append('scope','email profile');
-
-      // Retry loop — on Raspberry Pi, the system clock may not be synced yet
-      // after a cold boot (no hardware RTC), causing TLS cert validation to fail
-      // with CERT_DATE_INVALID / unknown issuer. Retry for up to 2 minutes.
-      const MAX_ATTEMPTS = 12;
-      const RETRY_DELAY_MS = 10000; // 10s between retries
-      let lastErr;
-      for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-        try {
-          const res = await fetch(creds.tokenUrl, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:params });
-          if (!res.ok) throw new Error(`Token fetch failed (${res.status}): ${await res.text()}`);
-          const data = await res.json();
-          cache.token = data.access_token;
-          cache.expires = Date.now() + (data.expires_in||300)*1000;
-          if (attempt > 1) console.log(`[token] Succeeded on attempt ${attempt} (clock sync likely completed)`);
-          return cache.token;
-        } catch(err) {
-          lastErr = err;
-          const msg = err.message || '';
-          // Detect TLS/cert errors that are caused by clock skew — retry those
-          const isClockError = /CERT_DATE_INVALID|UNABLE_TO_VERIFY_LEAF|UNKNOWN_ISSUER|SEC_ERROR|certificate|ssl|tls/i.test(msg);
-          if (isClockError && attempt < MAX_ATTEMPTS) {
-            console.warn(`[token] TLS error on attempt ${attempt}/${MAX_ATTEMPTS} (possible clock skew — retrying in ${RETRY_DELAY_MS/1000}s): ${msg}`);
-            await new Promise(r => setTimeout(r, RETRY_DELAY_MS));
-          } else {
-            throw err; // non-TLS error or max retries reached — fail immediately
-          }
-        }
-      }
-      throw lastErr;
+      const res = await fetch(creds.tokenUrl, { method:'POST', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body:params });
+      if (!res.ok) throw new Error(`Token fetch failed (${res.status}): ${await res.text()}`);
+      const data = await res.json();
+      cache.token = data.access_token;
+      cache.expires = Date.now() + (data.expires_in||300)*1000;
+      return cache.token;
     } finally {
       cache.inflight = null;
     }
@@ -407,16 +169,11 @@ app.get('/api/projects', (req, res) => {
 });
 
 app.post('/api/projects', (req, res) => {
-  const { name } = req.body;
+  const { name, eventId='' } = req.body;
   if (!name?.trim()) return res.status(400).json({ error:'name required' });
-  // Accept either eventIds[] (new) or eventId string (legacy) from the client
-  const eventIds = Array.isArray(req.body.eventIds)
-    ? req.body.eventIds.map(s => (s||'').trim()).filter(Boolean)
-    : (req.body.eventId ? [req.body.eventId.trim()] : []);
-  const eventId = eventIds[0] || '';
   const id = uuidv4();
   const { clientId='', clientSecret='', tokenUrl='', apiBase='' } = req.body;
-  const project = { id, name:name.trim(), eventId, eventIds, clientId, clientSecret, tokenUrl, apiBase, createdAt:new Date().toISOString() };
+  const project = { id, name:name.trim(), eventId, clientId, clientSecret, tokenUrl, apiBase, createdAt:new Date().toISOString() };
   ensureProjectDirs(id);
   const projects = loadProjects();
   projects.push(project);
@@ -429,18 +186,7 @@ app.patch('/api/projects/:id', (req, res) => {
   const idx = projects.findIndex(p => p.id === req.params.id);
   if (idx === -1) return res.status(404).json({ error:'not found' });
   if (req.body.name !== undefined) projects[idx].name = req.body.name.trim();
-  // Accept either eventIds[] (new) or eventId string (legacy); keep both fields in sync
-  if (req.body.eventIds !== undefined) {
-    const ids = Array.isArray(req.body.eventIds)
-      ? req.body.eventIds.map(s => (s||'').trim()).filter(Boolean)
-      : [req.body.eventIds].map(s => (s||'').trim()).filter(Boolean);
-    projects[idx].eventIds = ids;
-    projects[idx].eventId  = ids[0] || '';
-  } else if (req.body.eventId !== undefined) {
-    const id0 = (req.body.eventId || '').trim();
-    projects[idx].eventId  = id0;
-    projects[idx].eventIds = id0 ? [id0] : [];
-  }
+  if (req.body.eventId !== undefined) projects[idx].eventId = req.body.eventId;
   if (req.body.clientId !== undefined) projects[idx].clientId = req.body.clientId;
   if (req.body.clientSecret !== undefined) projects[idx].clientSecret = req.body.clientSecret;
   if (req.body.tokenUrl !== undefined) projects[idx].tokenUrl = req.body.tokenUrl;
@@ -486,19 +232,16 @@ app.post('/api/projects/active', (req, res) => {
   if (!project) return res.status(404).json({ error:'not found' });
   config.activeProjectId = projectId;
   saveConfig(config);
-  const eventIds = getProjectEventIds(project);
-  res.json({ ok:true, activeProjectId:projectId,
-    eventId:  project.eventId,
-    eventIds,
-    clientId: project.clientId||'', tokenUrl:project.tokenUrl||'', apiBase:project.apiBase||'',
+  res.json({ ok:true, activeProjectId:projectId, eventId:project.eventId,
+    clientId:project.clientId||'', tokenUrl:project.tokenUrl||'', apiBase:project.apiBase||'',
     hasSecret:!!(project.clientSecret) });
 });
 
 // ─── Badge Config (project-scoped) ────────────────────────────────────────────
 app.get('/api/badge-config', (req, res) => {
   const id = req.query.projectId || getActiveProjectId();
-  if (!id) return res.json({ templates: DEFAULT_TEMPLATES, rules: DEFAULT_RULES, fallback: DEFAULT_FALLBACK });
-  res.json(loadProjectBadgeConfigWithDefaults(id));
+  if (!id) return res.json({ templates:null, rules:null, fallback:null });
+  res.json(loadProjectBadgeConfig(id));
 });
 
 app.post('/api/badge-config', (req, res) => {
@@ -507,42 +250,12 @@ app.post('/api/badge-config', (req, res) => {
     if (!id) return res.status(400).json({ error:'no active project' });
     const existing = loadProjectBadgeConfig(id);
     saveProjectBadgeConfig(id, {
-      templates:        req.body.templates        !== undefined ? req.body.templates        : existing.templates,
-      eventGroups:      req.body.eventGroups      !== undefined ? req.body.eventGroups      : (existing.eventGroups || []),
-      rules:            req.body.rules            !== undefined ? req.body.rules            : existing.rules,
-      fallback:         req.body.fallback         !== undefined ? req.body.fallback         : existing.fallback,
-      selfRegistration: req.body.selfRegistration !== undefined ? req.body.selfRegistration : (existing.selfRegistration || {}),
+      templates: req.body.templates !== undefined ? req.body.templates : existing.templates,
+      rules:     req.body.rules     !== undefined ? req.body.rules     : existing.rules,
+      fallback:  req.body.fallback  !== undefined ? req.body.fallback  : existing.fallback,
     });
     res.json({ ok:true });
   } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-// ─── Routing debug — read-only, shows exactly what the kiosk scan would use ──
-// GET /api/kiosk/routing-debug
-// Returns the resolved badge config (with defaults) plus the raw file content,
-// so you can confirm rules are populated without performing an actual scan.
-app.get('/api/kiosk/routing-debug', (req, res) => {
-  const id = getActiveProjectId();
-  if (!id) return res.status(400).json({ error: 'no active project' });
-  const raw  = loadProjectBadgeConfig(id);
-  const resolved = loadProjectBadgeConfigWithDefaults(id);
-  res.json({
-    activeProjectId: id,
-    rawFromDisk: {
-      templatesCount:   raw.templates?.length    ?? null,
-      eventGroupsCount: raw.eventGroups?.length  ?? null,
-      rulesCount:       raw.rules?.length        ?? null,
-      fallback:         raw.fallback             ?? null,
-    },
-    resolvedForKiosk: {
-      templatesCount:   resolved.templates.length,
-      eventGroupsCount: resolved.eventGroups.length,
-      rulesCount:       resolved.rules.length,
-      fallback:         resolved.fallback,
-      eventGroups:      resolved.eventGroups.map(g => ({ eventId: g.eventId, rulesCount: g.rules?.length || 0, rules: g.rules })),
-      globalRules:      resolved.rules,
-    },
-  });
 });
 
 // ─── Badge Images (project-scoped) ────────────────────────────────────────────
@@ -646,82 +359,6 @@ app.get('/api/event/:id', async (req, res) => {
     const r = await fetch(`${apiBase}/_gw/s-events/external-api/events/${req.params.id}`,{headers:{Authorization:`Bearer ${token}`}});
     if(!r.ok) throw new Error(`API error ${r.status}`); res.json(await r.json());
   } catch(e) { res.status(500).json({ error:e.message }); }
-});
-
-// Resolve a list of event IDs to their display names in one round-trip.
-// GET /api/events/names?ids=uuid1,uuid2,…
-// Returns { names: { uuid: "Event Name", … }, errors: { uuid: "message", … } }
-app.get('/api/events/names', async (req, res) => {
-  try {
-    const pid = getActiveProjectId();
-    const token = await getToken(pid);
-    const { apiBase } = getEffectiveCredentials(pid);
-    const ids = (req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean);
-    if (!ids.length) return res.json({ names: {}, errors: {} });
-
-    // Helper: extract display name from the Colada365 event object
-    function extractEventName(ev) {
-      const props = ev?.properties || ev?.attributes || {};
-      return props.title || props.name || props.event_name ||
-             ev?.name || ev?.title || null;
-    }
-
-    const results = await Promise.allSettled(
-      ids.map(id =>
-        fetch(`${apiBase}/_gw/s-events/external-api/events/${id}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }).then(r => {
-          if (!r.ok) throw new Error(`HTTP ${r.status}`);
-          return r.json();
-        })
-      )
-    );
-
-    const names = {};
-    const errors = {};
-    ids.forEach((id, i) => {
-      const r = results[i];
-      if (r.status === 'fulfilled') {
-        const name = extractEventName(r.value);
-        names[id] = name || `Event ${id.slice(0, 8)}…`;
-      } else {
-        errors[id] = r.reason?.message || 'unknown error';
-        names[id] = `Event ${id.slice(0, 8)}…`; // graceful fallback
-      }
-    });
-
-    res.json({ names, errors });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// Fetch participant groups for a given event.
-// GET /api/events/:eventId/participantgroups
-// Returns { groups: [{ id, name }] }
-app.get('/api/events/:eventId/participantgroups', async (req, res) => {
-  try {
-    const pid = getActiveProjectId();
-    const token = await getToken(pid);
-    const { apiBase } = getEffectiveCredentials(pid);
-    const { eventId } = req.params;
-    const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
-
-    const url = `${apiBase}/_gw/s-events-participant-groups/external-api/events/${eventId}/participantgroups`;
-    const r = await fetch(url, { headers });
-    if (!r.ok) throw new Error(`API error ${r.status}: ${(await r.text()).slice(0, 200)}`);
-    const data = await r.json();
-
-    const arr = Array.isArray(data) ? data
-      : (data.participantGroups || data.participantgroups || data.groups || data.items || data.data || []);
-
-    const groups = arr.map(g => {
-      const props = g.properties || g.attributes || {};
-      const name  = props.name || props.title || props.displayName
-                 || g.name || g.title || g.displayName || g.id;
-      return { id: g.id || g.uid, name };
-    }).filter(g => g.id);
-
-    res.json({ groups });
-  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // Schema endpoint — scans all guests and infers field types + unique values
@@ -896,32 +533,6 @@ app.post('/api/guests/:eventId/:guestId/checkin', async (req, res) => {
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
-app.post('/api/guests/:eventId/:guestId/undo-checkin', async (req, res) => {
-  try {
-    const pid = getActiveProjectId();
-    const token = await getToken(pid);
-    const { apiBase } = getEffectiveCredentials(pid);
-    const guest = req.body;
-    const existingAttrs = guest.attributes || guest.properties || {};
-    const { _matchedEventId: _omit, ...cleanAttrs } = existingAttrs;
-    // Reset check-in: set the boolean back to false and $unset the date field
-    // (Colada365 rejects false for a date-type field — $unset clears it properly)
-    const patchAttrs = { ...cleanAttrs, guest_x_checkedin: false };
-    delete patchAttrs.guest_x_checkedinat; // don't send the date field in attributes
-    const body = {
-      attributes: patchAttrs,
-      $unset: { 'attributes.guest_x_checkedinat': true },
-    };
-    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json', 'Cache-Control': 'no-cache' };
-    const rev = guest.revision || existingAttrs.revision;
-    if (rev) headers['If-Match'] = rev;
-    const r = await fetch(`${apiBase}/_gw/s-events-guests/external-api/events/${req.params.eventId}/guests/${req.params.guestId}`, { method: 'PATCH', headers, body: JSON.stringify(body) });
-    const text = await r.text();
-    if (!r.ok) throw new Error(`API error ${r.status}: ${text.slice(0, 200)}`);
-    try { res.json(JSON.parse(text)); } catch(e) { res.json({ ok: true }); }
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
 app.post('/api/guests/:eventId/:guestId/badge', async (req, res) => {
   try {
     const attrs = req.body.attributes||{};
@@ -930,191 +541,6 @@ app.post('/api/guests/:eventId/:guestId/badge', async (req, res) => {
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
-// ─── Self-registration ────────────────────────────────────────────────────────
-
-// Returns the registration config for the active station + option labels for
-// any choice fields so the kiosk can render dropdowns without extra API calls.
-app.get('/api/kiosk/registration-config', async (req, res) => {
-  try {
-    const pid = getActiveProjectId();
-    const stations = loadKioskStations(pid);
-    const stationId = req.query.stationId;
-    const station = stationId ? stations.find(s => s.id === stationId) : null;
-    if (!station?.selfRegistration?.enabled) return res.json({ enabled: false });
-
-    const token = await getToken(pid);
-    const { apiBase } = getEffectiveCredentials(pid);
-
-    // Self-reg config (participant group + fields) lives in badge-config per event
-    const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
-    const selfReg  = badgeCfg.selfRegistration || {}; // { [eventId]: { participantGroup, fields } }
-
-    // Resolve event names — fetch each event individually in parallel
-    const projects = loadProjects();
-    const project  = projects.find(p => p.id === pid);
-    const eventIds = getProjectEventIds(project);
-    let eventNames = {};
-    if (eventIds.length) {
-      const settled = await Promise.allSettled(
-        eventIds.map(eid =>
-          fetch(`${apiBase}/_gw/s-events/external-api/events/${eid}`,
-            { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } })
-            .then(r => r.ok ? r.json() : null)
-            .then(ev => {
-              if (!ev) return;
-              const props = ev.properties || ev.attributes || {};
-              const name  = props.title || props.name || props.event_name
-                         || ev.name || ev.title || null;
-              if (name) eventNames[eid] = name;
-            })
-        )
-      );
-      settled.forEach((s, i) => {
-        if (s.status === 'rejected')
-          console.warn(`[reg-config] Could not resolve event name for ${eventIds[i]}:`, s.reason?.message);
-      });
-    }
-
-    // Build a flat labelMap from all choice field options across all events
-    const labelMap = {};
-    for (const evCfg of Object.values(selfReg)) {
-      for (const f of (evCfg.fields || [])) {
-        if (f.type === 'choice') {
-          for (const opt of (f.options || [])) {
-            if (opt.value && opt.label) labelMap[opt.value] = opt.label;
-          }
-        }
-      }
-    }
-
-    res.json({ enabled: true, selfReg, eventIds, eventNames, labelMap });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-// Create a new guest registration and immediately check them in + return badge config.
-// Body: { eventId, attributes: { contact_firstName, contact_lastName, contact_email, contact_commLang, … } }
-app.post('/api/kiosk/register', async (req, res) => {
-  try {
-    const pid = getActiveProjectId();
-    const token = await getToken(pid);
-    const { apiBase } = getEffectiveCredentials(pid);
-
-    const { eventId, attributes: inputAttrs = {}, stationId } = req.body;
-    if (!eventId) return res.status(400).json({ error: 'eventId required' });
-    if (!inputAttrs.contact_firstName || !inputAttrs.contact_lastName || !inputAttrs.contact_email) {
-      return res.status(400).json({ error: 'firstName, lastName and email are required' });
-    }
-
-    // Load self-registration config for this event from badge-config (not station)
-    const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
-    const evSelfReg = (badgeCfg.selfRegistration || {})[eventId] || {};
-
-    // Build the attributes payload — strip any top-level structural fields
-    // that Colada365 expects at the body root, not inside attributes
-    const attrs = { ...inputAttrs };
-    // Colada365 convention: include $unset for the check-in date so it starts clean
-    attrs.guest_x_checkedinat = '$unset';
-
-    // Build the Colada365 POST body — participantGroupId is top-level, not in attributes
-    const createBody = {
-      participantGroupId: evSelfReg.participantGroup || null,
-      departmentId:       null,
-      attributes:         attrs,
-    };
-
-    const base    = `${apiBase}/_gw/s-events-guests/external-api/events/${eventId}/guests`;
-    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
-
-    // 1. Create the guest — Colada365 returns 201 Created
-    const createRes = await fetch(base, { method: 'POST', headers, body: JSON.stringify(createBody) });
-    const createText = await createRes.text();
-    if (createRes.status !== 201 && !createRes.ok) {
-      throw new Error(`Registration failed (${createRes.status}): ${createText.slice(0, 300)}`);
-    }
-
-    // Parse whatever body came back — on 201 it may be minimal ({ id } or even empty)
-    let guest = {};
-    try { const parsed = JSON.parse(createText); guest = Array.isArray(parsed) ? parsed[0] : parsed; } catch(e) {}
-
-    // Extract guest ID — may be in body or in Location header
-    let guestId = guest.id || guest.uid;
-    if (!guestId) {
-      const loc = createRes.headers.get('Location') || '';
-      const m   = loc.match(/\/guests\/([^/?]+)/);
-      if (m) guestId = m[1];
-    }
-    if (!guestId) throw new Error('No guest ID returned from Colada365 (no id in body or Location header)');
-
-    // 2. Always re-fetch the full guest record after creation to get the current
-    //    revision — Colada365 increments it internally after creation (assigning
-    //    guest_code, triggering workflows), so the 201 revision is already stale.
-    try {
-      const fetchRes = await fetch(`${base}/${guestId}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
-      if (fetchRes.ok) guest = await fetchRes.json();
-    } catch(e) { console.warn('[register] re-fetch error:', e.message); }
-
-    // 3. Check in the newly created guest.
-    // Colada365 may still be updating the guest (workflows, guest_code assignment)
-    // between our re-fetch and PATCH — retry with a fresh fetch on each 409.
-    const today = new Date().toISOString().split('T')[0];
-    let checkedIn = false;
-    for (let attempt = 1; attempt <= 5; attempt++) {
-      const guestAttrs = guest.attributes || guest.properties || {};
-      const baseAttrs  = Object.keys(guestAttrs).length ? guestAttrs : inputAttrs;
-      const { guest_x_checkedinat: _unset, _matchedEventId: _mid, ...cleanBaseAttrs } = baseAttrs;
-      const patchAttrs = { ...cleanBaseAttrs, guest_x_checkedin: true, guest_x_checkedinat: today };
-      const ciHeaders  = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
-      const rev = guest.revision || guestAttrs.revision;
-      if (rev) ciHeaders['If-Match'] = rev;
-      const ciRes = await fetch(`${base}/${guestId}`, { method: 'PATCH', headers: ciHeaders, body: JSON.stringify({ attributes: patchAttrs }) });
-      if (ciRes.ok) { checkedIn = true; break; }
-      const ciErr = await ciRes.text();
-      if (ciRes.status === 409 && attempt < 5) {
-        await new Promise(r => setTimeout(r, 300 * attempt));
-        try {
-          const refetch = await fetch(`${base}/${guestId}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
-          if (refetch.ok) guest = await refetch.json();
-        } catch(e) {}
-      } else {
-        console.warn(`[register] check-in PATCH failed (${ciRes.status}): ${ciErr.slice(0, 200)}`);
-        break;
-      }
-    }
-    if (!checkedIn) console.warn('[register] guest created but check-in did not complete');
-
-    // 4. Build response attrs with _matchedEventId for badge routing
-    const finalGuestAttrs = guest.attributes || guest.properties || {};
-    const responseAttrs = {
-      ...inputAttrs,
-      ...finalGuestAttrs,
-      guest_x_checkedin:   true,
-      guest_x_checkedinat: today,
-      _matchedEventId:     eventId,
-    };
-
-    const selectedTemplate = selectTemplateKey(responseAttrs, badgeCfg);
-
-    _recordKiosk(stationId || null, null, 'register');
-
-    res.json({
-      ok: true,
-      guest: {
-        firstName: responseAttrs.contact_firstName || '',
-        lastName:  responseAttrs.contact_lastName  || '',
-        company:   responseAttrs.contact_x_companyName || '',
-        id: guestId,
-        attributes: responseAttrs,
-      },
-      badgeConfig: {
-        templates:   badgeCfg.templates,
-        eventGroups: badgeCfg.eventGroups,
-        rules:       badgeCfg.rules,
-        fallback:    badgeCfg.fallback,
-        _selectedTemplate: selectedTemplate,
-      },
-    });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
 
 // ─── Kiosk stations ───────────────────────────────────────────────────────────
 function kioskStationsPath(projectId) {
@@ -1162,7 +588,7 @@ app.get('/api/kiosk/stations', (req, res) => {
 app.post('/api/kiosk/stations', (req, res) => {
   const id = getActiveProjectId();
   if (!id) return res.status(400).json({ error: 'no active project' });
-  const { name, welcome, success, notFound, alreadyCheckedIn, accentColor, bgColor, logoText, printEndpoint, cameraMode } = req.body;
+  const { name, welcome, success, notFound, alreadyCheckedIn, accentColor, bgColor, bgColorLight, logoText, hideLogoText, printEndpoint, signalEndpoint, cameraMode, disableGradient, hideIcon, guestSearch, selfRegistration } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name required' });
   const stations = loadKioskStations(id);
   const stationId = req.body.id || uuidv4();
@@ -1209,18 +635,19 @@ app.post('/api/kiosk/stations', (req, res) => {
     success:          extractScreenBg(success,          'success',  existingStation.success),
     notFound:         extractScreenBg(notFound,         'notfound', existingStation.notFound),
     alreadyCheckedIn: extractScreenBg(alreadyCheckedIn, 'already',  existingStation.alreadyCheckedIn),
-    accentColor:   accentColor   || '#d3222a',
-    bgColor:       bgColor       || '#0a0a0a',
-    bgColorLight:  req.body.bgColorLight  || '#f0f0f0',
-    logoText:      logoText      || '',
-    hideLogoText:  req.body.hideLogoText  || false,
-    printEndpoint:  printEndpoint  || null,
-    signalEndpoint: req.body.signalEndpoint || null,
-    cameraMode:    cameraMode    || false,
-    lightMode:     lightMode     || false,
-    selfRegistration: { enabled: !!(req.body.selfRegistration?.enabled) },
-    guestSearch:      { enabled: !!(req.body.guestSearch?.enabled) },
-    hideIcon:         !!(req.body.hideIcon),
+    accentColor:      accentColor      || '#d3222a',
+    bgColor:          bgColor          || '#0a0a0a',
+    bgColorLight:     bgColorLight     || '#f0f0f0',
+    logoText:         logoText         || '',
+    hideLogoText:     hideLogoText     || false,
+    printEndpoint:    printEndpoint    || null,
+    signalEndpoint:   signalEndpoint   || null,
+    cameraMode:       cameraMode       || false,
+    lightMode:        lightMode        || false,
+    disableGradient:  disableGradient  || false,
+    hideIcon:         hideIcon         || false,
+    guestSearch:      guestSearch      || { enabled: false },
+    selfRegistration: selfRegistration || { enabled: false },
   };
   if (existing >= 0) stations[existing] = station; else stations.push(station);
   saveKioskStations(id, stations);
@@ -1235,115 +662,6 @@ app.delete('/api/kiosk/stations/:stationId', (req, res) => {
   res.json({ ok: true });
 });
 
-app.post('/api/kiosk/stations/:stationId/duplicate', (req, res) => {
-  const pid = getActiveProjectId();
-  if (!pid) return res.status(400).json({ error: 'no active project' });
-  const stations = loadKioskStations(pid);
-  const src = stations.find(s => s.id === req.params.stationId);
-  if (!src) return res.status(404).json({ error: 'station not found' });
-
-  const newId   = uuidv4();
-  const newName = (req.body.name || src.name + ' (copy)').trim();
-  const imgDir  = projectImagesDir(pid);
-
-  // Deep-clone the source station, assign new id and name
-  const copy = JSON.parse(JSON.stringify(src));
-  copy.id   = newId;
-  copy.name = newName;
-
-  // For each screen, copy the image file and update the bgImageKey reference
-  const SCREENS = [
-    { key: 'welcome',          screenKey: 'welcome'  },
-    { key: 'success',          screenKey: 'success'  },
-    { key: 'notFound',         screenKey: 'notfound' },
-    { key: 'alreadyCheckedIn', screenKey: 'already'  },
-  ];
-  for (const { key, screenKey } of SCREENS) {
-    const screen = copy[key];
-    if (!screen?.bgImageKey) continue;
-    const srcFile = path.join(imgDir, `${screen.bgImageKey}.txt`);
-    const newKey  = `kiosk-${newId}-${screenKey}`;
-    const dstFile = path.join(imgDir, `${newKey}.txt`);
-    try {
-      if (fs.existsSync(srcFile)) {
-        ensureProjectDirs(pid);
-        fs.copyFileSync(srcFile, dstFile);
-        screen.bgImageKey = newKey;
-      } else {
-        delete screen.bgImageKey;
-      }
-    } catch(e) {
-      delete screen.bgImageKey; // non-fatal — skip image if copy fails
-    }
-  }
-
-  stations.push(copy);
-  saveKioskStations(pid, stations);
-  res.json({ ok: true, station: copy });
-});
-
-// Kiosk name search — searches across all project events in parallel.
-// GET /api/kiosk/search?q=name&stationId=...
-// Returns up to 10 guests (deduplicated by id) with _matchedEventId injected.
-app.get('/api/kiosk/search', async (req, res) => {
-  try {
-    const pid = getActiveProjectId();
-    const q   = (req.query.q || '').trim();
-    if (!q || q.length < 2) return res.json([]);
-
-    const token = await getToken(pid);
-    const { apiBase } = getEffectiveCredentials(pid);
-    const projects = loadProjects();
-    const project  = projects.find(p => p.id === pid);
-    const eventIds = getProjectEventIds(project);
-    if (!eventIds.length) return res.json([]);
-
-    // Search each event in parallel
-    const results = await Promise.allSettled(
-      eventIds.map(eid =>
-        fetch(`${apiBase}/_gw/s-events-guests/external-api/events/${eid}/guests?filter[name]=${encodeURIComponent(q)}`,
-          { headers: { Authorization: `Bearer ${token}`, Range: 'guests 0-9' } })
-          .then(r => r.ok ? r.json() : [])
-          .then(data => {
-            const arr = Array.isArray(data) ? data : [];
-            // Inject _matchedEventId and filter by name client-side as fallback
-            const term = q.toLowerCase();
-            return arr
-              .filter(g => {
-                const a = g.attributes || g.properties || {};
-                const full = [a.contact_firstName, a.contact_lastName,
-                  (a.contact_firstName||'')+' '+(a.contact_lastName||''),
-                  a.contact_x_companyName, a.contact_email].join(' ').toLowerCase();
-                return full.includes(term);
-              })
-              .map(g => {
-                const attrs = g.attributes || g.properties || {};
-                attrs._matchedEventId = eid;
-                if (g.attributes) g.attributes = attrs;
-                else g.properties = attrs;
-                return g;
-              });
-          })
-      )
-    );
-
-    // Merge, deduplicate by guest id, limit to 10
-    const seen = new Set();
-    const merged = [];
-    for (const r of results) {
-      if (r.status !== 'fulfilled') continue;
-      for (const g of r.value) {
-        const id = g.id || g.uid;
-        if (id && !seen.has(id)) { seen.add(id); merged.push(g); }
-        if (merged.length >= 10) break;
-      }
-      if (merged.length >= 10) break;
-    }
-    _recordKiosk(req.query.stationId || null, null, 'search');
-    res.json(merged);
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
 app.post('/api/kiosk/scan', async (req, res) => {
   try {
     const pid = getActiveProjectId();
@@ -1351,135 +669,62 @@ app.post('/api/kiosk/scan', async (req, res) => {
     const { apiBase } = getEffectiveCredentials(pid);
     const projects = loadProjects();
     const project = projects.find(p => p.id === pid);
-    const eventIds = getProjectEventIds(project);
-    if (!eventIds.length) return res.status(400).json({ error: 'no event configured' });
+    const eventId = project?.eventId;
+    if (!eventId) return res.status(400).json({ error: 'no event configured' });
 
     let scanInput = (req.body.scan || '').trim();
-    const scanStationId = req.body.stationId || null;
     if (config.qwertyCorrection && scanInput) scanInput = compensateQwerty(scanInput);
     if (!scanInput) return res.status(400).json({ error: 'scan value required' });
 
-    // Try each event ID in order — stop at the first that returns a matching guest.
-    // IMPORTANT: only use filter[uid] for the event-matching step — the direct-by-ID
-    // endpoint (/guests/{id}) is NOT event-scoped on Colada365 and will return a guest
-    // regardless of which event it's queried against, causing the wrong event to be matched.
-    // filter[uid] is genuinely scoped to the event's guest list.
+    const base = `${apiBase}/_gw/s-events-guests/external-api/events/${eventId}/guests`;
+
+    // 1. Try direct lookup by ID
     let guest = null;
-    let matchedEventId = null;
-
-    if (eventIds.length === 1) {
-      // Single-event fast path: try direct lookup first, then filter[uid]
-      const eid  = eventIds[0];
-      const base = `${apiBase}/_gw/s-events-guests/external-api/events/${eid}/guests`;
-      try {
-        const dr = await fetch(`${base}/${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}` } });
-        if (dr.ok) {
-          const g = await dr.json();
-          const found = Array.isArray(g) ? g[0] : (g?.id || g?.uid ? g : null);
-          if (found) { guest = found; matchedEventId = eid; }
-        }
-      } catch(e) {}
-      if (!guest) {
-        try {
-          const fr = await fetch(`${base}?filter[uid]=${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}`, Range: 'guests 0-0' } });
-          if (fr.ok) {
-            const gs = await fr.json();
-            const arr = Array.isArray(gs) ? gs : [];
-            const found = arr.find(g => {
-              const u = g.uid || g.id || (g.attributes || g.properties || {}).uid || '';
-              return u === scanInput || u.toLowerCase() === scanInput.toLowerCase();
-            }) || null;
-            if (found) { guest = found; matchedEventId = eid; }
-          }
-        } catch(e) {}
+    try {
+      const dr = await fetch(`${base}/${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}` } });
+      if (dr.ok) {
+        const g = await dr.json();
+        guest = Array.isArray(g) ? g[0] : (g?.id || g?.uid ? g : null);
       }
-    } else {
-      // Multi-event: use ONLY filter[uid] — it is event-scoped so we know
-      // exactly which event the guest belongs to.
-      // Run all events in parallel for speed, then pick the first match.
-      const results = await Promise.all(eventIds.map(async eid => {
-        const base = `${apiBase}/_gw/s-events-guests/external-api/events/${eid}/guests`;
-        try {
-          const fr = await fetch(`${base}?filter[uid]=${encodeURIComponent(scanInput)}`, {
-            headers: { Authorization: `Bearer ${token}`, Range: 'guests 0-0' },
-          });
-          if (!fr.ok) return null;
-          const gs  = await fr.json();
-          const arr = Array.isArray(gs) ? gs : [];
-          const found = arr.find(g => {
-            const u = g.uid || g.id || (g.attributes || g.properties || {}).uid || '';
-            return u === scanInput || u.toLowerCase() === scanInput.toLowerCase();
-          }) || null;
-          return found ? { guest: found, matchedEventId: eid } : null;
-        } catch(e) { return null; }
-      }));
-      // Use the first successful result (preserving eventIds order priority)
-      const hit = results.find(r => r !== null);
-      if (hit) { guest = hit.guest; matchedEventId = hit.matchedEventId; }
-    }
+    } catch(e) {}
 
+    // 2. Try filter[uid] — but only accept an EXACT uid match, never fall back to first result
     if (!guest) {
-      _recordKiosk(scanStationId, null, 'scan_failed');
-      return res.json({ result: 'not_found' });
+      const fr = await fetch(`${base}?filter[uid]=${encodeURIComponent(scanInput)}`, { headers: { Authorization: `Bearer ${token}`, Range: 'guests 0-0' } });
+      if (fr.ok) {
+        const gs = await fr.json();
+        const arr = Array.isArray(gs) ? gs : [];
+        guest = arr.find(g => {
+          const u = g.uid || g.id || (g.attributes || g.properties || {}).uid || '';
+          return u === scanInput || u.toLowerCase() === scanInput.toLowerCase();
+        }) || null; // NO fallback to arr[0] — must be exact match
+      }
     }
 
-    // Normalise attributes — Colada365 may return nested (.attributes/.properties)
-    // or flat (all fields at top level). Use whichever has the most keys.
-    const nestedAttrs = guest.attributes || guest.properties || {};
-    const topLevelAttrs = Object.fromEntries(
-      Object.entries(guest).filter(([k]) =>
-        !['id','uid','status','revision','attributes','properties'].includes(k)
-      )
-    );
-    const attrs = Object.keys(nestedAttrs).length >= Object.keys(topLevelAttrs).length
-      ? nestedAttrs
-      : { ...topLevelAttrs, ...nestedAttrs }; // merge, nested takes precedence
+    if (!guest) return res.json({ result: 'not_found' });
 
-    // Inject synthetic attribute so badge routing rules can match on which event was matched
-    attrs._matchedEventId = matchedEventId;
-
+    const attrs = guest.attributes || guest.properties || {};
     const status = guest.status || attrs.status || '';
     const isEligible = status === 'REGISTERED' || status === 'PENDING';
 
-    if (!isEligible) {
-      _recordKiosk(scanStationId, null, 'scan_failed');
-      return res.json({ result: 'invalid_status', status, guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '' } });
-    }
+    if (!isEligible) return res.json({ result: 'invalid_status', status, guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '' } });
 
     const alreadyIn = attrs.guest_x_checkedin === true || (attrs.guest_x_checkedinat && attrs.guest_x_checkedinat !== false && attrs.guest_x_checkedinat !== 'false' && attrs.guest_x_checkedinat !== '');
-    if (alreadyIn) {
-      _recordKiosk(scanStationId, null, 'scan_already');
-      const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
-      const selectedTemplate = selectTemplateKey(attrs, badgeCfg);
-      return res.json({
-        result: 'already_checked_in',
-        matchedEventId,
-        guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', id: guest.id, attributes: attrs, checkedInAt: attrs.guest_x_checkedinat },
-        badgeConfig: { templates: badgeCfg.templates, eventGroups: badgeCfg.eventGroups, rules: badgeCfg.rules, fallback: badgeCfg.fallback, _selectedTemplate: selectedTemplate },
-      });
-    }
+    if (alreadyIn) return res.json({ result: 'already_checked_in', guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', checkedInAt: attrs.guest_x_checkedinat } });
 
     const today = new Date().toISOString().split('T')[0];
-    // Build patch — exclude the synthetic _matchedEventId so it is never sent to Colada365
-    const { _matchedEventId: _omit, ...cleanAttrs } = attrs;
-    const patchAttrs = { ...cleanAttrs, guest_x_checkedin: true, guest_x_checkedinat: today };
+    const patchAttrs = { ...attrs, guest_x_checkedin: true, guest_x_checkedinat: today };
     const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
     const rev = guest.revision || attrs.revision;
     if (rev) headers['If-Match'] = rev;
-    // Check in against the event where the guest was found
-    const checkinBase = `${apiBase}/_gw/s-events-guests/external-api/events/${matchedEventId}/guests`;
-    const pr = await fetch(`${checkinBase}/${guest.id}`, { method: 'PATCH', headers, body: JSON.stringify({ attributes: patchAttrs }) });
+    const pr = await fetch(`${base}/${guest.id}`, { method: 'PATCH', headers, body: JSON.stringify({ attributes: patchAttrs }) });
     if (!pr.ok) throw new Error(`Check-in failed: ${pr.status}`);
 
-    _recordKiosk(scanStationId, null, 'scan_success');
-    const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
-    const selectedTemplate = selectTemplateKey(attrs, badgeCfg);
-
+    const badgeCfg = loadProjectBadgeConfig(pid);
     res.json({
       result: 'success',
-      matchedEventId,
       guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', id: guest.id, attributes: attrs },
-      badgeConfig: { templates: badgeCfg.templates, eventGroups: badgeCfg.eventGroups, rules: badgeCfg.rules, fallback: badgeCfg.fallback, _selectedTemplate: selectedTemplate },
+      badgeConfig: { templates: badgeCfg.templates, rules: badgeCfg.rules, fallback: badgeCfg.fallback },
     });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -1522,48 +767,6 @@ app.post('/api/kiosk/print', express.text({ limit: '20mb' }), async (req, res) =
     console.error('[print proxy]', e.message);
     res.status(502).json({ error: e.message });
   }
-});
-
-// ─── Signal proxy ─────────────────────────────────────────────────────────────
-// Forwards a status signal (success|failed) to the station's signalEndpoint.
-// Using a server-side proxy avoids mixed-content and CORS issues when the
-// signal module is on plain HTTP inside the local network.
-// POST /api/kiosk/signal?stationId=...  body: { status: 'success'|'failed' }
-app.post('/api/kiosk/signal', express.json(), async (req, res) => {
-  const { stationId } = req.query;
-  const { status }    = req.body || {};
-  if (!status) return res.status(400).json({ error: 'status required' });
-
-  const pid = getActiveProjectId();
-  if (!pid) return res.status(400).json({ error: 'no active project' });
-
-  const stations = loadKioskStations(pid);
-  const station  = stations.find(s => s.id === stationId);
-  if (!station?.signalEndpoint) return res.status(400).json({ error: 'no signal endpoint configured' });
-
-  try {
-    const sr = await fetch(station.signalEndpoint, {
-      method:  'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ status }),
-    });
-    if (!sr.ok) throw new Error(`Signal endpoint returned ${sr.status}`);
-    res.json({ ok: true });
-  } catch(e) {
-    console.error('[signal proxy]', e.message);
-    res.status(502).json({ error: e.message });
-  }
-});
-
-// ─── Kiosk event recorder ──────────────────────────────────────────────────────
-// Called by the kiosk after search-driven check-ins (which bypass the scan route)
-// so those outcomes also appear in the monitor station table.
-// POST /api/kiosk/record-event  body: { stationId, event }
-// event: 'scan_success' | 'scan_failed' | 'scan_already' | 'search' | 'register'
-app.post('/api/kiosk/record-event', express.json(), (req, res) => {
-  const { stationId, event } = req.body || {};
-  if (stationId && event) _recordKiosk(stationId, null, event);
-  res.json({ ok: true });
 });
 
 app.get('/kiosk/:stationId', (req, res) => {
