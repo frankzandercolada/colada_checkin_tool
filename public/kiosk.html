@@ -2462,7 +2462,7 @@ async function selectKioskSearchResult(idx) {
     const r = await fetch(`/api/guests/${encodeURIComponent(matchedEid)}/${guestId}/checkin`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(guest),
+      body: JSON.stringify({ ...guest, stationId }),
     });
     const data = await r.json();
     if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);

@@ -171,6 +171,13 @@ function getProjectEventIds(project) {
   return [];
 }
 
+// Returns 'assistant' or 'classic' (default) for the project's check-in field schema.
+// 'assistant' uses: guest_x_assistant_checkedin (ISO datetime), guest_x_assistant_scanner_checkin_id
+// 'classic'   uses: guest_x_checkedin (boolean), guest_x_checkedinat (date string)
+function getCheckinSchema(project) {
+  return project?.checkinSchema === 'assistant' ? 'assistant' : 'classic';
+}
+
 function projectDir(id)        { return path.join(DATA_DIR, 'projects', id); }
 function projectConfigPath(id) { return path.join(projectDir(id), 'badge-config.json'); }
 function projectImagesDir(id)  { return path.join(projectDir(id), 'badge-images'); }
@@ -445,6 +452,7 @@ app.patch('/api/projects/:id', (req, res) => {
   if (req.body.clientSecret !== undefined) projects[idx].clientSecret = req.body.clientSecret;
   if (req.body.tokenUrl !== undefined) projects[idx].tokenUrl = req.body.tokenUrl;
   if (req.body.apiBase !== undefined) projects[idx].apiBase = req.body.apiBase;
+  if (req.body.checkinSchema !== undefined) projects[idx].checkinSchema = req.body.checkinSchema;
   saveProjects(projects);
   res.json({ ok:true, project:projects[idx] });
 });
@@ -880,20 +888,34 @@ app.post('/api/guests/:eventId/:guestId/checkin', async (req, res) => {
     const pid = getActiveProjectId();
     const token = await getToken(pid);
     const { apiBase } = getEffectiveCredentials(pid);
-    const today = new Date().toISOString().split('T')[0];
+    const projects = loadProjects();
+    const project = projects.find(p => p.id === pid);
+    const checkinSchema = getCheckinSchema(project);
+    const now = new Date().toISOString();
+    const today = now.split('T')[0];
     const guest = req.body;
-    const existingAttrs = guest.attributes||guest.properties||{};
-    const patchAttrs = { ...existingAttrs, guest_x_checkedin:true };
-    const ea = existingAttrs.guest_x_checkedinat;
-    if (!ea||ea===false||ea==='false'||ea==='') patchAttrs.guest_x_checkedinat = today;
-    const headers = { Authorization:`Bearer ${token}`, 'Content-Type':'application/json', Accept:'application/json', 'Cache-Control':'no-cache' };
-    const rev = guest.revision||(guest.attributes||{}).revision;
+    const stationId = req.body.stationId || null;
+    const existingAttrs = guest.attributes || guest.properties || {};
+    const { _matchedEventId: _omit, ...cleanAttrs } = existingAttrs;
+    let patchAttrs;
+    if (checkinSchema === 'assistant') {
+      patchAttrs = { ...cleanAttrs,
+        guest_x_assistant_checkedin:          now,
+        guest_x_assistant_scanner_checkin_id: stationId || '',
+      };
+    } else {
+      patchAttrs = { ...cleanAttrs, guest_x_checkedin: true };
+      const ea = existingAttrs.guest_x_checkedinat;
+      if (!ea || ea === false || ea === 'false' || ea === '') patchAttrs.guest_x_checkedinat = today;
+    }
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json', 'Cache-Control': 'no-cache' };
+    const rev = guest.revision || (guest.attributes || {}).revision;
     if (rev) headers['If-Match'] = rev;
-    const r = await fetch(`${apiBase}/_gw/s-events-guests/external-api/events/${req.params.eventId}/guests/${req.params.guestId}`,{method:'PATCH',headers,body:JSON.stringify({attributes:patchAttrs})});
+    const r = await fetch(`${apiBase}/_gw/s-events-guests/external-api/events/${req.params.eventId}/guests/${req.params.guestId}`, { method: 'PATCH', headers, body: JSON.stringify({ attributes: patchAttrs }) });
     const text = await r.text();
-    if (!r.ok) throw new Error(`API error ${r.status}: ${text.slice(0,200)}`);
-    try { res.json(JSON.parse(text)); } catch(e) { res.json({ ok:true }); }
-  } catch(e) { res.status(500).json({ error:e.message }); }
+    if (!r.ok) throw new Error(`API error ${r.status}: ${text.slice(0, 200)}`);
+    try { res.json(JSON.parse(text)); } catch(e) { res.json({ ok: true }); }
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/api/guests/:eventId/:guestId/undo-checkin', async (req, res) => {
@@ -901,17 +923,29 @@ app.post('/api/guests/:eventId/:guestId/undo-checkin', async (req, res) => {
     const pid = getActiveProjectId();
     const token = await getToken(pid);
     const { apiBase } = getEffectiveCredentials(pid);
+    const projects = loadProjects();
+    const project = projects.find(p => p.id === pid);
+    const checkinSchema = getCheckinSchema(project);
     const guest = req.body;
     const existingAttrs = guest.attributes || guest.properties || {};
     const { _matchedEventId: _omit, ...cleanAttrs } = existingAttrs;
-    // Reset check-in: set the boolean back to false and $unset the date field
-    // (Colada365 rejects false for a date-type field — $unset clears it properly)
-    const patchAttrs = { ...cleanAttrs, guest_x_checkedin: false };
-    delete patchAttrs.guest_x_checkedinat; // don't send the date field in attributes
-    const body = {
-      attributes: patchAttrs,
-      $unset: { 'attributes.guest_x_checkedinat': true },
-    };
+
+    let patchAttrs, unsetFields;
+    if (checkinSchema === 'assistant') {
+      patchAttrs = { ...cleanAttrs };
+      delete patchAttrs.guest_x_assistant_checkedin;
+      delete patchAttrs.guest_x_assistant_scanner_checkin_id;
+      unsetFields = {
+        'attributes.guest_x_assistant_checkedin':         true,
+        'attributes.guest_x_assistant_scanner_checkin_id': true,
+      };
+    } else {
+      patchAttrs = { ...cleanAttrs, guest_x_checkedin: false };
+      delete patchAttrs.guest_x_checkedinat;
+      unsetFields = { 'attributes.guest_x_checkedinat': true };
+    }
+
+    const body = { attributes: patchAttrs, $unset: unsetFields };
     const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json', 'Cache-Control': 'no-cache' };
     const rev = guest.revision || existingAttrs.revision;
     if (rev) headers['If-Match'] = rev;
@@ -998,6 +1032,9 @@ app.post('/api/kiosk/register', async (req, res) => {
     const pid = getActiveProjectId();
     const token = await getToken(pid);
     const { apiBase } = getEffectiveCredentials(pid);
+    const projects = loadProjects();
+    const project = projects.find(p => p.id === pid);
+    const checkinSchema = getCheckinSchema(project);
 
     const { eventId, attributes: inputAttrs = {}, stationId } = req.body;
     if (!eventId) return res.status(400).json({ error: 'eventId required' });
@@ -1009,11 +1046,14 @@ app.post('/api/kiosk/register', async (req, res) => {
     const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
     const evSelfReg = (badgeCfg.selfRegistration || {})[eventId] || {};
 
-    // Build the attributes payload — strip any top-level structural fields
-    // that Colada365 expects at the body root, not inside attributes
+    // Build the attributes payload — pre-unset whichever check-in fields apply
     const attrs = { ...inputAttrs };
-    // Colada365 convention: include $unset for the check-in date so it starts clean
-    attrs.guest_x_checkedinat = '$unset';
+    if (checkinSchema === 'assistant') {
+      attrs.guest_x_assistant_checkedin          = '$unset';
+      attrs.guest_x_assistant_scanner_checkin_id = '$unset';
+    } else {
+      attrs.guest_x_checkedinat = '$unset';
+    }
 
     // Build the Colada365 POST body — participantGroupId is top-level, not in attributes
     const createBody = {
@@ -1053,17 +1093,25 @@ app.post('/api/kiosk/register', async (req, res) => {
       if (fetchRes.ok) guest = await fetchRes.json();
     } catch(e) { console.warn('[register] re-fetch error:', e.message); }
 
-    // 3. Check in the newly created guest.
-    // Colada365 may still be updating the guest (workflows, guest_code assignment)
-    // between our re-fetch and PATCH — retry with a fresh fetch on each 409.
-    const today = new Date().toISOString().split('T')[0];
+    // 3. Check in the newly created guest — schema-aware.
+    // Colada365 may still be updating the guest between our re-fetch and PATCH — retry on 409.
+    const now   = new Date().toISOString();
+    const today = now.split('T')[0];
     let checkedIn = false;
     for (let attempt = 1; attempt <= 5; attempt++) {
       const guestAttrs = guest.attributes || guest.properties || {};
       const baseAttrs  = Object.keys(guestAttrs).length ? guestAttrs : inputAttrs;
-      const { guest_x_checkedinat: _unset, _matchedEventId: _mid, ...cleanBaseAttrs } = baseAttrs;
-      const patchAttrs = { ...cleanBaseAttrs, guest_x_checkedin: true, guest_x_checkedinat: today };
-      const ciHeaders  = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
+      const { guest_x_checkedinat: _u1, guest_x_assistant_checkedin: _u2, _matchedEventId: _mid, ...cleanBaseAttrs } = baseAttrs;
+      let patchAttrs;
+      if (checkinSchema === 'assistant') {
+        patchAttrs = { ...cleanBaseAttrs,
+          guest_x_assistant_checkedin:          now,
+          guest_x_assistant_scanner_checkin_id: stationId || '',
+        };
+      } else {
+        patchAttrs = { ...cleanBaseAttrs, guest_x_checkedin: true, guest_x_checkedinat: today };
+      }
+      const ciHeaders = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
       const rev = guest.revision || guestAttrs.revision;
       if (rev) ciHeaders['If-Match'] = rev;
       const ciRes = await fetch(`${base}/${guestId}`, { method: 'PATCH', headers: ciHeaders, body: JSON.stringify({ attributes: patchAttrs }) });
@@ -1084,13 +1132,17 @@ app.post('/api/kiosk/register', async (req, res) => {
 
     // 4. Build response attrs with _matchedEventId for badge routing
     const finalGuestAttrs = guest.attributes || guest.properties || {};
-    const responseAttrs = {
-      ...inputAttrs,
-      ...finalGuestAttrs,
-      guest_x_checkedin:   true,
-      guest_x_checkedinat: today,
-      _matchedEventId:     eventId,
-    };
+    const responseAttrs = checkinSchema === 'assistant'
+      ? { ...inputAttrs, ...finalGuestAttrs,
+          guest_x_assistant_checkedin:          now,
+          guest_x_assistant_scanner_checkin_id: stationId || '',
+          _matchedEventId: eventId,
+        }
+      : { ...inputAttrs, ...finalGuestAttrs,
+          guest_x_checkedin:   true,
+          guest_x_checkedinat: today,
+          _matchedEventId:     eventId,
+        };
 
     const selectedTemplate = selectTemplateKey(responseAttrs, badgeCfg);
 
@@ -1439,6 +1491,8 @@ app.post('/api/kiosk/scan', async (req, res) => {
     // Inject synthetic attribute so badge routing rules can match on which event was matched
     attrs._matchedEventId = matchedEventId;
 
+    const checkinSchema = getCheckinSchema(project);
+
     const status = guest.status || attrs.status || '';
     const isEligible = status === 'REGISTERED' || status === 'PENDING';
 
@@ -1447,23 +1501,37 @@ app.post('/api/kiosk/scan', async (req, res) => {
       return res.json({ result: 'invalid_status', status, guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '' } });
     }
 
-    const alreadyIn = attrs.guest_x_checkedin === true || (attrs.guest_x_checkedinat && attrs.guest_x_checkedinat !== false && attrs.guest_x_checkedinat !== 'false' && attrs.guest_x_checkedinat !== '');
+    // Already-checked-in detection — schema-aware
+    const alreadyIn = checkinSchema === 'assistant'
+      ? !!(attrs.guest_x_assistant_checkedin && attrs.guest_x_assistant_checkedin !== '' && attrs.guest_x_assistant_checkedin !== false)
+      : attrs.guest_x_checkedin === true || (attrs.guest_x_checkedinat && attrs.guest_x_checkedinat !== false && attrs.guest_x_checkedinat !== 'false' && attrs.guest_x_checkedinat !== '');
+
     if (alreadyIn) {
       _recordKiosk(scanStationId, null, 'scan_already');
       const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
       const selectedTemplate = selectTemplateKey(attrs, badgeCfg);
+      const checkedInAt = checkinSchema === 'assistant' ? attrs.guest_x_assistant_checkedin : attrs.guest_x_checkedinat;
       return res.json({
         result: 'already_checked_in',
         matchedEventId,
-        guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', id: guest.id, attributes: attrs, checkedInAt: attrs.guest_x_checkedinat },
+        guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', id: guest.id, attributes: attrs, checkedInAt },
         badgeConfig: { templates: badgeCfg.templates, eventGroups: badgeCfg.eventGroups, rules: badgeCfg.rules, fallback: badgeCfg.fallback, _selectedTemplate: selectedTemplate },
       });
     }
 
-    const today = new Date().toISOString().split('T')[0];
-    // Build patch — exclude the synthetic _matchedEventId so it is never sent to Colada365
+    // Build check-in PATCH attributes — schema-aware
+    const now = new Date().toISOString();
+    const today = now.split('T')[0];
     const { _matchedEventId: _omit, ...cleanAttrs } = attrs;
-    const patchAttrs = { ...cleanAttrs, guest_x_checkedin: true, guest_x_checkedinat: today };
+    let patchAttrs;
+    if (checkinSchema === 'assistant') {
+      patchAttrs = { ...cleanAttrs,
+        guest_x_assistant_checkedin:         now,
+        guest_x_assistant_scanner_checkin_id: scanStationId || '',
+      };
+    } else {
+      patchAttrs = { ...cleanAttrs, guest_x_checkedin: true, guest_x_checkedinat: today };
+    }
     const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
     const rev = guest.revision || attrs.revision;
     if (rev) headers['If-Match'] = rev;
@@ -1530,27 +1598,28 @@ app.post('/api/kiosk/print', express.text({ limit: '20mb' }), async (req, res) =
 // Using a server-side proxy avoids mixed-content and CORS issues when the
 // signal module is on plain HTTP inside the local network.
 // POST /api/kiosk/signal?stationId=...  body: { status: 'success'|'failed' }
-app.post('/api/kiosk/signal', async (req, res) => {
-  const { status, signalEndpoint } = req.body || {};
-  if (!status)         return res.status(400).json({ error: 'status required' });
-  if (!signalEndpoint) return res.status(400).json({ error: 'signalEndpoint required' });
+app.post('/api/kiosk/signal', express.json(), async (req, res) => {
+  const { stationId } = req.query;
+  const { status }    = req.body || {};
+  if (!status) return res.status(400).json({ error: 'status required' });
 
-  console.log(`[signal proxy] → ${signalEndpoint}  status=${status}`);
+  const pid = getActiveProjectId();
+  if (!pid) return res.status(400).json({ error: 'no active project' });
+
+  const stations = loadKioskStations(pid);
+  const station  = stations.find(s => s.id === stationId);
+  if (!station?.signalEndpoint) return res.status(400).json({ error: 'no signal endpoint configured' });
+
   try {
-    const sr = await fetch(signalEndpoint, {
+    const sr = await fetch(station.signalEndpoint, {
       method:  'PUT',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ status }),
     });
-    const responseText = await sr.text();
-    if (!sr.ok) {
-      console.error(`[signal proxy] endpoint returned ${sr.status}: ${responseText.slice(0, 200)}`);
-      throw new Error(`Signal endpoint returned ${sr.status}: ${responseText.slice(0, 200)}`);
-    }
-    console.log(`[signal proxy] ✓ delivered (${sr.status})`);
+    if (!sr.ok) throw new Error(`Signal endpoint returned ${sr.status}`);
     res.json({ ok: true });
   } catch(e) {
-    console.error('[signal proxy] fetch failed:', e.message);
+    console.error('[signal proxy]', e.message);
     res.status(502).json({ error: e.message });
   }
 });
