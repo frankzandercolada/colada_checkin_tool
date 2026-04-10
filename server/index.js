@@ -178,6 +178,11 @@ function getCheckinSchema(project) {
   return project?.checkinSchema === 'assistant' ? 'assistant' : 'classic';
 }
 
+// Returns current datetime in the format Colada365 assistant fields expect: YYYY-MM-DDTHH:MM:SS
+function assistantNow() {
+  return new Date().toISOString().replace(/\.\d{3}Z$/, '');
+}
+
 function projectDir(id)        { return path.join(DATA_DIR, 'projects', id); }
 function projectConfigPath(id) { return path.join(projectDir(id), 'badge-config.json'); }
 function projectImagesDir(id)  { return path.join(projectDir(id), 'badge-images'); }
@@ -891,7 +896,7 @@ app.post('/api/guests/:eventId/:guestId/checkin', async (req, res) => {
     const projects = loadProjects();
     const project = projects.find(p => p.id === pid);
     const checkinSchema = getCheckinSchema(project);
-    const now = new Date().toISOString();
+    const now   = assistantNow();
     const today = now.split('T')[0];
     const guest = req.body;
     const stationId = req.body.stationId || null;
@@ -1095,7 +1100,7 @@ app.post('/api/kiosk/register', async (req, res) => {
 
     // 3. Check in the newly created guest — schema-aware.
     // Colada365 may still be updating the guest between our re-fetch and PATCH — retry on 409.
-    const now   = new Date().toISOString();
+    const now   = assistantNow();
     const today = now.split('T')[0];
     let checkedIn = false;
     for (let attempt = 1; attempt <= 5; attempt++) {
@@ -1520,7 +1525,7 @@ app.post('/api/kiosk/scan', async (req, res) => {
     }
 
     // Build check-in PATCH attributes — schema-aware
-    const now = new Date().toISOString();
+    const now   = assistantNow();
     const today = now.split('T')[0];
     const { _matchedEventId: _omit, ...cleanAttrs } = attrs;
     let patchAttrs;
