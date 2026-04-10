@@ -1477,9 +1477,12 @@ app.post('/api/kiosk/scan', async (req, res) => {
     }
 
     if (!guest) {
+      console.log(`[scan] not_found — scanInput: "${scanInput}" — eventIds: ${JSON.stringify(eventIds)}`);
       _recordKiosk(scanStationId, null, 'scan_failed');
       return res.json({ result: 'not_found' });
     }
+
+    console.log(`[scan] found guest id=${guest.id} uid=${guest.uid} matchedEventId=${matchedEventId} status=${guest.status}`);
 
     // Normalise attributes — Colada365 may return nested (.attributes/.properties)
     // or flat (all fields at top level). Use whichever has the most keys.

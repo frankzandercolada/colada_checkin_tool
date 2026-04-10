@@ -1254,7 +1254,7 @@ async function searchGuests(term) {
       const lname = a.contact_lastName || '';
       const company = a.contact_x_companyName || '—';
       const email = a.contact_email || a.email || '';
-      const checkedin = a.guest_x_checkedin === true || (a.guest_x_checkedinat && a.guest_x_checkedinat !== false && a.guest_x_checkedinat !== 'false' && a.guest_x_checkedinat !== '');
+      const checkedin = isGuestCheckedIn(a);
       const status_val = a.status || g.status || '';
       const evLabel = _eventNameCache[a._matchedEventId] || (a._matchedEventId ? `Event ${a._matchedEventId.slice(0,8)}…` : '');
       return `<div onclick="selectSearchResult(${i})" data-idx="${i}" style="
@@ -1325,10 +1325,7 @@ function renderGuestCard(guest) {
   const status  = guest.status || attrs.status || '—';
   const isEligible = status === 'REGISTERED' || status === 'PENDING';
 
-  const _checkedinBool = attrs.guest_x_checkedin;
-  const _rawCheckin    = attrs.guest_x_checkedinat;
-  const _atValid = _rawCheckin && _rawCheckin !== false && _rawCheckin !== 'false' && _rawCheckin !== '';
-  const checkedIn = (_checkedinBool === true || _atValid) ? (_atValid ? _rawCheckin : true) : false;
+  const checkedIn = getCheckedInAt(attrs);
   const canCheckin = isEligible && !checkedIn;
 
   const checkedBadge = checkedIn
@@ -1341,7 +1338,9 @@ function renderGuestCard(guest) {
   //   1. The event group matching this guest's _matchedEventId
   //   2. Global rules
   // Deduplicate, strip _matchedEventId (structural) and check-in fields (shown above)
-  const SKIP_ATTRS = new Set(['_matchedEventId','guest_x_checkedin','guest_x_checkedinat']);
+  const SKIP_ATTRS = new Set(['_matchedEventId','guest_x_checkedin','guest_x_checkedinat',
+    'guest_x_assistant_checkedin','guest_x_assistant_checkedout',
+    'guest_x_assistant_scanner_checkin_id','guest_x_assistant_scanner_checkout_id']);
   const matchedEventId = attrs._matchedEventId;
   const groups      = loadEventGroups();
   const globalRules = loadRules();
@@ -2053,7 +2052,9 @@ async function populateEventRegFieldPicker(eventId) {
   const schema = _guestSchema;
   if (!schema?.fields) return;
   const FIXED = new Set(['contact_firstName','contact_lastName','contact_email','contact_commLang',
-    '_matchedEventId','guest_x_checkedin','guest_x_checkedinat']);
+    '_matchedEventId','guest_x_checkedin','guest_x_checkedinat',
+    'guest_x_assistant_checkedin','guest_x_assistant_checkedout',
+    'guest_x_assistant_scanner_checkin_id','guest_x_assistant_scanner_checkout_id']);
   const existing = new Set((loadSelfRegForEvent(eventId).fields || []).map(f => f.attr));
   for (const [attr, field] of Object.entries(schema.fields)) {
     if (FIXED.has(attr) || existing.has(attr)) continue;
@@ -3350,9 +3351,8 @@ async function loadDashboard() {
     const gp = (g, k) => (g.attributes || g.properties || {})[k];
     const isEligible = g => { const s = g.status || gp(g,'status') || ''; return s === 'REGISTERED' || s === 'PENDING'; };
     const isCheckedIn = g => {
-      const bool = gp(g, 'guest_x_checkedin');
-      const at   = gp(g, 'guest_x_checkedinat');
-      return bool === true || (at && at !== false && at !== 'false' && at !== '');
+      const a = g.attributes || g.properties || {};
+      return isGuestCheckedIn(a);
     };
 
     const total    = guests.length;
@@ -3478,6 +3478,32 @@ function toggleTheme() {
 // ── Project Management ───────────────────────────────────────────────────────
 let _projects = [];
 let _activeProjectId = null;
+
+// Returns true if a guest's attributes indicate they are checked in,
+// accounting for the active project's check-in schema.
+function isGuestCheckedIn(attrs) {
+  const schema = _projects.find(p => p.id === _activeProjectId)?.checkinSchema || 'classic';
+  if (schema === 'assistant') {
+    const v = attrs?.guest_x_assistant_checkedin;
+    return !!(v && v !== '' && v !== false);
+  }
+  return attrs?.guest_x_checkedin === true ||
+    !!(attrs?.guest_x_checkedinat && attrs.guest_x_checkedinat !== false &&
+       attrs.guest_x_checkedinat !== 'false' && attrs.guest_x_checkedinat !== '');
+}
+
+// Returns the checked-in timestamp string for display, or false if not checked in.
+function getCheckedInAt(attrs) {
+  const schema = _projects.find(p => p.id === _activeProjectId)?.checkinSchema || 'classic';
+  if (schema === 'assistant') {
+    const v = attrs?.guest_x_assistant_checkedin;
+    return (v && v !== '' && v !== false) ? v : false;
+  }
+  const bool = attrs?.guest_x_checkedin;
+  const at   = attrs?.guest_x_checkedinat;
+  const atValid = at && at !== false && at !== 'false' && at !== '';
+  return (bool === true || atValid) ? (atValid ? at : true) : false;
+}
 let _renamingProjectId = null;
 
 async function loadProjects() {
