@@ -7,7 +7,6 @@
       "subtitle": "",
       "titleSize": null,
       "subSize": null,
-      "bgImage": null,
       "returnSecs": null
     },
     "success": {
@@ -15,7 +14,6 @@
       "subtitle": "",
       "titleSize": null,
       "subSize": null,
-      "bgImage": null,
       "returnSecs": null,
       "hideGuestCard": false
     },
@@ -24,7 +22,6 @@
       "subtitle": "",
       "titleSize": null,
       "subSize": null,
-      "bgImage": null,
       "returnSecs": 4
     },
     "alreadyCheckedIn": {
@@ -32,13 +29,28 @@
       "subtitle": "",
       "titleSize": null,
       "subSize": null,
-      "bgImage": null,
       "returnSecs": 5,
-      "hideGuestCard": false
+      "hideGuestCard": false,
+      "behaviour": "show",
+      "denyTitle": "",
+      "denySubtitle": ""
     },
     "accentColor": "#d3222a",
     "bgColor": "#0a0a0a",
-    "logoText": "International Trade Forum 2026"
+    "bgColorLight": "#f0f0f0",
+    "logoText": "International Trade Forum 2026",
+    "hideLogoText": false,
+    "printEndpoint": null,
+    "signalEndpoint": null,
+    "cameraMode": false,
+    "lightMode": false,
+    "selfRegistration": {
+      "enabled": true
+    },
+    "guestSearch": {
+      "enabled": true
+    },
+    "hideIcon": false
   },
   {
     "id": "b586cf72-3607-48f6-9cef-caf042f8c136",
@@ -71,13 +83,26 @@
       "titleSize": null,
       "subSize": null,
       "returnSecs": null,
-      "hideGuestCard": false
+      "hideGuestCard": false,
+      "behaviour": "show",
+      "denyTitle": "",
+      "denySubtitle": ""
     },
     "accentColor": "#d3222a",
     "bgColor": "#0a0a0a",
+    "bgColorLight": "#f0f0f0",
     "logoText": "International Trade Forum 2026",
+    "hideLogoText": false,
     "printEndpoint": null,
-    "cameraMode": true,
-    "lightMode": false
+    "signalEndpoint": null,
+    "cameraMode": false,
+    "lightMode": false,
+    "selfRegistration": {
+      "enabled": true
+    },
+    "guestSearch": {
+      "enabled": true
+    },
+    "hideIcon": false
   }
 ]

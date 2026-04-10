@@ -13,7 +13,6 @@
 </style>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 </head>
 <body>
 
@@ -51,16 +50,13 @@
       <span class="icon">⚙</span> Settings
     </div>
     <div class="nav-item" data-page="badges">
-      <span class="icon">⎙</span> Badges & Routing
+      <span class="icon">⎙</span> Badges
     </div>
     <div class="nav-item" data-page="connection">
       <span class="icon">⬡</span> Connection
     </div>
     <div class="nav-item" data-page="kiosk">
       <span class="icon">⊡</span> Kiosk Stations
-    </div>
-    <div class="nav-item" data-page="monitor">
-      <span class="icon">◈</span> Monitor
     </div>
   </nav>
 
@@ -113,30 +109,68 @@
     <!-- ── Dashboard page ── -->
     <div class="page" id="page-dashboard">
       <div class="page-title">Dashboard</div>
-      <div class="page-subtitle">Check-in statistics per event</div>
+      <div class="page-subtitle">Event overview and check-in statistics</div>
 
-      <!-- Aggregate totals across all events -->
-      <div class="stats-grid" id="dash-totals-grid" style="display:none;">
+      <div class="stats-grid">
         <div class="stat-card">
-          <div class="stat-num" id="dash-total-guests">—</div>
+          <div class="stat-num" id="stat-total">—</div>
           <div class="stat-label">Total Guests</div>
         </div>
         <div class="stat-card">
-          <div class="stat-num" id="dash-total-eligible">—</div>
-          <div class="stat-label">Registered / Pending</div>
+          <div class="stat-num" id="stat-checked">—</div>
+          <div class="stat-label">Checked In (Reg/Pend)</div>
         </div>
         <div class="stat-card">
-          <div class="stat-num" id="dash-total-checked">—</div>
-          <div class="stat-label">Checked In</div>
+          <div class="stat-num" id="stat-awf">—</div>
+          <div class="stat-label">AWF (Reg/Pend)</div>
         </div>
         <div class="stat-card">
-          <div class="stat-num" id="dash-total-pct" style="color:var(--accent);">—</div>
-          <div class="stat-label">Overall Rate</div>
+          <div class="stat-num" id="stat-stimm">—</div>
+          <div class="stat-label">Stimmberechtigt (Reg/Pend)</div>
         </div>
       </div>
 
-      <!-- Per-event cards rendered dynamically -->
-      <div id="dash-events-container"></div>
+      <!-- Check-in progress bar -->
+      <div class="card" id="checkin-progress-card" style="display:none;">
+        <div class="card-title">Check-in Progress · Registered &amp; Pending Guests</div>
+        <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px;">
+          <div style="display:flex; gap:20px;">
+            <div>
+              <div style="font-size:28px; font-weight:800; color:var(--green); letter-spacing:-0.02em; font-variant-numeric:tabular-nums;" id="prog-checked">0</div>
+              <div style="font-size:11px; font-family:var(--font-mono); color:var(--muted); text-transform:uppercase; letter-spacing:0.06em;">Checked In</div>
+            </div>
+            <div>
+              <div style="font-size:28px; font-weight:800; color:var(--orange); letter-spacing:-0.02em; font-variant-numeric:tabular-nums;" id="prog-pending">0</div>
+              <div style="font-size:11px; font-family:var(--font-mono); color:var(--muted); text-transform:uppercase; letter-spacing:0.06em;">Not Yet</div>
+            </div>
+            <div>
+              <div style="font-size:28px; font-weight:800; color:var(--text); letter-spacing:-0.02em; font-variant-numeric:tabular-nums;" id="prog-total">0</div>
+              <div style="font-size:11px; font-family:var(--font-mono); color:var(--muted); text-transform:uppercase; letter-spacing:0.06em;">Total (Reg+Pend)</div>
+            </div>
+          </div>
+          <div style="font-size:36px; font-weight:800; color:var(--accent); letter-spacing:-0.03em;" id="prog-pct">0%</div>
+        </div>
+        <!-- Stacked bar -->
+        <div style="height:14px; border-radius:7px; background:var(--surface3); overflow:hidden; position:relative;">
+          <div id="prog-bar-checked" style="position:absolute; left:0; top:0; height:100%; background:var(--green); border-radius:7px 0 0 7px; transition:width 0.8s cubic-bezier(0.4,0,0.2,1); width:0%;"></div>
+          <div id="prog-bar-pending" style="position:absolute; top:0; height:100%; background:var(--orange); transition:left 0.8s cubic-bezier(0.4,0,0.2,1), width 0.8s cubic-bezier(0.4,0,0.2,1); left:0%; width:0%;"></div>
+        </div>
+        <!-- Legend -->
+        <div style="display:flex; gap:16px; margin-top:10px; font-size:11px; font-family:var(--font-mono); color:var(--muted);">
+          <span style="display:flex; align-items:center; gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:var(--green);display:inline-block;"></span> Checked in</span>
+          <span style="display:flex; align-items:center; gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:var(--orange);display:inline-block;"></span> Not checked in</span>
+          <span style="display:flex; align-items:center; gap:5px;"><span style="width:10px;height:10px;border-radius:50%;background:var(--surface3);display:inline-block;"></span> Other statuses</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Event Details</div>
+        <div id="event-details">
+          <div class="empty" style="padding:30px;">
+            <p>No event loaded. Configure an Event ID in Settings and refresh.</p>
+          </div>
+        </div>
+      </div>
 
       <div style="margin-top:16px; display:flex; align-items:center; gap:12px;">
         <button class="btn btn-secondary" onclick="loadDashboard(); resetDashboardRefresh();">↺ Refresh</button>
@@ -202,11 +236,9 @@
         <div class="card-title">Event Configuration</div>
         <div class="form-grid cols-1">
           <div class="field">
-            <label>Event IDs</label>
-            <textarea id="cfg-eventIds" rows="3" class="form-input"
-              style="font-family:var(--font-mono);font-size:11px;resize:vertical;line-height:1.6;"
-              placeholder="One Event UUID per line"></textarea>
-            <span class="hint">One Colada365 event UUID per line — scans are tried against each event in order until a match is found</span>
+            <label>Event ID</label>
+            <input id="cfg-eventId" type="text" placeholder="Paste Event UUID here"/>
+            <span class="hint">The Colada365 event UUID used for all guest lookups</span>
           </div>
           <div class="field">
             <label>Token Refresh Interval (seconds)</label>
@@ -228,9 +260,9 @@
       <div class="card">
         <div class="card-title">Badge Templates</div>
         <p style="font-size:13px; color:var(--muted); margin-bottom:16px;">
-          Manage badge templates, background images, routing rules and self-registration config in the dedicated Badges &amp; Routing section.
+          Manage badge templates, background images, and routing rules in the dedicated Badges section.
         </p>
-        <button class="btn btn-secondary" onclick="document.querySelector('[data-page=badges]').click()">⎙ Go to Badges &amp; Routing</button>
+        <button class="btn btn-secondary" onclick="document.querySelector('[data-page=badges]').click()">⎙ Go to Badge Manager</button>
       </div>
 
       <div class="btn-row">
@@ -241,8 +273,8 @@
 
     <!-- ── Badges page ── -->
     <div class="page" id="page-badges">
-      <div class="page-title">Badges, Routing & Self-Reg</div>
-      <div class="page-subtitle">Manage badge templates, routing rules and self-registration form configuration per event</div>
+      <div class="page-title">Badge Templates</div>
+      <div class="page-subtitle">Manage badge layouts, background images, and routing rules</div>
 
       <!-- Template list -->
       <div class="card">
@@ -259,9 +291,7 @@
           <div class="card-title" style="margin:0;">Routing Rules</div>
           <button class="btn btn-primary" style="font-size:12px;" onclick="openRuleEditor()">+ New Rule</button>
         </div>
-        <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">
-          Rules are grouped by event. First the active event's rules are evaluated top-to-bottom, then global rules.
-        </p>
+        <p style="font-size:12px; color:var(--muted); margin-bottom:14px;">Rules are evaluated top-to-bottom. First match wins. Drag to reorder.</p>
         <div id="routing-rules-list"><!-- filled by JS --></div>
         <div style="margin-top:14px;">
           <label style="font-size:12px; color:var(--muted); display:flex; align-items:center; gap:10px;">
@@ -397,14 +427,6 @@
           <input id="rule-name" class="form-input" type="text" placeholder="e.g. AWF + Stimmberechtigt"/>
         </div>
 
-        <div class="form-group" style="margin-top:14px;">
-          <label class="form-label">Event Scope</label>
-          <select id="rule-event-scope" style="width:100%;background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-family:var(--font-mono);font-size:13px;padding:8px 10px;border-radius:6px;">
-            <option value="">— Global (all events) —</option>
-          </select>
-          <span class="hint">Rule is only evaluated when a guest is found in the selected event. Choose Global to apply across all events.</span>
-        </div>
-
         <div style="margin-top:14px;">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
             <label class="form-label" style="margin:0;">Conditions</label>
@@ -475,299 +497,159 @@
       </div>
     </div>
 
-    <!-- ── Monitor page ── -->
-    <div class="page" id="page-monitor">
-      <div class="page-title">Monitor</div>
-      <div class="page-subtitle">Colada API activity and kiosk station usage</div>
-
-      <!-- Colada API summary -->
-      <div class="stats-grid">
-        <div class="stat-card">
-          <div class="stat-num" id="mon-total-calls">—</div>
-          <div class="stat-label">API Calls (total)</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-num" id="mon-total-out">—</div>
-          <div class="stat-label">Sent to Colada</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-num" id="mon-total-in">—</div>
-          <div class="stat-label">Received from Colada</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-num" id="mon-cpm">—</div>
-          <div class="stat-label">API calls / min (now)</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-num" id="mon-uptime">—</div>
-          <div class="stat-label">Uptime</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-num" id="mon-mem">—</div>
-          <div class="stat-label">Memory (RSS)</div>
-        </div>
-      </div>
-
-      <!-- Colada API calls-per-minute chart -->
-      <div class="card" style="margin-top:16px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-          <div class="card-title" style="margin:0;">Colada API Calls per Minute <span style="font-size:11px;color:var(--muted);font-family:var(--font-mono);font-weight:400;">(60-min rolling window)</span></div>
-          <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono);" id="mon-last-updated">—</div>
-        </div>
-        <canvas id="mon-chart-calls" height="70"></canvas>
-        <!-- Bandwidth line chart inlined below -->
-        <div class="card-title" style="margin:16px 0 8px;font-size:12px;">Data Transferred (KB/min)</div>
-        <canvas id="mon-chart-bw" height="60"></canvas>
-      </div>
-
-      <!-- Per-station table -->
-      <div class="card" style="margin-top:16px;">
-        <div class="card-title" style="margin-bottom:12px;">Kiosk Station Activity</div>
-        <div id="mon-stations">
-          <p style="color:var(--muted);font-size:13px;">No station activity recorded yet.</p>
-        </div>
-      </div>
-
-      <div style="margin-top:16px;display:flex;align-items:center;gap:12px;">
-        <button class="btn btn-secondary" onclick="loadMonitor()">↺ Refresh</button>
-        <span style="font-size:11px;color:var(--muted);font-family:var(--font-mono);">Auto-refreshes every 15 s while this page is open</span>
-      </div>
-    </div>
-
     <!-- Kiosk station modal -->
     <div id="kiosk-modal" style="display:none; position:fixed; inset:0; z-index:90; background:rgba(0,0,0,0.7); backdrop-filter:blur(8px); align-items:center; justify-content:center;">
-      <div style="background:var(--surface); border:1px solid var(--border2); border-radius:16px; width:min(580px,94vw); max-height:90vh; display:flex; flex-direction:column; overflow:hidden;">
+      <div style="background:var(--surface); border:1px solid var(--border2); border-radius:16px; padding:32px; width:min(520px,92vw); max-height:88vh; overflow-y:auto;">
+        <div style="font-size:18px; font-weight:700; margin-bottom:24px;" id="kiosk-modal-title">New Station</div>
 
-        <!-- Modal header -->
-        <div style="padding:20px 24px 0; flex-shrink:0;">
-          <div style="font-size:18px; font-weight:700; margin-bottom:16px;" id="kiosk-modal-title">New Station</div>
-
-          <!-- Tabs -->
-          <div style="display:flex; gap:2px; border-bottom:1px solid var(--border);">
-            <button class="ks-tab active" data-tab="general"  onclick="switchKsTab('general')">General</button>
-            <button class="ks-tab"        data-tab="welcome"  onclick="switchKsTab('welcome')">Welcome</button>
-            <button class="ks-tab"        data-tab="success"  onclick="switchKsTab('success')">Success</button>
-            <button class="ks-tab"        data-tab="notfound" onclick="switchKsTab('notfound')">Not Found</button>
-            <button class="ks-tab"        data-tab="already"  onclick="switchKsTab('already')">Already In</button>
+        <div style="display:flex; flex-direction:column; gap:14px;">
+          <div><label class="form-label">Station Name *</label><input class="form-input" id="ks-name" placeholder="e.g. Entrance A"/></div>
+          <div><label class="form-label">Logo / Event Text</label><input class="form-input" id="ks-logo" placeholder="e.g. AWF 2025"/></div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div><label class="form-label">Accent Color</label><input class="form-input" id="ks-accent" type="color" value="#d3222a" style="height:40px; padding:4px 8px;"/></div>
+            <div><label class="form-label">Background Color</label><input class="form-input" id="ks-bg" type="color" value="#0a0a0a" style="height:40px; padding:4px 8px;"/></div>
           </div>
+
+
+          <div>
+            <label class="form-label">Print Endpoint (optional)</label>
+            <input class="form-input" id="ks-print-endpoint" placeholder="http://printer-host/print (leave blank to use browser print)"/>
+            <div style="font-size:11px; color:var(--muted); margin-top:4px;">If set, the badge PDF will be PUT to this URL instead of opening the browser print dialog.</div>
+          </div>
+
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 0;">
+            <div>
+              <div class="form-label" style="margin-bottom:2px;">Camera Scan Mode</div>
+              <div style="font-size:11px; color:var(--muted);">Enable QR scanning via device camera (iPad / iPhone)</div>
+            </div>
+            <label class="ks-toggle-wrap">
+              <input type="checkbox" id="ks-camera-mode"/>
+              <span class="ks-toggle-track">
+                <span class="ks-toggle-knob"></span>
+              </span>
+            </label>
+          </div>
+          <div style="display:flex; align-items:center; justify-content:space-between; padding:10px 0;">
+            <div>
+              <div class="form-label" style="margin-bottom:2px;">Light Mode</div>
+              <div style="font-size:11px; color:var(--muted);">Switch kiosk to light colour scheme</div>
+            </div>
+            <label class="ks-toggle-wrap">
+              <input type="checkbox" id="ks-light-mode"/>
+              <span class="ks-toggle-track">
+                <span class="ks-toggle-knob"></span>
+              </span>
+            </label>
+          </div>
+
+          <div style="display:flex; align-items:center; justify-content:space-between; gap:16px;">
+            <div>
+              <div class="form-label" style="margin-bottom:2px;">Disable Gradient</div>
+              <div style="font-size:11px; color:var(--muted);">Remove colour gradient overlay from all screens</div>
+            </div>
+            <label class="ks-toggle-wrap">
+              <input type="checkbox" id="ks-disable-gradient"/>
+              <span class="ks-toggle-track">
+                <span class="ks-toggle-knob"></span>
+              </span>
+            </label>
+          </div>
+
+          <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:8px; padding-bottom:8px; border-bottom:1px solid var(--border);">Welcome Screen</div>
+          <div><label class="form-label">Heading</label><input class="form-input" id="ks-welcome-title" placeholder="Welcome"/></div>
+          <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-welcome-sub" style="min-height:64px; resize:vertical;" placeholder="Please scan your QR code to check in."></textarea></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-welcome-title-size" type="number" min="20" max="120" placeholder="default"/></div>
+            <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-welcome-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
+          </div>
+          <div><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-welcome-title-bold" style="width:14px;height:14px;accent-color:var(--accent);"/> Bold heading</label></div>
+          <div>
+            <label class="form-label">Background Image</label>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
+                <span id="ks-welcome-bg-label">Upload image…</span>
+                <input type="file" id="ks-welcome-bg-file" accept="image/*" style="display:none;" onchange="loadKioskAdminScreenBg(this,'welcome')"/>
+              </label>
+              <button class="btn btn-secondary" id="ks-welcome-bg-clear" onclick="clearKioskAdminScreenBg('welcome')" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
+            </div>
+            <input type="hidden" id="ks-welcome-bg-data"/>
+          </div>
+          <div><label class="form-label">Auto-return delay (seconds)</label><input class="form-input" id="ks-welcome-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/></div>
+          <div><label class="form-label">Background image top offset (px)</label><input class="form-input" id="ks-welcome-bg-top" type="number" min="-2000" max="2000" placeholder="0" style="width:160px;"/></div>
+
+          <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:4px; padding-bottom:8px; border-bottom:1px solid var(--border);">Success Screen</div>
+          <div><label class="form-label">Heading</label><input class="form-input" id="ks-success-title" placeholder="Checked In!"/></div>
+          <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-success-sub" style="min-height:64px; resize:vertical;" placeholder="Your badge is printing. Welcome!"></textarea></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-success-title-size" type="number" min="20" max="120" placeholder="default"/></div>
+            <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-success-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
+          </div>
+          <div><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-success-title-bold" style="width:14px;height:14px;accent-color:var(--accent);"/> Bold heading</label></div>
+          <div><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-success-hide-card" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide guest name card</label></div>
+          <div>
+            <label class="form-label">Background Image</label>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
+                <span id="ks-success-bg-label">Upload image…</span>
+                <input type="file" id="ks-success-bg-file" accept="image/*" style="display:none;" onchange="loadKioskAdminScreenBg(this,'success')"/>
+              </label>
+              <button class="btn btn-secondary" id="ks-success-bg-clear" onclick="clearKioskAdminScreenBg('success')" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
+            </div>
+            <input type="hidden" id="ks-success-bg-data"/>
+          </div>
+          <div><label class="form-label">Auto-return delay (seconds)</label><input class="form-input" id="ks-success-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/></div>
+          <div><label class="form-label">Background image top offset (px)</label><input class="form-input" id="ks-success-bg-top" type="number" min="-2000" max="2000" placeholder="0" style="width:160px;"/></div>
+
+          <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:4px; padding-bottom:8px; border-bottom:1px solid var(--border);">Not Found / Invalid Status</div>
+          <div><label class="form-label">Heading</label><input class="form-input" id="ks-notfound-title" placeholder="Guest Not Found"/></div>
+          <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-notfound-sub" style="min-height:64px; resize:vertical;" placeholder="Please see the registration desk for assistance."></textarea></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-notfound-title-size" type="number" min="20" max="120" placeholder="default"/></div>
+            <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-notfound-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
+          </div>
+          <div><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-notfound-title-bold" style="width:14px;height:14px;accent-color:var(--accent);"/> Bold heading</label></div>
+          <div>
+            <label class="form-label">Background Image</label>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
+                <span id="ks-notfound-bg-label">Upload image…</span>
+                <input type="file" id="ks-notfound-bg-file" accept="image/*" style="display:none;" onchange="loadKioskAdminScreenBg(this,'notfound')"/>
+              </label>
+              <button class="btn btn-secondary" id="ks-notfound-bg-clear" onclick="clearKioskAdminScreenBg('notfound')" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
+            </div>
+            <input type="hidden" id="ks-notfound-bg-data"/>
+          </div>
+          <div><label class="form-label">Auto-return delay (seconds)</label><input class="form-input" id="ks-notfound-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/></div>
+          <div><label class="form-label">Background image top offset (px)</label><input class="form-input" id="ks-notfound-bg-top" type="number" min="-2000" max="2000" placeholder="0" style="width:160px;"/></div>
+
+          <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; margin-top:4px; padding-bottom:8px; border-bottom:1px solid var(--border);">Already Checked In</div>
+          <div><label class="form-label">Heading</label><input class="form-input" id="ks-already-title" placeholder="Already Checked In"/></div>
+          <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-already-sub" style="min-height:64px; resize:vertical;" placeholder="Your badge was already printed. See the desk if you need a reprint."></textarea></div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+            <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-already-title-size" type="number" min="20" max="120" placeholder="default"/></div>
+            <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-already-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
+          </div>
+          <div><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-already-title-bold" style="width:14px;height:14px;accent-color:var(--accent);"/> Bold heading</label></div>
+          <div><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-already-hide-card" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide guest name card</label></div>
+          <div>
+            <label class="form-label">Background Image</label>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
+                <span id="ks-already-bg-label">Upload image…</span>
+                <input type="file" id="ks-already-bg-file" accept="image/*" style="display:none;" onchange="loadKioskAdminScreenBg(this,'already')"/>
+              </label>
+              <button class="btn btn-secondary" id="ks-already-bg-clear" onclick="clearKioskAdminScreenBg('already')" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
+            </div>
+            <input type="hidden" id="ks-already-bg-data"/>
+          </div>
+          <div><label class="form-label">Auto-return delay (seconds)</label><input class="form-input" id="ks-already-return-secs" type="number" min="3" max="60" placeholder="8 (default)" style="width:160px;"/></div>
+          <div><label class="form-label">Background image top offset (px)</label><input class="form-input" id="ks-already-bg-top" type="number" min="-2000" max="2000" placeholder="0" style="width:160px;"/></div>
         </div>
 
-        <!-- Tab content (scrollable) -->
-        <div style="flex:1; overflow-y:auto; padding:20px 24px;">
-
-          <!-- ── General tab ── -->
-          <div class="ks-tab-panel active" id="ks-panel-general">
-            <div style="display:flex; flex-direction:column; gap:14px;">
-
-              <div><label class="form-label">Station Name *</label><input class="form-input" id="ks-name" placeholder="e.g. Entrance A"/></div>
-
-              <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; padding-bottom:6px; border-bottom:1px solid var(--border);">Branding</div>
-
-              <div><label class="form-label">Logo / Event Text</label><input class="form-input" id="ks-logo" placeholder="e.g. AWF 2025"/></div>
-              <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
-                <div><label class="form-label">Accent</label><input class="form-input" id="ks-accent" type="color" value="#d3222a" style="height:40px; padding:4px 8px;"/></div>
-                <div><label class="form-label">BG Dark</label><input class="form-input" id="ks-bg" type="color" value="#0a0a0a" style="height:40px; padding:4px 8px;"/></div>
-                <div><label class="form-label">BG Light</label><input class="form-input" id="ks-bg-light" type="color" value="#f0f0f0" style="height:40px; padding:4px 8px;"/></div>
-              </div>
-
-              <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; padding-bottom:6px; border-bottom:1px solid var(--border); margin-top:4px;">Display</div>
-
-              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
-                <div><div class="form-label" style="margin-bottom:2px;">Hide Logo / Event Text</div><div style="font-size:11px; color:var(--muted);">Use when the background image already contains the event name</div></div>
-                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-hide-logo"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
-              </div>
-              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
-                <div><div class="form-label" style="margin-bottom:2px;">Hide QR Code Icon</div><div style="font-size:11px; color:var(--muted);">Hide the QR code icon on the welcome screen (e.g. when using a custom background image)</div></div>
-                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-hide-icon"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
-              </div>
-              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
-                <div><div class="form-label" style="margin-bottom:2px;">Light Mode</div><div style="font-size:11px; color:var(--muted);">Switch kiosk to light colour scheme</div></div>
-                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-light-mode"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
-              </div>
-              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
-                <div><div class="form-label" style="margin-bottom:2px;">Camera Scan Mode</div><div style="font-size:11px; color:var(--muted);">Enable QR scanning via device camera (iPad / iPhone)</div></div>
-                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-camera-mode"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
-              </div>
-
-              <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; padding-bottom:6px; border-bottom:1px solid var(--border); margin-top:4px;">Features</div>
-
-              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
-                <div><div class="form-label" style="margin-bottom:2px;">Self-Registration</div><div style="font-size:11px; color:var(--muted);">Show a Register button for walk-in guests. Configure fields per event in Badges &amp; Routing.</div></div>
-                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-reg-enabled"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
-              </div>
-              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
-                <div><div class="form-label" style="margin-bottom:2px;">Guest Search</div><div style="font-size:11px; color:var(--muted);">Show a Search button so staff can look up guests by name.</div></div>
-                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-search-enabled"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
-              </div>
-
-              <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; padding-bottom:6px; border-bottom:1px solid var(--border); margin-top:4px;">Print</div>
-
-              <div>
-                <label class="form-label">Print Endpoint (optional)</label>
-                <input class="form-input" id="ks-print-endpoint" placeholder="http://printer-host/print"/>
-                <div style="font-size:11px; color:var(--muted); margin-top:4px;">If set, the badge PDF will be PUT to this URL instead of opening the browser print dialog.</div>
-              </div>
-
-              <div>
-                <label class="form-label">Signal Endpoint (optional)</label>
-                <input class="form-input" id="ks-signal-endpoint" placeholder="http://led-module-host/signal"/>
-                <div style="font-size:11px; color:var(--muted); margin-top:4px;">If set, a PUT request with <code style="font-family:var(--font-mono);font-size:10px;">{"status":"success"}</code> or <code style="font-family:var(--font-mono);font-size:10px;">{"status":"failed"}</code> is sent after each scan result — use to trigger LEDs or a buzzer.</div>
-              </div>
-            </div>
-          </div>
-
-          <!-- ── Screen tab helper macro ── -->
-          <!-- Welcome -->
-          <div class="ks-tab-panel" id="ks-panel-welcome">
-            <div style="display:flex; flex-direction:column; gap:14px;">
-              <div><label class="form-label">Heading</label><input class="form-input" id="ks-welcome-title" placeholder="Welcome"/></div>
-              <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-welcome-sub" style="min-height:64px; resize:vertical;" placeholder="Please scan your QR code to check in."></textarea></div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-welcome-title-size" type="number" min="20" max="120" placeholder="default"/></div>
-                <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-welcome-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
-              </div>
-              <div>
-                <label class="form-label">Background Image</label>
-                <div style="display:flex;gap:8px;align-items:center;">
-                  <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
-                    <span id="ks-welcome-bg-label">Upload image…</span>
-                    <input type="file" id="ks-welcome-bg-file" accept="image/*" style="display:none;" onchange="loadKioskAdminScreenBg(this,'welcome')"/>
-                  </label>
-                  <button class="btn btn-secondary" id="ks-welcome-bg-clear" onclick="clearKioskAdminScreenBg('welcome')" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
-                </div>
-                <input type="hidden" id="ks-welcome-bg-data"/>
-              </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                <div><label class="form-label">Auto-return (seconds)</label><input class="form-input" id="ks-welcome-return-secs" type="number" min="3" max="60" placeholder="8"/></div>
-                <div><label class="form-label">Image top offset (px)</label><input class="form-input" id="ks-welcome-bg-top" type="number" min="-2000" max="2000" placeholder="0"/></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Success -->
-          <div class="ks-tab-panel" id="ks-panel-success">
-            <div style="display:flex; flex-direction:column; gap:14px;">
-              <div><label class="form-label">Heading</label><input class="form-input" id="ks-success-title" placeholder="Checked In!"/></div>
-              <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-success-sub" style="min-height:64px; resize:vertical;" placeholder="Your badge is printing. Welcome!"></textarea></div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-success-title-size" type="number" min="20" max="120" placeholder="default"/></div>
-                <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-success-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
-              </div>
-              <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-success-hide-card" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide guest name card</label>
-              <div>
-                <label class="form-label">Background Image</label>
-                <div style="display:flex;gap:8px;align-items:center;">
-                  <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
-                    <span id="ks-success-bg-label">Upload image…</span>
-                    <input type="file" id="ks-success-bg-file" accept="image/*" style="display:none;" onchange="loadKioskAdminScreenBg(this,'success')"/>
-                  </label>
-                  <button class="btn btn-secondary" id="ks-success-bg-clear" onclick="clearKioskAdminScreenBg('success')" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
-                </div>
-                <input type="hidden" id="ks-success-bg-data"/>
-              </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                <div><label class="form-label">Auto-return (seconds)</label><input class="form-input" id="ks-success-return-secs" type="number" min="3" max="60" placeholder="8"/></div>
-                <div><label class="form-label">Image top offset (px)</label><input class="form-input" id="ks-success-bg-top" type="number" min="-2000" max="2000" placeholder="0"/></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Not Found -->
-          <div class="ks-tab-panel" id="ks-panel-notfound">
-            <div style="display:flex; flex-direction:column; gap:14px;">
-              <div><label class="form-label">Heading</label><input class="form-input" id="ks-notfound-title" placeholder="Guest Not Found"/></div>
-              <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-notfound-sub" style="min-height:64px; resize:vertical;" placeholder="Please see the registration desk for assistance."></textarea></div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-notfound-title-size" type="number" min="20" max="120" placeholder="default"/></div>
-                <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-notfound-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
-              </div>
-              <div>
-                <label class="form-label">Background Image</label>
-                <div style="display:flex;gap:8px;align-items:center;">
-                  <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
-                    <span id="ks-notfound-bg-label">Upload image…</span>
-                    <input type="file" id="ks-notfound-bg-file" accept="image/*" style="display:none;" onchange="loadKioskAdminScreenBg(this,'notfound')"/>
-                  </label>
-                  <button class="btn btn-secondary" id="ks-notfound-bg-clear" onclick="clearKioskAdminScreenBg('notfound')" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
-                </div>
-                <input type="hidden" id="ks-notfound-bg-data"/>
-              </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                <div><label class="form-label">Auto-return (seconds)</label><input class="form-input" id="ks-notfound-return-secs" type="number" min="3" max="60" placeholder="8"/></div>
-                <div><label class="form-label">Image top offset (px)</label><input class="form-input" id="ks-notfound-bg-top" type="number" min="-2000" max="2000" placeholder="0"/></div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Already Checked In -->
-          <div class="ks-tab-panel" id="ks-panel-already">
-            <div style="display:flex; flex-direction:column; gap:14px;">
-
-              <div>
-                <label class="form-label">When a checked-in guest scans again</label>
-                <div style="display:flex; flex-direction:column; gap:6px; margin-top:8px;">
-                  <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);">
-                    <input type="radio" name="ks-already-behaviour" value="show" id="ks-already-show" style="margin-top:2px;accent-color:var(--accent);flex-shrink:0;"
-                      onchange="toggleDenyFields()"/>
-                    <div><div style="font-weight:600;font-size:13px;">Show Already Checked In</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">Display the "already checked in" screen with their name and check-in time (default)</div></div>
-                  </label>
-                  <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);">
-                    <input type="radio" name="ks-already-behaviour" value="reprint" id="ks-already-reprint" style="margin-top:2px;accent-color:var(--accent);flex-shrink:0;"
-                      onchange="toggleDenyFields()"/>
-                    <div><div style="font-weight:600;font-size:13px;">Reprint Badge</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">Silently reprint the badge and show the success screen — useful for self-service events where guests may need a replacement</div></div>
-                  </label>
-                  <label style="display:flex;align-items:flex-start;gap:10px;cursor:pointer;padding:10px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface2);">
-                    <input type="radio" name="ks-already-behaviour" value="deny" id="ks-already-deny" style="margin-top:2px;accent-color:var(--accent);flex-shrink:0;"
-                      onchange="toggleDenyFields()"/>
-                    <div><div style="font-weight:600;font-size:13px;">Deny — Code Already Used</div><div style="font-size:11px;color:var(--muted);margin-top:2px;">Show a denial screen indicating the code has already been used — suitable for single-entry events</div></div>
-                  </label>
-                </div>
-              </div>
-
-              <!-- Deny-specific message fields — only shown when deny is selected -->
-              <div id="ks-deny-fields" style="display:none; flex-direction:column; gap:10px; padding:12px; background:var(--surface2); border-radius:8px; border:1px solid var(--border);">
-                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.08em;">Denial Screen Message</div>
-                <div><label class="form-label">Heading</label><input class="form-input" id="ks-deny-title" placeholder="Code Already Used"/></div>
-                <div><label class="form-label">Message</label><textarea class="form-input" id="ks-deny-sub" style="min-height:64px;resize:vertical;" placeholder="This code has already been used. Please contact the registration desk."></textarea></div>
-              </div>
-
-              <div style="border-top:1px solid var(--border);padding-top:14px;">
-                <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:10px;">Screen Content</div>
-              </div>
-
-              <div><label class="form-label">Heading</label><input class="form-input" id="ks-already-title" placeholder="Already Checked In"/></div>
-              <div><label class="form-label">Subtitle</label><textarea class="form-input" id="ks-already-sub" style="min-height:64px; resize:vertical;" placeholder="Your badge was already printed. See the desk if you need a reprint."></textarea></div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-already-title-size" type="number" min="20" max="120" placeholder="default"/></div>
-                <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-already-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
-              </div>
-              <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-already-hide-card" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide guest name card</label>
-              <div>
-                <label class="form-label">Background Image</label>
-                <div style="display:flex;gap:8px;align-items:center;">
-                  <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
-                    <span id="ks-already-bg-label">Upload image…</span>
-                    <input type="file" id="ks-already-bg-file" accept="image/*" style="display:none;" onchange="loadKioskAdminScreenBg(this,'already')"/>
-                  </label>
-                  <button class="btn btn-secondary" id="ks-already-bg-clear" onclick="clearKioskAdminScreenBg('already')" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
-                </div>
-                <input type="hidden" id="ks-already-bg-data"/>
-              </div>
-              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-                <div><label class="form-label">Auto-return (seconds)</label><input class="form-input" id="ks-already-return-secs" type="number" min="3" max="60" placeholder="8"/></div>
-                <div><label class="form-label">Image top offset (px)</label><input class="form-input" id="ks-already-bg-top" type="number" min="-2000" max="2000" placeholder="0"/></div>
-              </div>
-            </div>
-          </div>
-
-        </div><!-- end scrollable content -->
-
-        <!-- Modal footer -->
-        <div style="padding:16px 24px; border-top:1px solid var(--border); display:flex; gap:10px; justify-content:flex-end; flex-shrink:0;">
+        <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:24px;">
           <button class="btn btn-secondary" onclick="closeKioskModal()">Cancel</button>
           <button class="btn btn-primary" onclick="saveKioskStation()">Save Station</button>
         </div>
-
       </div>
     </div>
 
@@ -813,8 +695,6 @@ document.querySelectorAll('.nav-item').forEach(item => {
     if (page === 'scan') { stopDashboardRefresh(); setTimeout(() => document.getElementById('scan-input').focus(), 100); }
     if (page === 'dashboard') { loadDashboard(); startDashboardRefresh(); }
     if (page !== 'dashboard') stopDashboardRefresh();
-    if (page === 'monitor') startMonitorRefresh();
-    else stopMonitorRefresh();
   });
 });
 
@@ -862,11 +742,9 @@ async function loadSettings() {
     document.getElementById('cfg-tokenUrl').value = projCreds.tokenUrl || '';
     document.getElementById('cfg-apiBase').value = projCreds.apiBase || '';
 
-    // Event IDs come from project (via projects list) — normalise to array
-    const eventIds = proj?.eventIds?.length ? proj.eventIds : (proj?.eventId ? [proj.eventId] : (cfgRes.eventId ? [cfgRes.eventId] : []));
-    document.getElementById('cfg-eventIds').value = eventIds.join('\n');
-    state.eventId = eventIds[0] || '';
-    updateEventBadge(eventIds[0] || '');
+    // Event ID comes from project (via projects list)
+    const eventId = proj?.eventId || cfgRes.eventId || '';
+    document.getElementById('cfg-eventId').value = eventId;
 
     // Global fallback credentials
     document.getElementById('cfg-global-clientId').value = cfgRes.clientId || '';
@@ -877,18 +755,16 @@ async function loadSettings() {
 
     document.getElementById('cfg-tokenRefreshInterval').value = cfgRes.tokenRefreshInterval || 240;
     document.getElementById('cfg-qwertyCorrection').checked = !!cfgRes.qwertyCorrection;
+    state.eventId = eventId;
+    updateEventBadge(eventId);
   } catch(e) { toast('Failed to load config', 'error'); }
 }
 
 async function saveSettings() {
-  // Parse event IDs from the multi-line textarea — one UUID per line
-  const eventIds = document.getElementById('cfg-eventIds').value
-    .split('\n').map(s => s.trim()).filter(Boolean);
-  const eventId = eventIds[0] || '';
+  const eventId = document.getElementById('cfg-eventId').value.trim();
 
   // Project-level patch
   const projPatch = {
-    eventIds,
     eventId,
     clientId:  document.getElementById('cfg-clientId').value.trim(),
     tokenUrl:  document.getElementById('cfg-tokenUrl').value.trim(),
@@ -924,9 +800,6 @@ async function saveSettings() {
     }
     state.eventId = eventId;
     updateEventBadge(eventId);
-    // Refresh schema so the _matchedEventId condition dropdown reflects updated event IDs
-    _guestSchema = null;
-    await ensureGuestSchema();
     toast('Settings saved', 'success');
   } catch(e) { toast('Failed to save', 'error'); }
 }
@@ -1038,20 +911,16 @@ function renderEventItems(events) {
 }
 
 function useEventId(id, name) {
-  // Navigate to Settings first, then append the selected event ID if not already listed
+  state.eventId = id;
+  updateEventBadge(id);
+  // Pre-fill settings
   document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
   document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
   document.querySelector('[data-page="settings"]').classList.add('active');
   document.getElementById('page-settings').classList.add('active');
   loadSettings().then(() => {
-    const ta = document.getElementById('cfg-eventIds');
-    const existing = ta.value.split('\n').map(s => s.trim()).filter(Boolean);
-    if (!existing.includes(id)) {
-      ta.value = [...existing, id].join('\n');
-    }
-    state.eventId = state.eventId || id;
-    updateEventBadge(state.eventId);
-    toast(`Event "${name}" added — save to confirm`, 'info');
+    document.getElementById('cfg-eventId').value = id;
+    toast(`Event "${name}" selected — save to confirm`, 'info');
   });
 }
 
@@ -1089,10 +958,8 @@ function clearScan() {
 }
 
 async function lookupGuest(uid) {
-  const proj         = _projects.find(p => p.id === _activeProjectId);
-  const projEventIds = proj?.eventIds?.length ? proj.eventIds : (proj?.eventId ? [proj.eventId] : []);
-
-  if (!projEventIds.length) {
+  const eventId = state.eventId;
+  if (!eventId) {
     toast('No Event ID configured. Go to Settings.', 'error');
     document.getElementById('scan-status').textContent = '✕ No event';
     return;
@@ -1102,33 +969,11 @@ async function lookupGuest(uid) {
   document.getElementById('guest-result').innerHTML = '<div class="empty"><div class="spinner"></div></div>';
 
   try {
-    let guest = null;
-    let matchedEventId = null;
+    const r = await fetch(`/api/guests/${encodeURIComponent(eventId)}?scan=${encodeURIComponent(uid)}`);
+    const data = await r.json();
 
-    if (projEventIds.length === 1) {
-      // Single event — direct lookup first, then filter[uid]
-      const eid  = projEventIds[0];
-      const r    = await fetch(`/api/guests/${encodeURIComponent(eid)}?scan=${encodeURIComponent(uid)}`);
-      const data = await r.json();
-      const arr  = Array.isArray(data) ? data : (data.data || []);
-      if (arr.length) { guest = arr[0]; matchedEventId = eid; }
-    } else {
-      // Multi-event — use filter[uid] against all events in parallel (event-scoped)
-      const results = await Promise.all(
-        projEventIds.map(async eid => {
-          try {
-            const r    = await fetch(`/api/guests/${encodeURIComponent(eid)}?scan=${encodeURIComponent(uid)}`);
-            const data = await r.json();
-            const arr  = Array.isArray(data) ? data : (data.data || []);
-            return arr.length ? { guest: arr[0], matchedEventId: eid } : null;
-          } catch(e) { return null; }
-        })
-      );
-      const hit = results.find(r => r !== null);
-      if (hit) { guest = hit.guest; matchedEventId = hit.matchedEventId; }
-    }
-
-    if (!guest) {
+    const guests = Array.isArray(data) ? data : (data.data || []);
+    if (!guests.length) {
       document.getElementById('guest-result').innerHTML = `
         <div class="empty">
           <div class="icon" style="color:var(--red);">✕</div>
@@ -1139,20 +984,11 @@ async function lookupGuest(uid) {
       return;
     }
 
-    // Inject matched event so badge routing works the same as on the kiosk
-    const attrs = guest.attributes || guest.properties || {};
-    attrs._matchedEventId = matchedEventId;
-    if (guest.attributes) guest.attributes = attrs;
-    else guest.properties = attrs;
-
-    // Keep state.eventId pointing at the matched event for check-in calls
-    state.eventId = matchedEventId;
-    updateEventBadge(matchedEventId);
-
+    const guest = guests[0];
     state.currentGuest = guest;
     renderGuestCard(guest);
     document.getElementById('scan-status').textContent = '✓ Found';
-    addLog(`Found: ${attrs.contact_firstName || ''} ${attrs.contact_lastName || ''} (${uid}) [event: ${matchedEventId?.slice(0,8)}…]`, 'info');
+    addLog(`Found: ${guest.attributes?.contact_firstName || ''} ${guest.attributes?.contact_lastName || ''} (${uid})`, 'info');
   } catch(e) {
     document.getElementById('guest-result').innerHTML = `<div class="empty"><p style="color:var(--red);">Error: ${e.message}</p></div>`;
     document.getElementById('scan-status').textContent = '✕ Error';
@@ -1184,43 +1020,18 @@ document.getElementById('search-input').addEventListener('keydown', e => {
 });
 
 async function searchGuests(term) {
-  const proj         = _projects.find(p => p.id === _activeProjectId);
-  const projEventIds = proj?.eventIds?.length ? proj.eventIds : (proj?.eventId ? [proj.eventId] : []);
-  if (!projEventIds.length) {
+  const eventId = state.eventId;
+  if (!eventId) {
     document.getElementById('search-status').textContent = '✕ No event';
     return;
   }
   try {
-    // Search all events in parallel, tag each result with its source event
-    const perEvent = await Promise.all(
-      projEventIds.map(async eid => {
-        try {
-          const r = await fetch(`/api/guests/${encodeURIComponent(eid)}?search=${encodeURIComponent(term)}`);
-          const data = await r.json();
-          const arr = Array.isArray(data) ? data : [];
-          // Inject _matchedEventId so routing works when guest is selected
-          arr.forEach(g => {
-            const a = g.attributes || g.properties || {};
-            a._matchedEventId = eid;
-            if (g.attributes) g.attributes = a; else g.properties = a;
-          });
-          return arr;
-        } catch(e) { return []; }
-      })
-    );
-    // Merge, deduplicate by guest id
-    const seen   = new Set();
-    const guests = perEvent.flat().filter(g => {
-      const id = g.id || g.uid;
-      if (seen.has(id)) return false;
-      seen.add(id);
-      return true;
-    });
-
-    const box    = document.getElementById('search-results');
+    const r = await fetch(`/api/guests/${encodeURIComponent(eventId)}?search=${encodeURIComponent(term)}`);
+    const guests = await r.json();
+    const box = document.getElementById('search-results');
     const status = document.getElementById('search-status');
 
-    if (!guests.length) {
+    if (!Array.isArray(guests) || guests.length === 0) {
       status.textContent = '✕ No matches';
       box.style.display = 'none';
       box.innerHTML = '';
@@ -1235,18 +1046,17 @@ async function searchGuests(term) {
       const lname = a.contact_lastName || '';
       const company = a.contact_x_companyName || '—';
       const email = a.contact_email || a.email || '';
+      const uid = g.uid || g.id || '';
       const checkedin = a.guest_x_checkedin === true || (a.guest_x_checkedinat && a.guest_x_checkedinat !== false && a.guest_x_checkedinat !== 'false' && a.guest_x_checkedinat !== '');
       const status_val = a.status || g.status || '';
-      const evLabel = _eventNameCache[a._matchedEventId] || (a._matchedEventId ? `Event ${a._matchedEventId.slice(0,8)}…` : '');
       return `<div onclick="selectSearchResult(${i})" data-idx="${i}" style="
         padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border);
         display:flex; justify-content:space-between; align-items:center;
         transition:background 0.15s;
       " onmouseover="this.style.background='var(--surface3)'" onmouseout="this.style.background=''">
-        <div style="min-width:0;">
+        <div>
           <div style="font-weight:600; color:var(--text);">${fname} ${lname}</div>
-          <div style="font-size:12px; color:var(--muted); font-family:var(--font-mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${company}${email ? ' · ' + email : ''}</div>
-          ${evLabel ? `<div style="margin-top:4px;"><span style="font-size:10px;font-family:var(--font-mono);background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:1px 6px;letter-spacing:0.03em;">⬡ ${escHtml(evLabel)}</span></div>` : ''}
+          <div style="font-size:12px; color:var(--muted); font-family:var(--font-mono);">${company}${email ? ' · ' + email : ''}</div>
         </div>
         <div style="text-align:right; flex-shrink:0; margin-left:12px;">
           ${checkedin ? '<span class="badge badge-green" style="font-size:10px;">✓ In</span>' : '<span class="badge badge-orange" style="font-size:10px;">Pending</span>'}
@@ -1255,6 +1065,7 @@ async function searchGuests(term) {
       </div>`;
     }).join('');
 
+    // Store results on the element for click handler
     box._searchResults = guests;
   } catch(e) {
     document.getElementById('search-status').textContent = '✕ Error';
@@ -1262,27 +1073,21 @@ async function searchGuests(term) {
 }
 
 function selectSearchResult(idx) {
-  const box    = document.getElementById('search-results');
+  const box = document.getElementById('search-results');
   const guests = box._searchResults || [];
-  const guest  = guests[idx];
+  const guest = guests[idx];
   if (!guest) return;
-
-  // Update state.eventId to the event this guest was found in
-  const matchedEid = (guest.attributes || guest.properties || {})._matchedEventId;
-  if (matchedEid) {
-    state.eventId = matchedEid;
-    updateEventBadge(matchedEid);
-  }
-
   state.currentGuest = guest;
   renderGuestCard(guest);
-  document.getElementById('search-input').value   = '';
+  // Clear search UI
+  document.getElementById('search-input').value = '';
   document.getElementById('search-status').textContent = '';
   box.style.display = 'none';
-  box.innerHTML     = '';
+  box.innerHTML = '';
+  // Scroll guest card into view
   document.getElementById('guest-result').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   const a = guest.attributes || guest.properties || {};
-  addLog(`Found: ${a.contact_firstName || ''} ${a.contact_lastName || ''} (search, event: ${matchedEid?.slice(0,8) || '?'}…)`, 'info');
+  addLog(`Found: ${a.contact_firstName || ''} ${a.contact_lastName || ''} (search)`, 'info');
 }
 
 function guestAttr(guest, key) {
@@ -1299,112 +1104,68 @@ function updateBadgeTemplateHint(guest) {
 }
 
 function renderGuestCard(guest) {
-  const attrs   = guest.attributes || guest.properties || {};
-  const fname   = attrs.contact_firstName || '';
-  const lname   = attrs.contact_lastName  || '';
-  const company = attrs.contact_x_companyName || '—';
-  const status  = guest.status || attrs.status || '—';
+  const fname = guestAttr(guest, 'contact_firstName') || '';
+  const lname = guestAttr(guest, 'contact_lastName') || '';
+  const company = guestAttr(guest, 'contact_x_companyName') || '—';
+  // Checked in = boolean guest_x_checkedin is true AND guest_x_checkedinat has a date value
+  // API returns guest_x_checkedin: false (not checked in) or true (checked in)
+  // guest_x_checkedinat: false / "" (not set) or "YYYY-MM-DD" (date of check-in)
+  const _checkedinBool = guestAttr(guest, 'guest_x_checkedin');
+  const _rawCheckin = guestAttr(guest, 'guest_x_checkedinat');
+  const _atValid = _rawCheckin && _rawCheckin !== false && _rawCheckin !== 'false' && _rawCheckin !== '';
+  // A guest is checked in if EITHER: the boolean is true OR the date is set (handles partial API updates)
+  const checkedIn = (_checkedinBool === true || _atValid) ? (_atValid ? _rawCheckin : true) : false;
+  const awf = guestAttr(guest, 'guest_x_awf_teilnehmer') === true;
+  const stimm = guestAttr(guest, 'guest_x_Stimmberechtigt') === true;
+  const group = guestAttr(guest, 'guest_x_group') || '—';
+  const jobTitle = guestAttr(guest, 'contact_x_jobTitle') || '—';
+  const status = guest.status || guestAttr(guest, 'status') || '—';
   const isEligible = status === 'REGISTERED' || status === 'PENDING';
 
-  const _checkedinBool = attrs.guest_x_checkedin;
-  const _rawCheckin    = attrs.guest_x_checkedinat;
-  const _atValid = _rawCheckin && _rawCheckin !== false && _rawCheckin !== 'false' && _rawCheckin !== '';
-  const checkedIn = (_checkedinBool === true || _atValid) ? (_atValid ? _rawCheckin : true) : false;
-  const canCheckin = isEligible && !checkedIn;
-
+  const permBadge = awf
+    ? `<span class="badge badge-green">✓ AWF Participant</span>`
+    : `<span class="badge badge-red">✕ Not AWF</span>`;
+  const stimmBadge = stimm
+    ? `<span class="badge badge-accent">⊛ Stimmberechtigt</span>`
+    : `<span class="badge badge-muted">— No vote</span>`;
   const checkedBadge = checkedIn
     ? `<span class="badge badge-green">✓ Checked in ${checkedIn}</span>`
     : `<span class="badge badge-orange">○ Not checked in</span>`;
   const statusBadge = `<span class="badge badge-muted">${status}</span>`;
 
-  // ── Dynamic rule-based status panel ─────────────────────────────────────────
-  // Collect all condition attributes from:
-  //   1. The event group matching this guest's _matchedEventId
-  //   2. Global rules
-  // Deduplicate, strip _matchedEventId (structural) and check-in fields (shown above)
-  const SKIP_ATTRS = new Set(['_matchedEventId','guest_x_checkedin','guest_x_checkedinat']);
-  const matchedEventId = attrs._matchedEventId;
-  const groups      = loadEventGroups();
-  const globalRules = loadRules();
-  const eventRules  = matchedEventId
-    ? (groups.find(g => g.eventId === matchedEventId)?.rules || [])
-    : [];
-  const allRules = [...eventRules, ...globalRules];
-
-  // Ordered deduplication — preserve first-seen order
-  const seenAttrs = new Set();
-  const ruleAttrs = [];
-  for (const rule of allRules) {
-    for (const cond of (rule.conditions || [])) {
-      if (!SKIP_ATTRS.has(cond.attr) && !seenAttrs.has(cond.attr)) {
-        seenAttrs.add(cond.attr);
-        ruleAttrs.push(cond.attr);
-      }
-    }
-  }
-
-  // Resolve a raw attribute value to a human-readable label
-  function resolveAttrValue(attrName, rawVal) {
-    if (rawVal === undefined || rawVal === null) return '<span style="color:var(--muted)">—</span>';
-    // Boolean
-    if (rawVal === true  || rawVal === 'true')  return '<span style="color:var(--green)">✓ Yes</span>';
-    if (rawVal === false || rawVal === 'false') return '<span style="color:var(--muted)">✕ No</span>';
-    // UUID — try to resolve via labelMap
-    const label = _guestSchema?.labelMap?.[rawVal];
-    if (label) return `<span style="color:var(--text)">${escHtml(label)}</span>`;
-    // Short UUID truncation for unresolved UUIDs
-    if (/^[0-9a-f-]{36}$/.test(String(rawVal))) return `<span style="color:var(--muted);font-family:var(--font-mono);font-size:11px;">${String(rawVal).slice(0,8)}…</span>`;
-    return `<span style="color:var(--text)">${escHtml(String(rawVal))}</span>`;
-  }
-
-  // Make a friendly label from an attribute name
-  function attrLabel(name) {
-    return name
-      .replace(/^(guest_x_|contact_x_|contact_)/, '')
-      .replace(/_/g, ' ')
-      .replace(/\b\w/g, c => c.toUpperCase());
-  }
-
-  const dynamicRows = ruleAttrs.length
-    ? ruleAttrs.map(attr => `
-        <div class="perm-row">
-          <span class="key">${escHtml(attrLabel(attr))}</span>
-          ${resolveAttrValue(attr, attrs[attr])}
-        </div>`).join('')
-    : `<div class="perm-row"><span class="key" style="color:var(--muted)">No rule conditions configured for this event</span></div>`;
-
-  // Event label
-  const evLabel = matchedEventId
-    ? (_eventNameCache[matchedEventId] || `Event ${matchedEventId.slice(0,8)}…`)
-    : '';
+  const canCheckin = isEligible && !checkedIn;
 
   document.getElementById('guest-result').innerHTML = `
     <div class="guest-card">
       <div class="guest-card-header">
-        <div class="guest-name">${escHtml(fname)} ${escHtml(lname)}</div>
-        <div class="guest-company">${escHtml(company)}</div>
-        ${evLabel ? `<div style="margin-top:6px;"><span style="font-size:11px;font-family:var(--font-mono);background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:1px 6px;">⬡ ${escHtml(evLabel)}</span></div>` : ''}
+        <div class="guest-name">${fname} ${lname}</div>
+        <div class="guest-company">${company}</div>
         <div style="margin-top:10px; display:flex; gap:6px; flex-wrap:wrap;">
           ${checkedBadge}
           ${statusBadge}
+          ${permBadge}
+          ${stimmBadge}
         </div>
       </div>
       <div class="guest-body">
         <div class="guest-attrs">
+          <div class="guest-attr"><span class="key">Job Title</span><span class="val">${jobTitle}</span></div>
+          <div class="guest-attr"><span class="key">Group</span><span class="val">${group}</span></div>
           <div class="guest-attr"><span class="key">Guest ID</span><span class="val" style="font-family:var(--font-mono);font-size:11px;">${guest.id || guest.uid || '—'}</span></div>
+          <div class="guest-attr"><span class="key">Member UUID</span><span class="val" style="font-family:var(--font-mono);font-size:11px;">${(guestAttr(guest,'guest_x_member')||'—').slice(0,14)}…</span></div>
         </div>
 
         <div class="perm-panel">
+          <div class="perm-row"><span class="key">Status</span> <span style="color:var(--text)">${status}</span></div>
+          <div class="perm-row"><span class="key">AWF Teilnehmer</span> ${awf ? '<span style="color:var(--green)">✓ Yes</span>' : '<span style="color:var(--red)">✕ No</span>'}</div>
+          <div class="perm-row"><span class="key">Stimmberechtigt</span> ${stimm ? '<span style="color:var(--accent)">✓ Yes</span>' : '<span style="color:var(--muted)">— No</span>'}</div>
           <div class="perm-row"><span class="key">Check-in Status</span> ${checkedIn ? `<span style="color:var(--green)">${checkedIn}</span>` : '<span style="color:var(--orange)">Pending</span>'}</div>
-          <div class="perm-row"><span class="key">Registration</span> <span style="color:var(--text)">${status}</span></div>
-          ${dynamicRows}
         </div>
 
         <div style="display:flex; gap:8px; flex-wrap:wrap;">
           ${canCheckin ? `<button class="btn btn-primary" onclick="confirmCheckin()">✓ Check In + Print Badge</button>` : ''}
-          ${checkedIn  ? `<button class="btn btn-secondary" onclick="printBadge()">⎙ Reprint Badge</button>` : ''}
-          ${checkedIn  ? `<button class="btn btn-ghost" style="color:var(--orange);" onclick="confirmUndoCheckin()">↺ Reset Check-in</button>` : ''}
-          ${!checkedIn ? `<span id="badge-template-hint" style="font-size:11px;color:var(--muted);font-family:var(--font-mono);margin-left:8px;"></span>` : ''}
+          ${checkedIn ? `<button class="btn btn-secondary" onclick="printBadge()">⎙ Reprint Badge</button>` : ''}
+      ${!checkedIn ? `<span id="badge-template-hint" style="font-size:11px;color:var(--muted);font-family:var(--font-mono);margin-left:8px;"></span>` : ''}
           ${!isEligible && !checkedIn ? `<button class="btn btn-danger" onclick="showDeny()">✕ Deny (${status})</button>` : ''}
           <button class="btn btn-ghost" onclick="clearScan()">← Back</button>
         </div>
@@ -1416,28 +1177,22 @@ function renderGuestCard(guest) {
 function confirmCheckin() {
   const guest = state.currentGuest;
   if (!guest) return;
-  const attrs   = guest.attributes || guest.properties || {};
-  const fname   = attrs.contact_firstName || '';
-  const lname   = attrs.contact_lastName  || '';
-  const name    = `${fname} ${lname}`.trim();
-  const company = attrs.contact_x_companyName || '';
-
-  // Show the matched template name in the confirmation dialog
-  const templateKey  = selectBadgeTemplate(guest);
-  const tpls         = loadTemplates();
-  const tpl          = tpls.find(t => t.key === templateKey);
-  const templateName = tpl?.name || templateKey || '—';
-  const evLabel      = attrs._matchedEventId
-    ? (_eventNameCache[attrs._matchedEventId] || `Event ${attrs._matchedEventId.slice(0,8)}…`)
-    : '';
+  const fname = guestAttr(guest, 'contact_firstName') || '';
+  const lname = guestAttr(guest, 'contact_lastName') || '';
+  const name = `${fname} ${lname}`.trim();
+  const company = guestAttr(guest, 'contact_x_companyName') || '';
+  const stimm = guestAttr(guest, 'guest_x_Stimmberechtigt') === true;
+  const awf = guestAttr(guest, 'guest_x_awf_teilnehmer') === true;
 
   document.getElementById('confirm-content').innerHTML = `
     <div style="text-align:center; margin-bottom:24px;">
       <div style="font-size:40px; margin-bottom:12px;">✓</div>
-      <div style="font-size:22px; font-weight:800;">${escHtml(name)}</div>
-      <div style="color:var(--muted); font-size:14px; margin-top:4px;">${escHtml(company)}</div>
-      ${evLabel ? `<div style="margin-top:8px;"><span style="font-size:11px;font-family:var(--font-mono);background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:1px 6px;">⬡ ${escHtml(evLabel)}</span></div>` : ''}
-      <div style="margin-top:10px; color:var(--muted); font-size:12px;">Badge: <strong style="color:var(--text)">${escHtml(templateName)}</strong></div>
+      <div style="font-size:22px; font-weight:800;">${name}</div>
+      <div style="color:var(--muted); font-size:14px; margin-top:4px;">${company}</div>
+      <div style="margin-top:12px; display:flex; justify-content:center; gap:8px; flex-wrap:wrap;">
+        ${awf ? '<span class="badge badge-green">AWF Participant</span>' : ''}
+        ${stimm ? '<span class="badge badge-accent">⊛ Stimmberechtigt</span>' : '<span class="badge badge-muted">No vote</span>'}
+      </div>
     </div>
     <p style="text-align:center; color:var(--muted); font-size:13px; margin-bottom:24px;">Confirm check-in and print badge?</p>
     <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
@@ -1480,42 +1235,6 @@ function closeConfirm() {
   document.getElementById('confirm-overlay').style.display = 'none';
 }
 
-// Re-fetch the current guest from the API and update state, card, and badge hint.
-// Called after any mutation (check-in, reset) to keep revision and display fresh.
-async function refreshCurrentGuest() {
-  const guest = state.currentGuest;
-  if (!guest || !state.eventId) return;
-
-  // Prefer guest.id (primary key) — backend tries it as a direct ID lookup first
-  // which works regardless of check-in status. Fall back to uid/code for older records.
-  const lookupKey = guest.id || guest.uid
-    || (guest.attributes || guest.properties || {}).code
-    || (guest.attributes || guest.properties || {}).guest_code;
-  if (!lookupKey) return;
-
-  try {
-    const r    = await fetch(`/api/guests/${encodeURIComponent(state.eventId)}?scan=${encodeURIComponent(lookupKey)}`);
-    const data = await r.json();
-    const arr  = Array.isArray(data) ? data : (data.data || []);
-    if (!arr.length) return;
-
-    const fresh = arr[0];
-
-    // Preserve _matchedEventId so routing continues to work
-    const matchedEventId = (guest.attributes || guest.properties || {})._matchedEventId;
-    const freshAttrs = fresh.attributes || fresh.properties || {};
-    if (matchedEventId) freshAttrs._matchedEventId = matchedEventId;
-    if (fresh.attributes) fresh.attributes = freshAttrs;
-    else fresh.properties = freshAttrs;
-
-    state.currentGuest = fresh;
-    renderGuestCard(fresh);
-    updateBadgeTemplateHint(fresh);
-  } catch(e) {
-    console.warn('[refreshCurrentGuest]', e.message);
-  }
-}
-
 async function doCheckin(printAfter = true) {
   const guest = state.currentGuest;
   if (!guest) return;
@@ -1537,9 +1256,18 @@ async function doCheckin(printAfter = true) {
       toast(`✓ ${name} checked in!`, 'success', 5000);
       addLog(`Checked in: ${name}`, 'ok');
       state.stats.checked++;
+      // Update local guest state to reflect both fields the API now has
+      const today = new Date().toISOString().split('T')[0];
+      const attrs = state.currentGuest.attributes || state.currentGuest.properties || {};
+      attrs.guest_x_checkedin = true;
+      if (!attrs.guest_x_checkedinat || attrs.guest_x_checkedinat === false || attrs.guest_x_checkedinat === '') {
+        attrs.guest_x_checkedinat = today;
+      }
+      if (state.currentGuest.attributes) state.currentGuest.attributes = attrs;
+      else state.currentGuest.properties = attrs;
+      renderGuestCard(state.currentGuest);
+      updateBadgeTemplateHint(state.currentGuest);
       if (printAfter) printBadge();
-      // Re-fetch fresh guest (updates revision so subsequent actions don't conflict)
-      await refreshCurrentGuest();
     } else {
       toast(`Check-in failed: ${data.error || r.status}`, 'error');
       addLog(`Check-in failed: ${name} — ${data.error}`, 'err');
@@ -1550,60 +1278,7 @@ async function doCheckin(printAfter = true) {
   }
 }
 
-// ── Reset check-in ────────────────────────────────────────────────────────────
-function confirmUndoCheckin() {
-  const guest = state.currentGuest;
-  if (!guest) return;
-  const fname = guestAttr(guest, 'contact_firstName') || '';
-  const lname = guestAttr(guest, 'contact_lastName') || '';
-  const name  = `${fname} ${lname}`.trim();
-
-  document.getElementById('confirm-content').innerHTML = `
-    <div style="text-align:center; margin-bottom:24px;">
-      <div style="font-size:40px; margin-bottom:12px;">↺</div>
-      <div style="font-size:22px; font-weight:800;">${name}</div>
-      <div style="color:var(--orange); font-size:13px; margin-top:8px;">This will reset the check-in status in Colada365.</div>
-    </div>
-    <p style="text-align:center; color:var(--muted); font-size:13px; margin-bottom:24px;">The guest will be marked as not checked in and can scan in again.</p>
-    <div style="display:flex; gap:10px; justify-content:center;">
-      <button class="btn btn-danger" onclick="undoCheckin()">↺ Reset Check-in</button>
-      <button class="btn btn-ghost" onclick="closeConfirm()">Cancel</button>
-    </div>`;
-  document.getElementById('confirm-box').className = 'confirm-box deny';
-  document.getElementById('confirm-overlay').style.display = 'flex';
-}
-
-async function undoCheckin() {
-  const guest = state.currentGuest;
-  if (!guest) return;
-  closeConfirm();
-
-  const fname   = guestAttr(guest, 'contact_firstName') || '';
-  const lname   = guestAttr(guest, 'contact_lastName') || '';
-  const name    = `${fname} ${lname}`.trim();
-  const guestId = guest.id || guest.uid;
-
-  try {
-    const r = await fetch(`/api/guests/${encodeURIComponent(state.eventId)}/${guestId}/undo-checkin`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(guest),
-    });
-    const data = await r.json();
-    if (r.ok) {
-      toast(`↺ ${name} check-in reset`, 'info', 4000);
-      addLog(`Reset check-in: ${name}`, 'info');
-      // Re-fetch fresh guest (updates revision so subsequent actions don't conflict)
-      await refreshCurrentGuest();
-    } else {
-      toast(`Reset failed: ${data.error || r.status}`, 'error');
-      addLog(`Reset failed: ${name} — ${data.error}`, 'err');
-    }
-  } catch(e) {
-    toast(`Error: ${e.message}`, 'error');
-    addLog(`Error: ${e.message}`, 'err');
-  }
-}
+// ── Badge Templates ──────────────────────────────────────────────────────────
 // Matches Node-RED jimp-image node names → background PNG filenames
 // ══════════════════════════════════════════════════════════════════════════════
 // ── Dynamic Badge Template & Routing System ───────────────────────────────────
@@ -1616,12 +1291,10 @@ const PT_PER_CM = 28.3465; // 1 cm = 28.3465 pt (PDF points)
 // server (badge-config.json + badge-images/*.txt) so any client gets the same
 // configuration. An in-memory cache avoids redundant fetches.
 const _badgeCache = {
-  templates:        null,
-  eventGroups:      null,
-  rules:            null,
-  fallback:         null,
-  selfRegistration: null, // { [eventId]: { participantGroup, fields } }
-  images: {},
+  templates: null,   // array or null (null = not yet loaded)
+  rules: null,
+  fallback: null,
+  images: {},        // { [key]: dataUrl }
   ready: false,
   _loadPromise: null,
 };
@@ -1634,20 +1307,9 @@ async function ensureBadgeConfigLoaded() {
     try {
       const res = await fetch('/api/badge-config');
       const data = await res.json();
-      if (data.templates)        _badgeCache.templates        = data.templates;
-      if (data.eventGroups)      _badgeCache.eventGroups      = data.eventGroups;
-      if (data.rules)            _badgeCache.rules            = data.rules;
-      if (data.fallback)         _badgeCache.fallback         = data.fallback;
-      if (data.selfRegistration) _badgeCache.selfRegistration = data.selfRegistration;
-
-      // If rules or templates were missing on disk (first run / new project),
-      // write defaults back to the server NOW so the kiosk scan route always
-      // receives populated badgeConfig — it reads directly from badge-config.json
-      // and has no access to the DEFAULT_RULES/DEFAULT_TEMPLATES JS constants.
-      if (!data.rules || !data.templates) {
-        await _saveBadgeConfigToServer();
-      }
-
+      if (data.templates) _badgeCache.templates = data.templates;
+      if (data.rules)     _badgeCache.rules     = data.rules;
+      if (data.fallback)  _badgeCache.fallback  = data.fallback;
       // Load all stored images
       const imgRes = await fetch('/api/badge-images');
       const { keys } = await imgRes.json();
@@ -1674,25 +1336,23 @@ async function _saveBadgeConfigToServer() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        templates:        _badgeCache.templates        || loadTemplates(),
-        eventGroups:      _badgeCache.eventGroups      || [],
-        rules:            _badgeCache.rules            || loadRules(),
-        fallback:         _badgeCache.fallback         || 'gv_gast',
-        selfRegistration: _badgeCache.selfRegistration || {},
+        templates: _badgeCache.templates || loadTemplates(),
+        rules:     _badgeCache.rules     || loadRules(),
+        fallback:  _badgeCache.fallback  || 'gv_gast',
       }),
     });
   } catch(e) { console.error('[badge-config] save error:', e.message); }
 }
 
+// Force-refresh badge config from server (call after navigating back from badges page
+// or if you suspect stale data). Resets ready flag so ensureBadgeConfigLoaded re-fetches.
 async function refreshBadgeConfigFromServer() {
-  _badgeCache.templates        = null;
-  _badgeCache.eventGroups      = null;
-  _badgeCache.rules            = null;
-  _badgeCache.fallback         = null;
-  _badgeCache.selfRegistration = null;
-  _badgeCache.images           = {};
-  _badgeCache.ready            = false;
-  _badgeCache._loadPromise     = null;
+  _badgeCache.templates = null;
+  _badgeCache.rules = null;
+  _badgeCache.fallback = null;
+  _badgeCache.images = {};
+  _badgeCache.ready = false;
+  _badgeCache._loadPromise = null;
   await ensureBadgeConfigLoaded();
 }
 
@@ -1771,15 +1431,6 @@ function saveRules(rules) {
   _badgeCache.rules = rules;
   _saveBadgeConfigToServer();
 }
-function loadEventGroups() {
-  return _badgeCache.eventGroups
-    ? JSON.parse(JSON.stringify(_badgeCache.eventGroups))
-    : [];
-}
-function saveEventGroups(groups) {
-  _badgeCache.eventGroups = groups;
-  _saveBadgeConfigToServer();
-}
 function getFallbackTemplate() {
   return _badgeCache.fallback || 'gv_gast';
 }
@@ -1787,16 +1438,6 @@ function saveFallbackTemplate() {
   const v = document.getElementById('fallback-template-select')?.value;
   if (!v) return;
   _badgeCache.fallback = v;
-  _saveBadgeConfigToServer();
-}
-
-// ── Per-event self-registration config ───────────────────────────────────────
-function loadSelfRegForEvent(eventId) {
-  return (_badgeCache.selfRegistration || {})[eventId] || { participantGroup: null, fields: [] };
-}
-function saveSelfRegForEvent(eventId, cfg) {
-  if (!_badgeCache.selfRegistration) _badgeCache.selfRegistration = {};
-  _badgeCache.selfRegistration[eventId] = cfg;
   _saveBadgeConfigToServer();
 }
 
@@ -1833,36 +1474,14 @@ async function renameBadgeImage(oldKey, newKey) {
 }
 
 // ── Template page rendering ───────────────────────────────────────────────────
-// Fetch and cache real event names for the project's configured event IDs.
-// Returns the cache object { eventId: name }. Safe to call multiple times.
-async function ensureEventNames() {
-  const proj         = _projects.find(p => p.id === _activeProjectId);
-  const projEventIds = proj?.eventIds?.length ? proj.eventIds : (proj?.eventId ? [proj.eventId] : []);
-  if (!projEventIds.length) return _eventNameCache;
-
-  // Only fetch IDs we don't have yet
-  const missing = projEventIds.filter(id => !_eventNameCache[id]);
-  if (!missing.length) return _eventNameCache;
-
-  try {
-    const data = await fetch(
-      `/api/events/names?ids=${missing.map(encodeURIComponent).join(',')}`
-    ).then(r => r.json());
-    if (data?.names) Object.assign(_eventNameCache, data.names);
-  } catch(e) {
-    // non-critical — short UUID fallback used in UI
-  }
-  return _eventNameCache;
-}
-
 async function loadBadgesPage() {
   await ensureBadgeConfigLoaded();
   renderTemplateList();
   renderRoutingRulesList();
   populateFallbackSelect();
-  // Fetch event names + guest schema in parallel, then re-render rules with resolved labels
-  Promise.all([ensureEventNames(), ensureGuestSchema()]).then(() => {
-    renderRoutingRulesList();
+  // Pre-fetch schema in background so rule editor is ready instantly
+  ensureGuestSchema().then(schema => {
+    if (schema) renderRoutingRulesList(); // re-render with resolved labels
   });
 }
 
@@ -1890,24 +1509,17 @@ function renderTemplateList() {
 }
 
 function renderRoutingRulesList() {
-  const tpls       = loadTemplates();
-  const groups     = loadEventGroups();
-  const globalRules = loadRules();
-  const el         = document.getElementById('routing-rules-list');
-  const schema     = _guestSchema;
-
-  function ruleRow(r, i, scope) {
-    // scope: 'global' or an eventId string
-    const tpl     = tpls.find(t => t.key === r.template);
-    const condStr = r.conditions.map(c => conditionSummary(c, schema)).join(` ${r.logic} `);
-    const isFirst = i === 0;
-    const isLast  = scope === 'global'
-      ? i === globalRules.length - 1
-      : i === (groups.find(g => g.eventId === scope)?.rules?.length || 1) - 1;
-    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:var(--surface2);margin-bottom:6px;">
+  const rules = loadRules();
+  const tpls = loadTemplates();
+  const el = document.getElementById('routing-rules-list');
+  if (!rules.length) { el.innerHTML = '<p style="color:var(--muted);font-size:13px;">No rules yet. Click + New Rule.</p>'; return; }
+  el.innerHTML = rules.map((r, i) => {
+    const tpl = tpls.find(t => t.key === r.template);
+    const condStr = r.conditions.map(c => conditionSummary(c, _guestSchema)).join(` ${r.logic} `);
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:var(--surface2);margin-bottom:8px;">
       <div style="display:flex;flex-direction:column;gap:3px;flex-shrink:0;">
-        <button onclick="moveRule('${scope}',${i},-1)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0;" ${isFirst?'disabled':''}>▲</button>
-        <button onclick="moveRule('${scope}',${i},1)"  style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0;" ${isLast?'disabled':''}>▼</button>
+        <button onclick="moveRule(${i},-1)" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0;" ${i===0?'disabled':''}>▲</button>
+        <button onclick="moveRule(${i},1)"  style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:14px;line-height:1;padding:0;" ${i===rules.length-1?'disabled':''}>▼</button>
       </div>
       <div style="width:22px;height:22px;border-radius:50%;background:var(--accent-dim);color:var(--accent);font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;">${i+1}</div>
       <div style="flex:1;min-width:0;">
@@ -1916,172 +1528,11 @@ function renderRoutingRulesList() {
         <div style="font-size:11px;color:var(--accent);margin-top:2px;">→ ${tpl?.name || r.template}</div>
       </div>
       <div style="display:flex;gap:6px;flex-shrink:0;">
-        <button class="btn btn-secondary" style="font-size:11px;padding:4px 8px;" onclick="openRuleEditor('${scope}',${i})">✎ Edit</button>
-        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;color:var(--red);" onclick="deleteRule('${scope}',${i})">✕</button>
+        <button class="btn btn-secondary" style="font-size:11px;padding:4px 8px;" onclick="openRuleEditor(${i})">✎ Edit</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;color:var(--red);" onclick="deleteRule(${i})">✕</button>
       </div>
     </div>`;
-  }
-
-  function sectionHtml(title, scope, rules, accent) {
-    const addBtn = `<button class="btn btn-secondary" style="font-size:11px;" onclick="openRuleEditor('${scope}')">+ Add Rule</button>`;
-    const header = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;margin-top:14px;">
-      <div style="font-size:12px;font-weight:700;color:${accent};font-family:var(--font-mono);letter-spacing:0.05em;">${title}</div>
-      ${addBtn}
-    </div>`;
-    const body = rules.length
-      ? rules.map((r, i) => ruleRow(r, i, scope)).join('')
-      : `<div style="font-size:12px;color:var(--muted);padding:8px 0;">No rules — click Add Rule to create one.</div>`;
-    return header + body;
-  }
-
-  let html = '';
-
-  // Event-scoped groups
-  if (groups.length) {
-    for (const group of groups) {
-      const label = _eventNameCache[group.eventId]
-        || _guestSchema?.labelMap?.[group.eventId]
-        || `Event ${group.eventId.slice(0,8)}…`;
-      html += sectionHtml(`⬡ ${escHtml(label)}`, group.eventId, group.rules || [], 'var(--accent)');
-      // Self-registration subsection for this event
-      html += selfRegSectionHtml(group.eventId);
-      html += '<div style="border-bottom:1px solid var(--border);margin:10px 0 4px;"></div>';
-    }
-  }
-
-  // Global rules
-  html += sectionHtml('🌐 Global (all events)', 'global', globalRules, 'var(--muted)');
-
-  el.innerHTML = html;
-
-  // Populate participant group dropdowns (async — fires after innerHTML is set)
-  if (groups.length) {
-    for (const group of groups) {
-      populateEventRegGroups(group.eventId);
-    }
-  }
-}
-
-function selfRegSectionHtml(eventId) {
-  const cfg = loadSelfRegForEvent(eventId);
-  const FIXED = new Set(['contact_firstName','contact_lastName','contact_email','contact_commLang']);
-  const fields = (cfg.fields || []).filter(f => !FIXED.has(f.attr));
-  const fieldsHtml = fields.length
-    ? fields.map((f, i) => `
-        <div style="display:flex;align-items:center;gap:8px;padding:5px 8px;background:var(--surface2);border-radius:6px;margin-bottom:4px;">
-          <span style="flex:1;font-size:12px;font-family:var(--font-mono);color:var(--text);">${escHtml(f.label || f.attr)}</span>
-          <span style="font-size:10px;color:var(--muted);font-family:var(--font-mono);">${f.type || 'text'}</span>
-          <label style="font-size:11px;color:var(--muted);display:flex;align-items:center;gap:4px;cursor:pointer;">
-            <input type="checkbox" ${f.required ? 'checked' : ''} style="accent-color:var(--accent);width:13px;height:13px;"
-              onchange="toggleEventRegFieldRequired('${eventId}',${i},this.checked)"/>
-            req
-          </label>
-          <button onclick="removeEventRegField('${eventId}',${i})"
-            style="background:none;border:none;color:var(--red);cursor:pointer;font-size:13px;padding:0;line-height:1;">✕</button>
-        </div>`).join('')
-    : `<div style="font-size:12px;color:var(--muted);padding:4px 0 6px;">No extra fields — first name, last name, email and language are always shown.</div>`;
-
-  return `
-    <div style="margin-top:10px;padding:10px 12px;background:var(--surface);border:1px solid var(--border);border-radius:8px;">
-      <div style="font-size:11px;font-weight:700;color:var(--muted);font-family:var(--font-mono);letter-spacing:0.06em;text-transform:uppercase;margin-bottom:10px;">
-        ✎ Self-Registration
-      </div>
-      <div style="display:flex;flex-direction:column;gap:8px;">
-        <div>
-          <label class="form-label" style="font-size:11px;">Participant Group</label>
-          <select class="form-input" id="sreg-pg-${eventId}" style="font-family:var(--font-mono);font-size:12px;margin-top:4px;"
-            onchange="saveEventRegPg('${eventId}',this.value)">
-            <option value="">— loading… —</option>
-          </select>
-        </div>
-        <div>
-          <label class="form-label" style="font-size:11px;">Extra Form Fields</label>
-          <div id="sreg-fields-${eventId}" style="margin-top:4px;">${fieldsHtml}</div>
-          <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
-            <select class="form-input" id="sreg-picker-${eventId}" style="font-family:var(--font-mono);font-size:12px;flex:1;">
-              <option value="">— add field from schema —</option>
-            </select>
-            <button class="btn btn-secondary" style="font-size:11px;flex-shrink:0;"
-              onclick="addEventRegField('${eventId}')">+ Add</button>
-          </div>
-        </div>
-      </div>
-    </div>`;
-}
-
-async function populateEventRegGroups(eventId) {
-  const sel = document.getElementById(`sreg-pg-${eventId}`);
-  if (!sel) return;
-  const saved = loadSelfRegForEvent(eventId).participantGroup || '';
-  try {
-    const r = await fetch(`/api/events/${encodeURIComponent(eventId)}/participantgroups`);
-    const data = await r.json();
-    const groups = data.groups || [];
-    sel.innerHTML = '<option value="">— none / event default —</option>' +
-      groups.map(g => `<option value="${escHtml(g.id)}" ${g.id === saved ? 'selected' : ''}>${escHtml(g.name || g.id)}</option>`).join('');
-    // Also populate the field picker for this event
-    populateEventRegFieldPicker(eventId);
-  } catch(e) {
-    sel.innerHTML = '<option value="">— error loading —</option>';
-  }
-}
-
-async function populateEventRegFieldPicker(eventId) {
-  const picker = document.getElementById(`sreg-picker-${eventId}`);
-  if (!picker) return;
-  picker.innerHTML = '<option value="">— add field from schema —</option>';
-  await ensureGuestSchema();
-  const schema = _guestSchema;
-  if (!schema?.fields) return;
-  const FIXED = new Set(['contact_firstName','contact_lastName','contact_email','contact_commLang',
-    '_matchedEventId','guest_x_checkedin','guest_x_checkedinat']);
-  const existing = new Set((loadSelfRegForEvent(eventId).fields || []).map(f => f.attr));
-  for (const [attr, field] of Object.entries(schema.fields)) {
-    if (FIXED.has(attr) || existing.has(attr)) continue;
-    const label = attr.replace(/^(guest_x_|contact_x_|contact_)/, '').replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
-    const opt = document.createElement('option');
-    opt.value = JSON.stringify({
-      attr, type: field.type, label,
-      options: field.type === 'choice'
-        ? field.values.map(v => ({ value: v.value, label: _guestSchema?.labelMap?.[v.value] || v.value.slice(0,8)+'…' }))
-        : [],
-    });
-    opt.textContent = `${label} (${field.type})`;
-    picker.appendChild(opt);
-  }
-}
-
-function saveEventRegPg(eventId, participantGroup) {
-  const cfg = loadSelfRegForEvent(eventId);
-  saveSelfRegForEvent(eventId, { ...cfg, participantGroup: participantGroup || null });
-  toast('Self-registration saved', 'ok', 2000);
-}
-
-function addEventRegField(eventId) {
-  const picker = document.getElementById(`sreg-picker-${eventId}`);
-  if (!picker?.value) return;
-  try {
-    const field = JSON.parse(picker.value);
-    const cfg   = loadSelfRegForEvent(eventId);
-    const fields = [...(cfg.fields || []), { ...field, required: false }];
-    saveSelfRegForEvent(eventId, { ...cfg, fields });
-    renderRoutingRulesList(); // re-render to show updated list
-    toast('Field added', 'ok', 2000);
-  } catch(e) {}
-}
-
-function removeEventRegField(eventId, idx) {
-  const cfg    = loadSelfRegForEvent(eventId);
-  const fields = (cfg.fields || []).filter((_, i) => i !== idx);
-  saveSelfRegForEvent(eventId, { ...cfg, fields });
-  renderRoutingRulesList();
-}
-
-function toggleEventRegFieldRequired(eventId, idx, required) {
-  const cfg    = loadSelfRegForEvent(eventId);
-  const fields = [...(cfg.fields || [])];
-  if (fields[idx]) fields[idx] = { ...fields[idx], required };
-  saveSelfRegForEvent(eventId, { ...cfg, fields });
+  }).join('');
 }
 
 function populateFallbackSelect() {
@@ -2459,32 +1910,22 @@ function deleteTemplate(idx) {
 
 // ── Guest field schema (for routing rule editor) ──────────────────────────────
 let _guestSchema = null; // { fields: { [attr]: { type, values: [{value,count}] } }, labelMap: { uuid: label } }
-let _eventNameCache = {}; // { eventId: "Event Name" } — populated on demand
 
 async function ensureGuestSchema() {
   if (_guestSchema) return _guestSchema;
   try {
     const cfg = await fetch('/api/config').then(r => r.json());
     const eventId = cfg.eventId;
-    if (!eventId) {
-      // Even with no event configured, still build a minimal schema so _matchedEventId
-      // is available in the rule editor if event IDs exist on the project
-      _guestSchema = { fields: {}, labelMap: {} };
-    } else {
-      // Fetch inferred field schema AND real option labels from upstream guestschema in parallel
-      const [schemaData, labelsData] = await Promise.all([
-        fetch(`/api/guests/${eventId}/schema`).then(r => r.json()).catch(() => null),
-        fetch(`/api/guests/${eventId}/optionlabels`).then(r => r.json()).catch(() => null),
-      ]);
-      _guestSchema = {
-        ...(schemaData || {}),
-        labelMap: labelsData?.labelMap || {},
-      };
-    }
-
-    // NOTE: _matchedEventId is no longer injected as a schema field —
-    // event-based routing is now handled structurally via eventGroups,
-    // so it no longer needs to appear in the condition editor.
+    if (!eventId) return null;
+    // Fetch inferred field schema AND real option labels from upstream guestschema in parallel
+    const [schemaData, labelsData] = await Promise.all([
+      fetch(`/api/guests/${eventId}/schema`).then(r => r.json()).catch(() => null),
+      fetch(`/api/guests/${eventId}/optionlabels`).then(r => r.json()).catch(() => null),
+    ]);
+    _guestSchema = {
+      ...(schemaData || {}),
+      labelMap: labelsData?.labelMap || {},
+    };
   } catch(e) { console.warn('Schema load failed:', e); }
   return _guestSchema;
 }
@@ -2507,79 +1948,30 @@ function conditionSummary(c, schema) {
   let valLabel = c.value;
   if (field?.type === 'choice') {
     valLabel = schema?.labelMap?.[c.value]
-      || (() => {
-           const e = field.values?.find(e => e.value === c.value);
-           return e
-             ? (field.synthetic ? `Event ${c.value.slice(0,8)}…` : `${c.value.slice(0,8)}… (${e.count} guests)`)
-             : c.value.slice(0,8) + '…';
-         })();
+      || (() => { const e = field.values?.find(e => e.value === c.value); return e ? `${c.value.slice(0,8)}… (${e.count} guests)` : c.value; })();
   } else if (field?.type === 'boolean') {
     valLabel = c.value;
   }
   const opLabel = { eq: '=', neq: '≠', contains: '∋', exists: '∃', true: '= true', false: '= false' }[c.op] || c.op;
-  const attrLabel = c.attr === '_matchedEventId' ? 'Matched Event' : c.attr;
-  if (c.op === 'exists' || c.op === 'true' || c.op === 'false') return `${attrLabel} ${opLabel}`;
-  return `${attrLabel} ${opLabel} "${valLabel}"`;
+  if (c.op === 'exists' || c.op === 'true' || c.op === 'false') return `${c.attr} ${opLabel}`;
+  return `${c.attr} ${opLabel} "${valLabel}"`;
 }
 
 // ── Routing Rules CRUD ────────────────────────────────────────────────────────
-let _editingRuleIdx   = null;
-let _editingRuleScope = 'global'; // 'global' or an eventId string
+let _editingRuleIdx = null;
 
-async function openRuleEditor(scope, idx) {
-  _editingRuleScope = (scope !== undefined && scope !== null) ? scope : 'global';
-  _editingRuleIdx   = (idx   !== undefined && idx   !== null) ? idx   : null;
-
-  // Get the rule being edited (if any)
-  let r = null;
-  if (_editingRuleIdx !== null) {
-    if (_editingRuleScope === 'global') {
-      r = loadRules()[_editingRuleIdx];
-    } else {
-      const groups = loadEventGroups();
-      const group  = groups.find(g => g.eventId === _editingRuleScope);
-      r = group?.rules?.[_editingRuleIdx] || null;
-    }
-  }
+async function openRuleEditor(idx) {
+  _editingRuleIdx = (idx !== undefined) ? idx : null;
+  const rules = loadRules();
+  const r = (_editingRuleIdx !== null) ? rules[_editingRuleIdx] : null;
 
   document.getElementById('rule-modal-title').textContent = r ? 'Edit Rule' : 'New Routing Rule';
-  document.getElementById('rule-name').value  = r?.name  || '';
+  document.getElementById('rule-name').value = r?.name || '';
   document.getElementById('rule-logic').value = r?.logic || 'AND';
 
-  // Populate event scope dropdown — seed with short UUID labels immediately,
-  // then replace with real event names once the API responds
-  const proj         = _projects.find(p => p.id === _activeProjectId);
-  const projEventIds = proj?.eventIds?.length ? proj.eventIds : (proj?.eventId ? [proj.eventId] : []);
-  const scopeSel     = document.getElementById('rule-event-scope');
-
-  function buildScopeOptions(nameMap) {
-    return `<option value="">— Global (all events) —</option>` +
-      projEventIds.map(eid => {
-        const label = nameMap[eid] || `Event ${eid.slice(0,8)}…`;
-        const sel   = _editingRuleScope === eid ? 'selected' : '';
-        return `<option value="${eid}" ${sel}>${escHtml(label)}</option>`;
-      }).join('');
-  }
-
-  // Seed immediately with short UUIDs so the modal is usable right away
-  scopeSel.innerHTML = buildScopeOptions({});
-  if (_editingRuleScope === 'global') scopeSel.value = '';
-
-  // Fetch real event names in the background and update the dropdown
-  if (projEventIds.length) {
-    fetch(`/api/events/names?ids=${projEventIds.map(encodeURIComponent).join(',')}`)
-      .then(r => r.json())
-      .then(data => {
-        if (data?.names) {
-          scopeSel.innerHTML = buildScopeOptions(data.names);
-          if (_editingRuleScope === 'global') scopeSel.value = '';
-          else scopeSel.value = _editingRuleScope;
-        }
-      })
-      .catch(() => {}); // non-critical — short UUID labels remain
-  }
-
   populateRuleTemplateSelect(r?.template || '');
+
+  // Load schema before rendering (non-blocking fallback if unavailable)
   await ensureGuestSchema();
 
   const conds = r?.conditions || [ { attr:'', op:'eq', value:'' } ];
@@ -2662,9 +2054,7 @@ function renderRuleConditions(conds) {
   let fieldOpts = '<option value="">— field —</option>';
   if (schema?.fields) {
     const grouped = { boolean: [], choice: [], text: [] };
-    for (const [k, f] of Object.entries(schema.fields)) {
-      grouped[f.type]?.push(k);
-    }
+    for (const [k, f] of Object.entries(schema.fields)) grouped[f.type]?.push(k);
     if (grouped.boolean.length) {
       fieldOpts += `<optgroup label="Boolean">` + grouped.boolean.sort().map(k => `<option value="${k}">${k}</option>`).join('') + `</optgroup>`;
     }
@@ -2731,95 +2121,43 @@ function collectRuleConditions() {
 }
 
 function saveRuleModal() {
-  const name       = document.getElementById('rule-name').value.trim();
-  const logic      = document.getElementById('rule-logic').value;
-  const template   = document.getElementById('rule-template-select').value;
-  const newScope   = document.getElementById('rule-event-scope').value || 'global';
+  const name     = document.getElementById('rule-name').value.trim();
+  const logic    = document.getElementById('rule-logic').value;
+  const template = document.getElementById('rule-template-select').value;
   const conditions = collectRuleConditions();
 
-  if (!name)       { toast('Rule name is required', 'error'); return; }
-  if (!template)   { toast('Select a template', 'error'); return; }
+  if (!name) { toast('Rule name is required', 'error'); return; }
+  if (!template) { toast('Select a template', 'error'); return; }
   if (!conditions.length) { toast('Add at least one condition', 'error'); return; }
   if (conditions.some(c => !c.attr)) { toast('All conditions need an attribute name', 'error'); return; }
 
+  const rules = loadRules();
   const rule = { id: `r${Date.now()}`, name, logic, template, conditions };
 
-  if (newScope === 'global') {
-    const rules = loadRules();
-    if (_editingRuleIdx !== null && _editingRuleScope === 'global') rules[_editingRuleIdx] = rule;
-    else rules.push(rule);
-    // If scope changed from an event group → remove from old group
-    if (_editingRuleIdx !== null && _editingRuleScope !== 'global') {
-      _removeRuleFromGroup(_editingRuleScope, _editingRuleIdx);
-    }
-    saveRules(rules);
-  } else {
-    const groups = loadEventGroups();
-    let group = groups.find(g => g.eventId === newScope);
-    if (!group) { group = { eventId: newScope, rules: [] }; groups.push(group); }
-    if (_editingRuleIdx !== null && _editingRuleScope === newScope) {
-      group.rules[_editingRuleIdx] = rule;
-    } else {
-      // If scope changed from another group/global → remove from old location
-      if (_editingRuleIdx !== null) {
-        if (_editingRuleScope === 'global') {
-          const gRules = loadRules();
-          gRules.splice(_editingRuleIdx, 1);
-          _badgeCache.rules = gRules;
-        } else {
-          _removeRuleFromGroup(_editingRuleScope, _editingRuleIdx);
-        }
-      }
-      group.rules.push(rule);
-    }
-    saveEventGroups(groups);
-  }
+  if (_editingRuleIdx !== null) rules[_editingRuleIdx] = rule;
+  else rules.push(rule);
 
+  saveRules(rules);
   closeRuleModal();
   renderRoutingRulesList();
   toast(`✓ Rule "${name}" saved`, 'success');
 }
 
-function _removeRuleFromGroup(eventId, idx) {
-  const groups = loadEventGroups();
-  const group  = groups.find(g => g.eventId === eventId);
-  if (group) { group.rules.splice(idx, 1); _badgeCache.eventGroups = groups; }
-}
-
-function deleteRule(scope, idx) {
-  if (scope === 'global') {
-    const rules = loadRules();
-    if (!confirm(`Delete rule "${rules[idx].name}"?`)) return;
-    rules.splice(idx, 1);
-    saveRules(rules);
-  } else {
-    const groups = loadEventGroups();
-    const group  = groups.find(g => g.eventId === scope);
-    if (!group) return;
-    if (!confirm(`Delete rule "${group.rules[idx].name}"?`)) return;
-    group.rules.splice(idx, 1);
-    saveEventGroups(groups);
-  }
+function deleteRule(idx) {
+  const rules = loadRules();
+  if (!confirm(`Delete rule "${rules[idx].name}"?`)) return;
+  rules.splice(idx, 1);
+  saveRules(rules);
   renderRoutingRulesList();
   toast('Rule deleted', 'info');
 }
 
-function moveRule(scope, idx, dir) {
-  if (scope === 'global') {
-    const rules  = loadRules();
-    const newIdx = idx + dir;
-    if (newIdx < 0 || newIdx >= rules.length) return;
-    [rules[idx], rules[newIdx]] = [rules[newIdx], rules[idx]];
-    saveRules(rules);
-  } else {
-    const groups = loadEventGroups();
-    const group  = groups.find(g => g.eventId === scope);
-    if (!group) return;
-    const newIdx = idx + dir;
-    if (newIdx < 0 || newIdx >= group.rules.length) return;
-    [group.rules[idx], group.rules[newIdx]] = [group.rules[newIdx], group.rules[idx]];
-    saveEventGroups(groups);
-  }
+function moveRule(idx, dir) {
+  const rules = loadRules();
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= rules.length) return;
+  [rules[idx], rules[newIdx]] = [rules[newIdx], rules[idx]];
+  saveRules(rules);
   renderRoutingRulesList();
 }
 
@@ -2840,37 +2178,15 @@ function evalCondition(cond, attrs) {
 }
 
 function selectBadgeTemplate(guest) {
-  const attrs     = guest.attributes || guest.properties || {};
-  const groups    = loadEventGroups();
-  const globalRules = loadRules();
-  const fallback  = getFallbackTemplate();
+  const attrs = guest.attributes || guest.properties || {};
+  const rules = loadRules();
 
-  function evalConds(rule) {
+  for (const rule of rules) {
     const results = rule.conditions.map(c => evalCondition(c, attrs));
-    return rule.logic === 'OR' ? results.some(Boolean) : results.every(Boolean);
+    const match = rule.logic === 'OR' ? results.some(Boolean) : results.every(Boolean);
+    if (match) return rule.template;
   }
-  function evalRuleList(rules) {
-    for (const rule of (rules || [])) {
-      if (evalConds(rule)) return rule.template;
-    }
-    return null;
-  }
-
-  // 1. Event-scoped group (requires _matchedEventId to be set on attrs)
-  const matchedEventId = attrs._matchedEventId;
-  if (matchedEventId && groups.length) {
-    const group = groups.find(g => g.eventId === matchedEventId);
-    if (group) {
-      const key = evalRuleList(group.rules);
-      if (key) return key;
-    }
-  }
-
-  // 2. Global rules
-  const key = evalRuleList(globalRules);
-  if (key) return key;
-
-  return fallback;
+  return getFallbackTemplate();
 }
 
 // ── Font sizing ───────────────────────────────────────────────────────────────
@@ -3087,186 +2403,6 @@ function stopDashboardRefresh() {
   if (el) el.textContent = '';
 }
 
-// ── Monitor ───────────────────────────────────────────────────────────────────
-let _monInterval   = null;
-let _monChartCalls = null;
-let _monChartBw    = null;
-
-function fmtBytes(b) {
-  if (b === 0) return '0 B';
-  const units = ['B','KB','MB','GB'];
-  const i = Math.min(Math.floor(Math.log2(b) / 10), units.length - 1);
-  return (b / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1) + ' ' + units[i];
-}
-function fmtUptime(ms) {
-  const s = Math.floor(ms / 1000);
-  const m = Math.floor(s / 60);
-  const h = Math.floor(m / 60);
-  const d = Math.floor(h / 24);
-  if (d > 0) return `${d}d ${h % 24}h`;
-  if (h > 0) return `${h}h ${m % 60}m`;
-  if (m > 0) return `${m}m ${s % 60}s`;
-  return `${s}s`;
-}
-function _monTheme() {
-  const light = document.documentElement.getAttribute('data-theme') === 'light';
-  return {
-    gridColor:   light ? 'rgba(0,0,0,0.07)'  : 'rgba(255,255,255,0.05)',
-    tickColor:   light ? 'rgba(0,0,0,0.4)'   : 'rgba(255,255,255,0.4)',
-    legendColor: light ? 'rgba(0,0,0,0.5)'   : 'rgba(255,255,255,0.5)',
-  };
-}
-
-function startMonitorRefresh() {
-  loadMonitor();
-  _monInterval = setInterval(loadMonitor, 15000);
-}
-function stopMonitorRefresh() {
-  clearInterval(_monInterval);
-  _monInterval = null;
-  if (_monChartCalls) { _monChartCalls.destroy(); _monChartCalls = null; }
-  if (_monChartBw)    { _monChartBw.destroy();    _monChartBw    = null; }
-}
-
-async function loadMonitor() {
-  if (!document.getElementById('page-monitor')?.classList.contains('active')) return;
-  try {
-    const r    = await fetch('/api/stats/traffic');
-    const data = await r.json();
-    const th   = _monTheme();
-
-    // ── Summary cards ──────────────────────────────────────────────────────
-    document.getElementById('mon-total-calls').textContent = data.totals.calls.toLocaleString();
-    document.getElementById('mon-total-out').textContent   = fmtBytes(data.totals.bytesOut);
-    document.getElementById('mon-total-in').textContent    = fmtBytes(data.totals.bytesIn);
-    document.getElementById('mon-uptime').textContent      = fmtUptime(data.uptimeMs);
-    document.getElementById('mon-mem').textContent         = data.memMb + ' MB';
-
-    const nowBucket     = Math.floor(Date.now() / 60000) * 60000;
-    const currentBucket = data.buckets.find(b => b.ts === nowBucket);
-    document.getElementById('mon-cpm').textContent = currentBucket ? currentBucket.calls : 0;
-    document.getElementById('mon-last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
-
-    // ── Build 60-min label + data arrays, zero-filling gaps ───────────────
-    const labels = [], callsData = [], bwOutData = [], bwInData = [];
-    const bucketMap = Object.fromEntries(data.buckets.map(b => [b.ts, b]));
-    for (let i = 59; i >= 0; i--) {
-      const ts = nowBucket - i * 60000;
-      const b  = bucketMap[ts] || { calls: 0, bytesOut: 0, bytesIn: 0 };
-      const t  = new Date(ts);
-      labels.push(`${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`);
-      callsData.push(b.calls);
-      bwOutData.push(+(b.bytesOut / 1024).toFixed(2));
-      bwInData.push(+(b.bytesIn  / 1024).toFixed(2));
-    }
-
-    const commonScales = () => ({
-      x: { ticks: { maxTicksLimit: 12, color: th.tickColor, font: { size: 10 } }, grid: { color: th.gridColor } },
-      y: { beginAtZero: true, ticks: { color: th.tickColor, font: { size: 10 } }, grid: { color: th.gridColor } },
-    });
-
-    // ── API calls-per-minute bar chart ─────────────────────────────────────
-    const ctxCalls = document.getElementById('mon-chart-calls').getContext('2d');
-    if (_monChartCalls) {
-      _monChartCalls.data.labels = labels;
-      _monChartCalls.data.datasets[0].data = callsData;
-      Object.assign(_monChartCalls.options.scales.x.ticks, { color: th.tickColor });
-      Object.assign(_monChartCalls.options.scales.x.grid,  { color: th.gridColor });
-      Object.assign(_monChartCalls.options.scales.y.ticks, { color: th.tickColor });
-      Object.assign(_monChartCalls.options.scales.y.grid,  { color: th.gridColor });
-      _monChartCalls.update('none');
-    } else {
-      _monChartCalls = new Chart(ctxCalls, {
-        type: 'bar',
-        data: { labels, datasets: [{ label: 'API calls', data: callsData,
-          backgroundColor: 'rgba(211,34,42,0.55)', borderColor: 'rgba(211,34,42,0.9)',
-          borderWidth: 1, borderRadius: 2 }] },
-        options: { responsive: true, animation: false,
-          plugins: { legend: { display: false } }, scales: commonScales() }
-      });
-    }
-
-    // ── Bandwidth line chart ────────────────────────────────────────────────
-    const ctxBw = document.getElementById('mon-chart-bw').getContext('2d');
-    if (_monChartBw) {
-      _monChartBw.data.labels = labels;
-      _monChartBw.data.datasets[0].data = bwOutData;
-      _monChartBw.data.datasets[1].data = bwInData;
-      Object.assign(_monChartBw.options.scales.x.ticks, { color: th.tickColor });
-      Object.assign(_monChartBw.options.scales.x.grid,  { color: th.gridColor });
-      Object.assign(_monChartBw.options.scales.y.ticks, { color: th.tickColor });
-      Object.assign(_monChartBw.options.scales.y.grid,  { color: th.gridColor });
-      _monChartBw.options.plugins.legend.labels.color = th.legendColor;
-      _monChartBw.update('none');
-    } else {
-      _monChartBw = new Chart(ctxBw, {
-        type: 'line',
-        data: { labels, datasets: [
-          { label: 'Sent (KB)',     data: bwOutData, borderColor: 'rgba(245,158,11,0.9)',  backgroundColor: 'rgba(245,158,11,0.1)',  borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.3 },
-          { label: 'Received (KB)', data: bwInData,  borderColor: 'rgba(99,102,241,0.9)', backgroundColor: 'rgba(99,102,241,0.12)', borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.3 },
-        ]},
-        options: { responsive: true, animation: false,
-          plugins: { legend: { labels: { color: th.legendColor, font: { size: 11 }, boxWidth: 12 } } },
-          scales: commonScales() }
-      });
-    }
-
-    // ── Per-station table ──────────────────────────────────────────────────
-    const stEl = document.getElementById('mon-stations');
-    const stations = Object.entries(data.stations || {});
-    if (!stations.length) {
-      stEl.innerHTML = '<p style="color:var(--muted);font-size:13px;">No station activity recorded yet — activity appears after the first scan.</p>';
-    } else {
-      // Sort by total scans descending
-      stations.sort((a, b) => (b[1].scans - a[1].scans));
-      const maxScans = Math.max(1, stations[0]?.[1]?.scans || 1);
-
-      stEl.innerHTML = `
-        <div style="overflow-x:auto;">
-          <table style="width:100%;border-collapse:collapse;font-size:13px;">
-            <thead>
-              <tr style="font-size:11px;color:var(--muted);font-family:var(--font-mono);text-transform:uppercase;letter-spacing:0.06em;text-align:left;">
-                <th style="padding:6px 12px 10px 0;font-weight:600;">Station</th>
-                <th style="padding:6px 8px 10px;font-weight:600;text-align:center;">Scans</th>
-                <th style="padding:6px 8px 10px;font-weight:600;text-align:center;">✓ In</th>
-                <th style="padding:6px 8px 10px;font-weight:600;text-align:center;">↩ Already</th>
-                <th style="padding:6px 8px 10px;font-weight:600;text-align:center;">✕ Failed</th>
-                <th style="padding:6px 8px 10px;font-weight:600;text-align:center;">⌕ Searches</th>
-                <th style="padding:6px 8px 10px;font-weight:600;text-align:center;">+ Registers</th>
-                <th style="padding:6px 8px 10px;font-weight:600;">Last seen</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${stations.map(([id, s]) => {
-                const pct = Math.round((s.scans / maxScans) * 100);
-                const lastSeen = s.lastSeen
-                  ? new Date(s.lastSeen).toLocaleTimeString()
-                  : '—';
-                return `<tr style="border-top:1px solid var(--border);">
-                  <td style="padding:10px 12px 10px 0;">
-                    <div style="font-weight:600;">${escHtml(s.name)}</div>
-                    <div style="height:4px;border-radius:2px;background:var(--surface3);margin-top:5px;overflow:hidden;width:120px;">
-                      <div style="height:100%;width:${pct}%;background:var(--accent);border-radius:2px;"></div>
-                    </div>
-                  </td>
-                  <td style="padding:10px 8px;text-align:center;font-weight:700;">${s.scans}</td>
-                  <td style="padding:10px 8px;text-align:center;color:#4ade80;">${s.checkins}</td>
-                  <td style="padding:10px 8px;text-align:center;color:#a5b4fc;">${s.already}</td>
-                  <td style="padding:10px 8px;text-align:center;color:#f87171;">${s.failed}</td>
-                  <td style="padding:10px 8px;text-align:center;color:var(--muted);">${s.searches}</td>
-                  <td style="padding:10px 8px;text-align:center;color:var(--muted);">${s.registers}</td>
-                  <td style="padding:10px 8px;font-size:11px;font-family:var(--font-mono);color:var(--muted);">${lastSeen}</td>
-                </tr>`;
-              }).join('')}
-            </tbody>
-          </table>
-        </div>`;
-    }
-  } catch(e) {
-    console.error('[monitor]', e.message);
-  }
-}
-
 function resetDashboardRefresh() {
   _dashSecsLeft = DASH_REFRESH_SECS;
   updateCountdown();
@@ -3278,142 +2414,93 @@ function updateCountdown() {
 }
 
 async function loadDashboard() {
-  const proj     = _projects.find(p => p.id === _activeProjectId);
-  const eventIds = proj?.eventIds?.length ? proj.eventIds : (proj?.eventId ? [proj.eventId] : []);
-  const container = document.getElementById('dash-events-container');
-
-  if (!eventIds.length) {
-    container.innerHTML = '<div class="card"><div class="empty" style="padding:30px;"><p>No events configured. Go to Settings.</p></div></div>';
-    document.getElementById('dash-totals-grid').style.display = 'none';
+  if (!state.eventId) {
+    document.getElementById('event-details').innerHTML = '<div class="empty" style="padding:30px;"><p>No event ID configured. Go to Settings.</p></div>';
     return;
   }
 
-  // Show loading spinners for each event slot
-  container.innerHTML = eventIds.map(eid => `
-    <div class="card" id="dash-event-${eid}" style="margin-bottom:16px;">
-      <div class="empty" style="padding:20px;"><div class="spinner"></div></div>
-    </div>`).join('');
-  document.getElementById('dash-totals-grid').style.display = 'none';
+  document.getElementById('event-details').innerHTML = '<div class="empty" style="padding:20px;"><div class="spinner"></div></div>';
 
-  // Fetch event metadata + guests for all events in parallel
-  const results = await Promise.allSettled(eventIds.map(async eid => {
+  try {
     const [evRes, guestRes] = await Promise.all([
-      fetch(`/api/event/${encodeURIComponent(eid)}`),
-      fetch(`/api/guests/${encodeURIComponent(eid)}`),
+      fetch(`/api/event/${encodeURIComponent(state.eventId)}`),
+      fetch(`/api/guests/${encodeURIComponent(state.eventId)}`)
     ]);
-    const evData    = await evRes.json();
+
+    const evData = await evRes.json();
     const guestData = await guestRes.json();
-    return { eid, evData, guestData };
-  }));
 
-  let aggTotal = 0, aggEligible = 0, aggChecked = 0;
+    // Colada365 event response uses properties.title, properties.start, etc.
+    const evProps = evData.properties || evData.attributes || (evData.data||{}).properties || (evData.data||{}).attributes || evData;
 
-  results.forEach((result, idx) => {
-    const eid  = eventIds[idx];
-    const card = document.getElementById(`dash-event-${eid}`);
-    if (!card) return;
-
-    if (result.status === 'rejected') {
-      card.innerHTML = `
-        <div class="card-title" style="color:var(--red);">⚠ ${escHtml(_eventNameCache[eid] || eid.slice(0,8)+'…')}</div>
-        <p style="font-size:13px;color:var(--muted);">Error: ${escHtml(result.reason?.message || 'unknown')}</p>`;
-      return;
-    }
-
-    const { evData, guestData } = result.value;
-    const evProps = evData.properties || evData.attributes || (evData.data||{}).properties || evData;
-
+    // Guests: handle { guests: [...] } envelope or flat array
     let guests = [];
-    if (Array.isArray(guestData))            guests = guestData;
-    else if (Array.isArray(guestData.guests)) guests = guestData.guests;
-    else if (Array.isArray(guestData.data))   guests = guestData.data;
+    if (guestData.guests && Array.isArray(guestData.guests)) guests = guestData.guests;
+    else if (Array.isArray(guestData)) guests = guestData;
+    else if (guestData.data && Array.isArray(guestData.data)) guests = guestData.data;
 
-    const gp = (g, k) => (g.attributes || g.properties || {})[k];
-    const isEligible = g => { const s = g.status || gp(g,'status') || ''; return s === 'REGISTERED' || s === 'PENDING'; };
-    const isCheckedIn = g => {
-      const bool = gp(g, 'guest_x_checkedin');
-      const at   = gp(g, 'guest_x_checkedinat');
-      return bool === true || (at && at !== false && at !== 'false' && at !== '');
+    const gp = (g, k) => (g.properties || g.attributes || {})[k];
+
+    // Only count guests in REGISTERED or PENDING status for all stats
+    const isEligible = g => {
+      const status = g.status || gp(g, 'status') || '';
+      return status === 'REGISTERED' || status === 'PENDING';
     };
 
-    const total    = guests.length;
+    const total = guests.length;
     const eligible = guests.filter(isEligible);
-    const checked  = eligible.filter(isCheckedIn);
-    const pending  = eligible.length - checked.length;
-    const pct      = eligible.length > 0 ? Math.round((checked.length / eligible.length) * 100) : 0;
-    const checkedPct = eligible.length > 0 ? (checked.length / eligible.length * 100) : 0;
-    const pendingPct = eligible.length > 0 ? (pending / eligible.length * 100) : 0;
+    const eligibleTotal = eligible.length;
+    const eligibleChecked = eligible.filter(g => {
+      const bool = gp(g, 'guest_x_checkedin');
+      const at   = gp(g, 'guest_x_checkedinat');
+      const atValid = at && at !== false && at !== 'false' && at !== '';
+      return bool === true || atValid;
+    }).length;
+    const eligiblePending = eligibleTotal - eligibleChecked;
+    const awf = eligible.filter(g => gp(g, 'guest_x_awf_teilnehmer') === true).length;
+    const stimm = eligible.filter(g => gp(g, 'guest_x_Stimmberechtigt') === true).length;
+    const pct = eligibleTotal > 0 ? Math.round((eligibleChecked / eligibleTotal) * 100) : 0;
+    const checkedPct = eligibleTotal > 0 ? (eligibleChecked / eligibleTotal * 100) : 0;
+    const pendingPct = eligibleTotal > 0 ? (eligiblePending / eligibleTotal * 100) : 0;
 
-    aggTotal   += total;
-    aggEligible += eligible.length;
-    aggChecked  += checked.length;
+    document.getElementById('stat-total').textContent = total;
+    document.getElementById('stat-checked').textContent = eligibleChecked;
+    document.getElementById('stat-awf').textContent = awf;
+    document.getElementById('stat-stimm').textContent = stimm;
 
-    const name     = evProps.title || evProps.event_name || evProps.name || eid;
-    const start    = evProps.start || evProps.event_start || '';
-    const end      = evProps.end   || evProps.event_end   || '';
-    const locRaw   = evProps.location || evProps.event_location;
-    const location = !locRaw ? null : (typeof locRaw === 'string' ? locRaw : (locRaw.city || locRaw.name || null));
+    // ── Check-in progress bar (Registered + Pending only) ──
 
-    const barId = `dash-bar-${eid}`;
-    card.innerHTML = `
-      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
-        <div>
-          <div class="card-title" style="margin-bottom:4px;">${escHtml(name)}</div>
-          <div style="font-size:11px;color:var(--muted);font-family:var(--font-mono);">
-            ${start ? escHtml(start) + (end ? ' → ' + escHtml(end) : '') : ''}
-            ${location ? ' · ' + escHtml(location) : ''}
-          </div>
-          <div style="font-size:10px;color:var(--muted);font-family:var(--font-mono);margin-top:2px;">${eid}</div>
-        </div>
-        <div style="font-size:36px;font-weight:800;color:var(--accent);letter-spacing:-0.03em;flex-shrink:0;">${pct}%</div>
-      </div>
+    document.getElementById('prog-checked').textContent = eligibleChecked;
+    document.getElementById('prog-pending').textContent = eligiblePending;
+    document.getElementById('prog-total').textContent = eligibleTotal;
+    document.getElementById('prog-pct').textContent = pct + '%';
+    document.getElementById('checkin-progress-card').style.display = 'block';
 
-      <!-- Stats row -->
-      <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:16px;">
-        <div style="text-align:center;">
-          <div style="font-size:24px;font-weight:800;color:var(--text);">${total}</div>
-          <div style="font-size:10px;color:var(--muted);font-family:var(--font-mono);text-transform:uppercase;">Total</div>
-        </div>
-        <div style="text-align:center;">
-          <div style="font-size:24px;font-weight:800;color:var(--text);">${eligible.length}</div>
-          <div style="font-size:10px;color:var(--muted);font-family:var(--font-mono);text-transform:uppercase;">Reg/Pend</div>
-        </div>
-        <div style="text-align:center;">
-          <div style="font-size:24px;font-weight:800;color:var(--green);">${checked.length}</div>
-          <div style="font-size:10px;color:var(--muted);font-family:var(--font-mono);text-transform:uppercase;">Checked In</div>
-        </div>
-        <div style="text-align:center;">
-          <div style="font-size:24px;font-weight:800;color:var(--orange);">${pending}</div>
-          <div style="font-size:10px;color:var(--muted);font-family:var(--font-mono);text-transform:uppercase;">Not Yet</div>
-        </div>
-      </div>
-
-      <!-- Progress bar -->
-      <div style="height:10px;border-radius:5px;background:var(--surface3);overflow:hidden;position:relative;" id="${barId}">
-        <div style="position:absolute;left:0;top:0;height:100%;background:var(--green);border-radius:5px 0 0 5px;width:0%;transition:width 0.8s cubic-bezier(0.4,0,0.2,1);" data-w="${checkedPct}"></div>
-        <div style="position:absolute;top:0;height:100%;background:var(--orange);left:0%;width:0%;transition:left 0.8s cubic-bezier(0.4,0,0.2,1),width 0.8s;" data-l="${checkedPct}" data-w="${pendingPct}"></div>
-      </div>
-      <div style="display:flex;gap:14px;margin-top:8px;font-size:11px;font-family:var(--font-mono);color:var(--muted);">
-        <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--green);display:inline-block;"></span>Checked in</span>
-        <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--orange);display:inline-block;"></span>Not yet</span>
-        <span style="display:flex;align-items:center;gap:4px;"><span style="width:8px;height:8px;border-radius:50%;background:var(--surface3);display:inline-block;"></span>Other</span>
-      </div>`;
-
-    // Animate bars after paint
+    // Animate bars after a short delay so CSS transition fires
     setTimeout(() => {
-      const bars = card.querySelectorAll(`#${barId} div`);
-      if (bars[0]) bars[0].style.width  = bars[0].dataset.w + '%';
-      if (bars[1]) { bars[1].style.left = bars[1].dataset.l + '%'; bars[1].style.width = bars[1].dataset.w + '%'; }
-    }, 60);
-  });
+      document.getElementById('prog-bar-checked').style.width = checkedPct + '%';
+      document.getElementById('prog-bar-pending').style.left = checkedPct + '%';
+      document.getElementById('prog-bar-pending').style.width = pendingPct + '%';
+    }, 50);
 
-  // Update aggregate totals
-  const aggPct = aggEligible > 0 ? Math.round((aggChecked / aggEligible) * 100) : 0;
-  document.getElementById('dash-total-guests').textContent  = aggTotal;
-  document.getElementById('dash-total-eligible').textContent = aggEligible;
-  document.getElementById('dash-total-checked').textContent  = aggChecked;
-  document.getElementById('dash-total-pct').textContent      = aggPct + '%';
-  document.getElementById('dash-totals-grid').style.display = eventIds.length > 1 ? 'grid' : 'none';
+    const name = evProps.title || evProps.event_name || evProps.name || state.eventId;
+    const start = evProps.start || evProps.event_start || '—';
+    const end = evProps.end || evProps.event_end || '—';
+    const locRaw = evProps.location || evProps.event_location;
+    const location = !locRaw ? '—' : (typeof locRaw === 'string' ? locRaw : (locRaw.city || locRaw.name || JSON.stringify(locRaw)));
+
+    document.getElementById('event-details').innerHTML = `
+      <div class="guest-attrs" style="grid-template-columns:1fr 1fr 1fr;">
+        <div class="guest-attr"><span class="key">Event Name</span><span class="val" style="font-size:15px;font-weight:700;">${name}</span></div>
+        <div class="guest-attr"><span class="key">Start</span><span class="val">${start}</span></div>
+        <div class="guest-attr"><span class="key">End</span><span class="val">${end}</span></div>
+        <div class="guest-attr"><span class="key">Location</span><span class="val">${location}</span></div>
+        <div class="guest-attr"><span class="key">Event ID</span><span class="val" style="font-family:var(--font-mono);font-size:11px;">${state.eventId}</span></div>
+        <div class="guest-attr"><span class="key">Check-in Rate</span><span class="val" style="color:var(--accent);">${pct}%</span></div>
+      </div>`;
+  } catch(e) {
+    document.getElementById('event-details').innerHTML = `<p style="color:var(--red);font-size:13px;">Error loading event: ${e.message}</p>`;
+  }
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
@@ -3430,11 +2517,6 @@ function toggleTheme() {
   const next = current === 'dark' ? 'light' : 'dark';
   applyTheme(next);
   try { localStorage.setItem(THEME_KEY, next); } catch(e) {}
-  // Destroy monitor charts so they re-create with the correct colour scheme
-  if (_monChartCalls) { _monChartCalls.destroy(); _monChartCalls = null; }
-  if (_monChartBw)    { _monChartBw.destroy();    _monChartBw    = null; }
-  // Re-draw immediately if monitor page is active
-  if (document.getElementById('page-monitor')?.classList.contains('active')) loadMonitor();
 }
 
 // Load saved theme or fall back to system preference
@@ -3491,20 +2573,16 @@ async function switchProject(projectId) {
     if (!data.ok) throw new Error(data.error);
     _activeProjectId = projectId;
     // Reset badge cache and reload
-    _badgeCache.templates        = null;
-    _badgeCache.eventGroups      = null;
-    _badgeCache.rules            = null;
-    _badgeCache.fallback         = null;
-    _badgeCache.selfRegistration = null;
-    _badgeCache.images           = {};
-    _badgeCache.ready            = false;
-    _guestSchema    = null; // invalidate schema cache — new project has a different event
-    _eventNameCache = {};   // clear event name cache for new project
-    // Update event ID from project (use first event ID for badge display)
-    const firstEventId = data.eventIds?.[0] || data.eventId || '';
-    if (firstEventId) {
-      state.eventId = firstEventId;
-      updateEventBadge(firstEventId);
+    _badgeCache.templates = null;
+    _badgeCache.rules = null;
+    _badgeCache.fallback = null;
+    _badgeCache.images = {};
+    _badgeCache.ready = false;
+    _guestSchema = null; // invalidate schema cache — new project has a different event
+    // Update event ID from project
+    if (data.eventId) {
+      state.eventId = data.eventId;
+      updateEventBadge(data.eventId);
     }
     // Reload badge config AND guest schema in parallel — schema drives option labels
     // and condition counts in the rule editor, so it must be fresh before any re-render
@@ -3512,7 +2590,6 @@ async function switchProject(projectId) {
       ensureBadgeConfigLoaded(),
       ensureGuestSchema(),
     ]);
-    ensureEventNames(); // pre-fetch event names for scan page search results
     const project = _projects.find(p => p.id === projectId);
     toast(`Switched to "${project?.name}"`, 'success');
     addLog(`Project switched to "${project?.name}"`, 'info');
@@ -3548,7 +2625,7 @@ function renderProjectList() {
     return `<div class="project-row ${isActive ? 'is-active' : ''}">
       <div class="project-row-info">
         <div class="project-row-name">${escHtml(p.name)}${isActive ? ' <span style="font-size:10px;color:var(--accent);font-weight:600;">ACTIVE</span>' : ''}</div>
-        <div class="project-row-meta">${(() => { const ids = p.eventIds?.length ? p.eventIds : (p.eventId ? [p.eventId] : []); return ids.length === 1 ? `Event: ${ids[0].slice(0,8)}…` : ids.length > 1 ? `Events: ${ids.length} configured` : 'No event'; })()}  · Created: ${p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '—'}</div>
+        <div class="project-row-meta">Event: ${p.eventId || '—'} · Created: ${p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '—'}</div>
       </div>
       <div class="project-row-actions">
         ${!isActive ? `<button class="btn btn-primary" style="font-size:11px;padding:4px 10px;" onclick="switchProjectFromModal('${p.id}')">Use</button>` : ''}
@@ -3568,19 +2645,18 @@ async function switchProjectFromModal(id) {
 
 async function createProject() {
   const name = document.getElementById('new-project-name').value.trim();
-  const eventIds = document.getElementById('new-project-eventids').value
-    .split('\n').map(s => s.trim()).filter(Boolean);
+  const eventId = document.getElementById('new-project-eventid').value.trim();
   if (!name) { toast('Enter a project name', 'error'); return; }
   try {
     const res = await fetch('/api/projects', {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, eventIds, eventId: eventIds[0] || '' }),
+      body: JSON.stringify({ name, eventId }),
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
     _projects.push(data.project);
     document.getElementById('new-project-name').value = '';
-    document.getElementById('new-project-eventids').value = '';
+    document.getElementById('new-project-eventid').value = '';
     renderProjectSelect();
     renderProjectList();
     toast(`Project "${name}" created`, 'success');
@@ -3628,8 +2704,7 @@ function openRenameProject(id) {
   if (!project) return;
   _renamingProjectId = id;
   document.getElementById('rename-project-name').value = project.name;
-  const ids = project.eventIds?.length ? project.eventIds : (project.eventId ? [project.eventId] : []);
-  document.getElementById('rename-project-eventids').value = ids.join('\n');
+  document.getElementById('rename-project-eventid').value = project.eventId || '';
   document.getElementById('project-rename-popover').style.display = 'flex';
   document.getElementById('rename-project-name').focus();
 }
@@ -3639,14 +2714,12 @@ function closeRenamePopover() {
 }
 async function confirmRenameProject() {
   const name = document.getElementById('rename-project-name').value.trim();
-  const eventIds = document.getElementById('rename-project-eventids').value
-    .split('\n').map(s => s.trim()).filter(Boolean);
-  const eventId = eventIds[0] || '';
+  const eventId = document.getElementById('rename-project-eventid').value.trim();
   if (!name || !_renamingProjectId) return;
   try {
     const res = await fetch(`/api/projects/${_renamingProjectId}`, {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, eventIds, eventId }),
+      body: JSON.stringify({ name, eventId }),
     });
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
@@ -3656,13 +2729,10 @@ async function confirmRenameProject() {
     renderProjectSelect();
     renderProjectList();
     toast(`Project renamed to "${name}"`, 'success');
-    // If active project was renamed, update event ID display
+    // If active project was renamed, update event ID
     if (_renamingProjectId === _activeProjectId && eventId !== state.eventId) {
       state.eventId = eventId;
       updateEventBadge(eventId);
-      // Refresh schema so _matchedEventId options reflect new event IDs
-      _guestSchema = null;
-      ensureGuestSchema();
     }
   } catch(e) { toast(`Rename failed: ${e.message}`, 'error'); }
 }
@@ -3677,8 +2747,6 @@ function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'
     loadProjects(),
     ensureBadgeConfigLoaded(),
   ]);
-  // Pre-fetch event names so search results show event labels immediately
-  ensureEventNames();
   addLog('App initialized', 'info');
 })();
 
@@ -3734,7 +2802,6 @@ async function loadKioskStations() {
           <div style="display:flex; gap:8px;">
             <a href="/kiosk/${s.id}" target="_blank" class="btn btn-secondary" style="font-size:12px; padding:5px 12px;">⊡ Open</a>
             <button class="btn btn-secondary" style="font-size:12px; padding:5px 12px;" onclick="editKioskStation('${s.id}')">Edit</button>
-            <button class="btn btn-ghost" style="font-size:12px; padding:5px 10px;" title="Duplicate station" onclick="duplicateKioskStation('${s.id}')">⎘</button>
             <button class="btn btn-danger" style="font-size:12px; padding:5px 12px;" onclick="deleteKioskStation('${s.id}')">✕</button>
           </div>
         </div>
@@ -3752,11 +2819,13 @@ async function loadKioskStations() {
 function openKioskStationModal() {
   _editingKioskId = null;
   document.getElementById('kiosk-modal-title').textContent = 'New Station';
-  document.getElementById('ks-print-endpoint').value  = '';
-  document.getElementById('ks-signal-endpoint').value = '';
+  document.getElementById('ks-print-endpoint').value = '';
   document.getElementById('ks-camera-mode').checked = false;
-  document.getElementById('ks-light-mode').checked  = false;
-  document.getElementById('ks-hide-logo').checked   = false;
+  document.getElementById('ks-light-mode').checked       = false;
+  document.getElementById('ks-disable-gradient').checked = false;
+  ['ks-welcome-title-bold','ks-success-title-bold','ks-notfound-title-bold','ks-already-title-bold'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.checked = true;
+  });
   ['ks-name','ks-logo','ks-welcome-title','ks-welcome-sub','ks-success-title','ks-success-sub','ks-notfound-title','ks-notfound-sub','ks-already-title','ks-already-sub',
    'ks-welcome-title-size','ks-welcome-sub-size','ks-success-title-size','ks-success-sub-size',
    'ks-notfound-title-size','ks-notfound-sub-size','ks-already-title-size','ks-already-sub-size'].forEach(id => {
@@ -3766,17 +2835,8 @@ function openKioskStationModal() {
   });
   document.getElementById('ks-accent').value = '#d3222a';
   document.getElementById('ks-bg').value = '#0a0a0a';
-  document.getElementById('ks-bg-light').value = '#f0f0f0';
   document.getElementById('ks-success-hide-card').checked = false;
   document.getElementById('ks-already-hide-card').checked = false;
-  // Self-registration reset
-  document.getElementById('ks-reg-enabled').checked    = false;
-  document.getElementById('ks-search-enabled').checked = false;
-  document.getElementById('ks-hide-icon').checked      = false;
-  document.getElementById('ks-already-show').checked   = true; // default
-  document.getElementById('ks-deny-fields').style.display = 'none';
-  document.getElementById('ks-deny-title').value = '';
-  document.getElementById('ks-deny-sub').value   = '';
   ['welcome','success','notfound','already'].forEach(k => {
     document.getElementById('ks-' + k + '-bg-data').value = '';
     document.getElementById('ks-' + k + '-bg-label').textContent = 'Upload image…';
@@ -3794,25 +2854,11 @@ function editKioskStation(stationId) {
   document.getElementById('ks-name').value   = s.name || '';
   document.getElementById('ks-logo').value           = s.logoText || '';
   document.getElementById('ks-accent').value         = s.accentColor || '#d3222a';
-  document.getElementById('ks-print-endpoint').value  = s.printEndpoint  || '';
-  document.getElementById('ks-signal-endpoint').value = s.signalEndpoint || '';
+  document.getElementById('ks-print-endpoint').value = s.printEndpoint || '';
   document.getElementById('ks-camera-mode').checked = s.cameraMode || false;
-  document.getElementById('ks-light-mode').checked  = s.lightMode      || false;
-  document.getElementById('ks-hide-logo').checked   = s.hideLogoText   || false;
-  document.getElementById('ks-bg').value       = s.bgColor      || '#0a0a0a';
-  document.getElementById('ks-bg-light').value = s.bgColorLight || '#f0f0f0';
-  // Self-registration — only the enabled flag lives on the station
-  const reg = s.selfRegistration || {};
-  document.getElementById('ks-reg-enabled').checked    = reg.enabled || false;
-  document.getElementById('ks-search-enabled').checked = s.guestSearch?.enabled || false;
-  document.getElementById('ks-hide-icon').checked      = s.hideIcon || false;
-  const behaviour = s.alreadyCheckedIn?.behaviour || 'show';
-  document.getElementById('ks-already-show').checked    = behaviour === 'show';
-  document.getElementById('ks-already-reprint').checked = behaviour === 'reprint';
-  document.getElementById('ks-already-deny').checked    = behaviour === 'deny';
-  document.getElementById('ks-deny-fields').style.display = behaviour === 'deny' ? 'flex' : 'none';
-  document.getElementById('ks-deny-title').value = s.alreadyCheckedIn?.denyTitle || '';
-  document.getElementById('ks-deny-sub').value   = s.alreadyCheckedIn?.denySubtitle || '';
+  document.getElementById('ks-light-mode').checked      = s.lightMode       || false;
+  document.getElementById('ks-disable-gradient').checked = s.disableGradient || false;
+  document.getElementById('ks-bg').value     = s.bgColor || '#0a0a0a';
   document.getElementById('ks-welcome-title').value  = s.welcome?.title || '';
   document.getElementById('ks-welcome-sub').value    = s.welcome?.subtitle || '';
   document.getElementById('ks-success-title').value  = s.success?.title || '';
@@ -3824,12 +2870,16 @@ function editKioskStation(stationId) {
   // font sizes
   document.getElementById('ks-welcome-title-size').value  = s.welcome?.titleSize || '';
   document.getElementById('ks-welcome-sub-size').value    = s.welcome?.subSize || '';
+  document.getElementById('ks-welcome-title-bold').checked  = s.welcome?.titleBold !== false;
   document.getElementById('ks-success-title-size').value  = s.success?.titleSize || '';
   document.getElementById('ks-success-sub-size').value    = s.success?.subSize || '';
+  document.getElementById('ks-success-title-bold').checked  = s.success?.titleBold !== false;
   document.getElementById('ks-notfound-title-size').value = s.notFound?.titleSize || '';
   document.getElementById('ks-notfound-sub-size').value   = s.notFound?.subSize || '';
+  document.getElementById('ks-notfound-title-bold').checked = s.notFound?.titleBold !== false;
   document.getElementById('ks-already-title-size').value  = s.alreadyCheckedIn?.titleSize || '';
   document.getElementById('ks-already-sub-size').value    = s.alreadyCheckedIn?.subSize || '';
+  document.getElementById('ks-already-title-bold').checked  = s.alreadyCheckedIn?.titleBold !== false;
   // hide cards
   document.getElementById('ks-success-hide-card').checked = s.success?.hideGuestCard || false;
   document.getElementById('ks-already-hide-card').checked = s.alreadyCheckedIn?.hideGuestCard || false;
@@ -3853,23 +2903,6 @@ function editKioskStation(stationId) {
 
 function closeKioskModal() {
   document.getElementById('kiosk-modal').style.display = 'none';
-  // Reset tabs back to General when closing
-  switchKsTab('general');
-}
-
-function switchKsTab(name) {
-  document.querySelectorAll('.ks-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-  document.querySelectorAll('.ks-tab-panel').forEach(p => p.classList.toggle('active', p.id === `ks-panel-${name}`));
-}
-
-function toggleDenyFields() {
-  const isDeny = document.getElementById('ks-already-deny')?.checked;
-  const el = document.getElementById('ks-deny-fields');
-  if (el) el.style.display = isDeny ? 'flex' : 'none';
-}
-
-function collectRegConfig() {
-  return { enabled: document.getElementById('ks-reg-enabled').checked };
 }
 
 // Build a screen payload for saveKioskStation.
@@ -3885,6 +2918,7 @@ function ksScreen(domKey, extra = {}) {
     subtitle:  g('ks-' + domKey + '-sub').value,
     titleSize: parseInt(g('ks-' + domKey + '-title-size').value) || null,
     subSize:   parseInt(g('ks-' + domKey + '-sub-size').value)   || null,
+    titleBold: g('ks-' + domKey + '-title-bold') ? g('ks-' + domKey + '-title-bold').checked : null,
     // data URL if new upload, '' if explicitly cleared, null if unchanged
     bgImage:   bgData ? bgData : (cleared ? '' : null),
     bgImageTop: isNaN(bgTop) ? null : bgTop,
@@ -3898,22 +2932,17 @@ async function saveKioskStation() {
   const payload = {
     id: _editingKioskId || undefined,
     name,
-    logoText:     document.getElementById('ks-logo').value.trim(),
-    hideLogoText: document.getElementById('ks-hide-logo').checked,
-    accentColor:  document.getElementById('ks-accent').value,
-    bgColor:      document.getElementById('ks-bg').value,
-    bgColorLight: document.getElementById('ks-bg-light').value,
-    printEndpoint:  document.getElementById('ks-print-endpoint').value.trim()  || null,
-    signalEndpoint: document.getElementById('ks-signal-endpoint').value.trim() || null,
+    logoText:    document.getElementById('ks-logo').value.trim(),
+    accentColor: document.getElementById('ks-accent').value,
+    bgColor:        document.getElementById('ks-bg').value,
+    printEndpoint:  document.getElementById('ks-print-endpoint').value.trim() || null,
     cameraMode:     document.getElementById('ks-camera-mode').checked,
-    lightMode:      document.getElementById('ks-light-mode').checked,
-    selfRegistration: collectRegConfig(),
-    guestSearch: { enabled: document.getElementById('ks-search-enabled').checked },
-    hideIcon:    document.getElementById('ks-hide-icon').checked,
+    lightMode:        document.getElementById('ks-light-mode').checked,
+    disableGradient:  document.getElementById('ks-disable-gradient').checked,
     welcome:          ksScreen('welcome',  { returnSecs: parseInt(document.getElementById('ks-welcome-return-secs').value)||null }),
     success:          ksScreen('success',  { returnSecs: parseInt(document.getElementById('ks-success-return-secs').value)||null,  hideGuestCard: document.getElementById('ks-success-hide-card').checked }),
     notFound:         ksScreen('notfound', { returnSecs: parseInt(document.getElementById('ks-notfound-return-secs').value)||null }),
-    alreadyCheckedIn: ksScreen('already',  { returnSecs: parseInt(document.getElementById('ks-already-return-secs').value)||null, hideGuestCard: document.getElementById('ks-already-hide-card').checked, behaviour: document.querySelector('input[name="ks-already-behaviour"]:checked')?.value || 'show', denyTitle: document.getElementById('ks-deny-title').value.trim(), denySubtitle: document.getElementById('ks-deny-sub').value.trim() }),
+    alreadyCheckedIn: ksScreen('already',  { returnSecs: parseInt(document.getElementById('ks-already-return-secs').value)||null,  hideGuestCard: document.getElementById('ks-already-hide-card').checked }),
   };
   try {
     const res = await fetch('/api/kiosk/stations', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
@@ -3954,26 +2983,6 @@ async function deleteKioskStation(id) {
   toast('Station deleted', 'ok');
 }
 
-async function duplicateKioskStation(id) {
-  const src = _kioskStationCache[id];
-  const defaultName = (src?.name || 'Station') + ' (copy)';
-  const name = prompt('Duplicate station as:', defaultName);
-  if (name === null) return; // cancelled
-  try {
-    const res  = await fetch(`/api/kiosk/stations/${id}/duplicate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: name.trim() || defaultName }),
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error || 'Duplicate failed');
-    loadKioskStations();
-    toast(`Station duplicated as "${data.station.name}"`, 'ok');
-  } catch(e) {
-    toast('Duplicate failed: ' + e.message, 'error');
-  }
-}
-
 </script>
 
   <!-- ── Project Management Modal ─────────────────────────────────────── -->
@@ -3985,13 +2994,12 @@ async function duplicateKioskStation(id) {
       </div>
       <div style="padding:16px 20px;">
         <!-- Create new -->
-        <div style="display:flex;gap:8px;margin-bottom:16px;align-items:flex-start;">
+        <div style="display:flex;gap:8px;margin-bottom:16px;">
           <input id="new-project-name" class="form-input" placeholder="New project name…" style="flex:1;"
             onkeydown="if(event.key==='Enter') createProject()"/>
-          <textarea id="new-project-eventids" class="form-input"
-            placeholder="Event IDs (one per line)"
-            style="width:180px;font-size:11px;font-family:var(--font-mono);resize:none;height:54px;line-height:1.5;"></textarea>
-          <button class="btn btn-primary" onclick="createProject()" style="flex-shrink:0;align-self:flex-start;">+ Create</button>
+          <input id="new-project-eventid" class="form-input" placeholder="Event ID (optional)" style="width:160px;"
+            onkeydown="if(event.key==='Enter') createProject()"/>
+          <button class="btn btn-primary" onclick="createProject()">+ Create</button>
         </div>
         <!-- List -->
         <div class="project-list" id="project-list-container"></div>
@@ -4004,10 +3012,7 @@ async function duplicateKioskStation(id) {
     <div style="background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px;width:380px;max-width:94vw;box-shadow:0 4px 20px rgba(0,0,0,0.3);">
       <div style="font-size:14px;font-weight:700;margin-bottom:12px;">Rename Project</div>
       <input id="rename-project-name" class="form-input" style="margin-bottom:8px;width:100%;" placeholder="Project name"/>
-      <label style="font-size:11px;color:var(--muted);display:block;margin-bottom:4px;">Event IDs (one per line)</label>
-      <textarea id="rename-project-eventids" class="form-input"
-        style="margin-bottom:14px;width:100%;font-size:11px;font-family:var(--font-mono);resize:vertical;height:72px;line-height:1.6;"
-        placeholder="One Event UUID per line"></textarea>
+      <input id="rename-project-eventid" class="form-input" style="margin-bottom:14px;width:100%;" placeholder="Event ID"/>
       <div style="display:flex;gap:8px;justify-content:flex-end;">
         <button class="btn btn-ghost" onclick="closeRenamePopover()">Cancel</button>
         <button class="btn btn-primary" onclick="confirmRenameProject()">Save</button>

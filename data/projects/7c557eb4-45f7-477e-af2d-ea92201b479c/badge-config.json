@@ -247,6 +247,26 @@
       ]
     }
   ],
+  "eventGroups": [
+    {
+      "eventId": "f1fd1c01-ebb6-4e3d-bafd-4ccca211a272",
+      "rules": [
+        {
+          "id": "r1774964128071",
+          "name": "AWF",
+          "logic": "AND",
+          "template": "awf_sb",
+          "conditions": [
+            {
+              "attr": "guest_x_awf_teilnehmer",
+              "op": "eq",
+              "value": "true"
+            }
+          ]
+        }
+      ]
+    }
+  ],
   "rules": [
     {
       "id": "r1",
@@ -401,5 +421,74 @@
       ]
     }
   ],
-  "fallback": "gv_gast"
+  "fallback": "gv_gast",
+  "selfRegistration": {
+    "f1fd1c01-ebb6-4e3d-bafd-4ccca211a272": {
+      "participantGroup": "a47a9b2b-179f-41bd-ba93-405a413d860f",
+      "fields": [
+        {
+          "attr": "contact_gender",
+          "type": "choice",
+          "label": "Gender",
+          "options": [
+            {
+              "value": "3a6fc1b6-41ab-455f-a7a5-972b7155e736",
+              "label": "Mr."
+            },
+            {
+              "value": "b6231042-6e04-4a76-923d-80a827181f54",
+              "label": "Ms."
+            }
+          ],
+          "required": false
+        },
+        {
+          "attr": "contact_x_companyName",
+          "type": "text",
+          "label": "CompanyName",
+          "options": [],
+          "required": false
+        },
+        {
+          "attr": "guest_x_welcome_lunch",
+          "type": "choice",
+          "label": "Welcome Lunch",
+          "options": [
+            {
+              "value": "4eb2070f-784e-4569-a777-c4609584e5e4",
+              "label": "Yes"
+            },
+            {
+              "value": "afeb9bcc-1435-4ac3-bf2e-0847cdf863b9",
+              "label": "No"
+            }
+          ],
+          "required": false
+        },
+        {
+          "attr": "guest_x_apero_riche",
+          "type": "choice",
+          "label": "Apero Riche",
+          "options": [
+            {
+              "value": "75bf5813-2510-4a47-b8ee-0ddeb59d4e81",
+              "label": "Yes"
+            },
+            {
+              "value": "22fca68e-09ed-4a8f-9e0b-3f5eb3fc18ef",
+              "label": "No"
+            }
+          ],
+          "required": false
+        },
+        {
+          "attr": "guest_x_tc_accept",
+          "type": "boolean",
+          "label": "Tc Accept",
+          "options": [],
+          "required": true
+        }
+      ]
+    }
+  }
 }
