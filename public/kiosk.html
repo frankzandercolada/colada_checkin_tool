@@ -125,6 +125,9 @@ html, body {
 /* Hide the welcome QR icon ring when station config sets hideIcon */
 #kiosk.hide-icon #welcome-icon-ring { display: none !important; }
 
+/* Hide station logo/dot headers when station config sets hideLogoText */
+#kiosk.hide-logo .station-header { display: none !important; }
+
 /* ── Logo / station name ── */
 .station-header {
   position: absolute; top: clamp(20px, 6vmin, 88px); left: 0; right: 0;
@@ -876,6 +879,7 @@ function applyStation(s, resolvedLogoText) {
   applyTheme({ accentColor: s.accentColor, bgColor: s.bgColor, lightMode: s.lightMode });
   document.getElementById('kiosk').classList.toggle('no-gradient', !!s.disableGradient);
   document.getElementById('kiosk').classList.toggle('hide-icon',    !!s.hideIcon);
+  document.getElementById('kiosk').classList.toggle('hide-logo',    !!s.hideLogoText);
   const logoText = s.logoText || resolvedLogoText || s.name || 'Check-in';
 
   // Apply font size overrides
