@@ -1530,20 +1530,13 @@ app.post('/api/kiosk/print', express.text({ limit: '20mb' }), async (req, res) =
 // Using a server-side proxy avoids mixed-content and CORS issues when the
 // signal module is on plain HTTP inside the local network.
 // POST /api/kiosk/signal?stationId=...  body: { status: 'success'|'failed' }
-app.post('/api/kiosk/signal', express.json(), async (req, res) => {
-  const { stationId } = req.query;
-  const { status }    = req.body || {};
-  if (!status) return res.status(400).json({ error: 'status required' });
-
-  const pid = getActiveProjectId();
-  if (!pid) return res.status(400).json({ error: 'no active project' });
-
-  const stations = loadKioskStations(pid);
-  const station  = stations.find(s => s.id === stationId);
-  if (!station?.signalEndpoint) return res.status(400).json({ error: 'no signal endpoint configured' });
+app.post('/api/kiosk/signal', async (req, res) => {
+  const { status, signalEndpoint } = req.body || {};
+  if (!status)         return res.status(400).json({ error: 'status required' });
+  if (!signalEndpoint) return res.status(400).json({ error: 'signalEndpoint required' });
 
   try {
-    const sr = await fetch(station.signalEndpoint, {
+    const sr = await fetch(signalEndpoint, {
       method:  'PUT',
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify({ status }),
