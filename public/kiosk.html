@@ -39,8 +39,6 @@
 
 html, body {
   width: 100%; height: 100%;
-  /* dvh accounts for iOS Safari browser chrome — falls back to vh on older browsers */
-  height: 100dvh;
   overflow: hidden;
   background: var(--bg);
   color: var(--text);
@@ -52,9 +50,7 @@ html, body {
 
 /* ── Screen container ── */
 #kiosk {
-  width: 100vw;
-  height: 100vh;
-  height: 100dvh; /* dynamic viewport — excludes iOS browser chrome */
+  width: 100vw; height: 100vh;
   position: relative;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
@@ -65,8 +61,7 @@ html, body {
   position: absolute; inset: 0;
   display: flex; flex-direction: column;
   align-items: center; justify-content: center;
-  padding: clamp(72px,17vmin,160px) clamp(24px,7vw,96px) clamp(56px,12vmin,110px);
-  overflow: hidden;
+  padding: clamp(32px, 10vmin, 120px) clamp(24px, 8vmin, 96px);
   opacity: 0; pointer-events: none;
   transition: opacity 0.4s ease;
 }
@@ -127,11 +122,14 @@ html, body {
 /* Disable gradient overlay when station config sets disableGradient */
 #kiosk.no-gradient .screen::before { background: none !important; }
 
+/* Hide the welcome QR icon ring when station config sets hideIcon */
+#kiosk.hide-icon #welcome-icon-ring { display: none !important; }
+
 /* ── Logo / station name ── */
 .station-header {
-  position: absolute; top: clamp(18px, 5vmin, 56px); left: 0; right: 0;
+  position: absolute; top: clamp(20px, 6vmin, 88px); left: 0; right: 0;
   display: flex; align-items: center; justify-content: center;
-  gap: clamp(8px, 2vmin, 20px);
+  gap: clamp(8px, 2.4vmin, 28px);
 }
 .station-logo {
   font-size: clamp(10px, 3vmin, 32px); font-weight: 700; letter-spacing: 0.2em;
@@ -151,19 +149,13 @@ html, body {
 
 /* ── Icon ring ── */
 .icon-ring {
-  /* Size based on the smaller of vw/vh so portrait and landscape both work */
-  --ring-size: min(28vmin, 38vw, 240px);
-  width: var(--ring-size); height: var(--ring-size);
+  width: clamp(90px, 28vmin, 320px); height: clamp(90px, 28vmin, 320px);
   border-radius: 50%;
   display: flex; align-items: center; justify-content: center;
-  flex-shrink: 1; /* yield space if screen is short */
-  margin-bottom: clamp(16px, 5vmin, 56px);
+  margin-bottom: clamp(24px, 8vmin, 96px);
   position: relative;
 }
-.icon-ring svg {
-  width: 46%; height: 46%;
-  min-width: 32px; min-height: 32px;
-}
+.icon-ring svg { width: clamp(40px, 13vmin, 144px); height: clamp(40px, 13vmin, 144px); }
 
 .icon-ring.welcome {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
@@ -192,48 +184,45 @@ html, body {
 
 /* ── Heading ── */
 .screen-title {
-  font-size: clamp(26px, 9vmin, 96px);
+  font-size: clamp(28px, 11vmin, 112px);
   font-weight: 800; line-height: 1.1;
   text-align: center;
   letter-spacing: -0.02em;
-  margin-bottom: clamp(8px, 2.5vmin, 28px);
-  flex-shrink: 0;
+  margin-bottom: clamp(10px, 3.6vmin, 40px);
 }
 .screen-subtitle {
-  font-size: clamp(13px, 3.5vmin, 38px);
+  font-size: clamp(13px, 4vmin, 44px);
   font-weight: 400; color: var(--muted);
   text-align: center; line-height: 1.5;
-  max-width: min(90vw, 700px);
-  flex-shrink: 1;
+  max-width: clamp(300px, 120vmin, 1120px);
 }
 
 /* ── Guest name card (success / already) ── */
 .guest-card {
-  margin-top: clamp(16px, 5vmin, 56px);
+  margin-top: clamp(28px, 9vmin, 112px);
   background: var(--surface-tint);
   border: 1px solid var(--border-tint);
-  border-radius: clamp(12px, 3vmin, 32px);
-  padding: clamp(16px, 5vmin, 56px) clamp(24px, 8vmin, 96px);
+  border-radius: clamp(14px, 4vmin, 48px);
+  padding: clamp(20px, 7vmin, 80px) clamp(28px, 10vmin, 120px);
   text-align: center;
   backdrop-filter: blur(8px);
-  width: min(90vw, 640px);
-  flex-shrink: 1;
+  min-width: clamp(260px, 100vmin, 840px);
 }
 .guest-name {
-  font-size: clamp(20px, 7vmin, 80px);
+  font-size: clamp(22px, 8vmin, 96px);
   font-weight: 700; line-height: 1.1;
   letter-spacing: -0.02em;
-  margin-bottom: clamp(4px, 1.4vmin, 16px);
+  margin-bottom: clamp(4px, 1.6vmin, 20px);
 }
 .guest-company {
-  font-size: clamp(12px, 3vmin, 34px);
+  font-size: clamp(12px, 3.6vmin, 40px);
   color: var(--muted); font-weight: 400;
 }
 .guest-badge-label {
   display: inline-block;
-  margin-top: clamp(8px, 2.5vmin, 28px);
-  padding: clamp(3px, 1vmin, 10px) clamp(10px, 2.5vmin, 28px); border-radius: 100px;
-  font-size: clamp(10px, 2vmin, 22px); font-weight: 600; letter-spacing: 0.08em;
+  margin-top: clamp(10px, 3vmin, 40px);
+  padding: clamp(3px, 1.2vmin, 13px) clamp(10px, 3vmin, 36px); border-radius: 100px;
+  font-size: clamp(10px, 2.4vmin, 28px); font-weight: 600; letter-spacing: 0.08em;
   font-family: var(--mono); text-transform: uppercase;
 }
 .badge-success { background: rgba(34,197,94,0.15); color: #4ade80; }
@@ -246,7 +235,6 @@ html, body {
   width: 100%; height: 100%;
   min-width: 100%; min-height: 100%;
   object-fit: cover;
-  object-position: center center;
   opacity: 0.75;
   z-index: 0;
   display: none;
@@ -296,9 +284,8 @@ html, body {
 
 /* ── Scan prompt (welcome) ── */
 .scan-prompt {
-  margin-top: clamp(20px, 7vmin, 80px);
-  display: flex; flex-direction: column; align-items: center; gap: clamp(8px, 2.5vmin, 28px);
-  flex-shrink: 1;
+  margin-top: clamp(32px, 11vmin, 136px);
+  display: flex; flex-direction: column; align-items: center; gap: clamp(8px, 2.8vmin, 36px);
 }
 .scan-bar {
   width: clamp(140px, 44vmin, 480px); height: 3px; border-radius: 2px;
@@ -323,11 +310,8 @@ html, body {
 
 /* ── Auto-return countdown ── */
 .return-bar {
-  position: absolute;
-  bottom: clamp(16px, 4vmin, 48px);
-  left: clamp(20px, 6vw, 80px);
-  right: clamp(20px, 6vw, 80px);
-  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  position: absolute; bottom: clamp(20px, 7vmin, 96px); left: clamp(20px, 7vmin, 96px); right: clamp(20px, 7vmin, 96px);
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
 }
 .return-track {
   width: 100%; height: 3px; border-radius: 2px;
@@ -353,7 +337,6 @@ html, body {
   margin-bottom: clamp(20px, 7vmin, 80px);
 }
 @keyframes spin { to { transform: rotate(360deg); } }
-@keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0; } }
 
 /* ── Success icon animation ── */
 .check-anim {
@@ -419,17 +402,6 @@ html, body {
 .cfg-btn.primary { background: var(--accent); color: #fff; }
 .cfg-btn.secondary { background: rgba(255,255,255,0.08); color: #fff; }
 
-/* ── On-screen keyboard ── */
-.kb-btn {
-  background: var(--surface2); border: 1px solid var(--border-tint); border-radius: 8px;
-  color: var(--text); cursor: pointer; font-family: var(--font);
-  font-size: clamp(12px, 2.2vmin, 18px); font-weight: 600;
-  padding: clamp(8px,1.8vmin,14px) clamp(6px,1.5vmin,12px);
-  transition: background 0.1s; -webkit-tap-highlight-color: transparent;
-  user-select: none; -webkit-user-select: none;
-}
-.kb-btn:active { background: var(--accent); color: #fff; }
-
 /* ── Station selector (first load) ── */
 #station-selector {
   display: none; position: fixed; inset: 0; z-index: 200;
@@ -480,12 +452,6 @@ html, body {
     <div class="cfg-row">
       <label>Logo / Event Text</label>
       <input id="cfg-logo" type="text" placeholder="e.g. AWF 2025"/>
-    </div>
-    <div class="cfg-row">
-      <label style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;">
-        <input type="checkbox" id="cfg-hide-logo" style="width:16px;height:16px;accent-color:var(--accent);"/>
-        Hide logo text (background image contains event name)
-      </label>
     </div>
     <div class="cfg-row">
       <label>Accent Color</label>
@@ -643,7 +609,7 @@ html, body {
 
 <!-- ── Main kiosk ── -->
 <div id="kiosk">
-  <input id="scan-input" type="text" readonly inputmode="none" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+  <input id="scan-input" type="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
 
   <!-- Welcome -->
   <div class="screen active" id="screen-welcome">
@@ -692,24 +658,6 @@ html, body {
     <div style="position:absolute;bottom:0;right:0;width:60px;height:60px;cursor:default;"
          onmousedown="startAdminHold()" onmouseup="cancelAdminHold()" onmouseleave="cancelAdminHold()"
          ontouchstart="startAdminHold()" ontouchend="cancelAdminHold()"></div>
-    <!-- Self-registration button — shown only when enabled -->
-    <button id="reg-btn" onclick="showRegistration()"
-      style="display:none; position:absolute; bottom:clamp(24px,6vmin,60px); left:50%; transform:translateX(-50%);
-             background:transparent; border:2px solid var(--accent); color:var(--accent);
-             border-radius:100px; padding:clamp(10px,2vmin,16px) clamp(24px,6vmin,48px);
-             font-size:clamp(13px,2.5vmin,20px); font-weight:700; cursor:pointer;
-             font-family:var(--font); letter-spacing:0.04em; transition:background 0.2s,color 0.2s;">
-      + Register
-    </button>
-    <!-- Guest search button — shown only when enabled -->
-    <button id="search-btn" onclick="showGuestSearch()"
-      style="display:none; position:absolute; bottom:clamp(24px,6vmin,60px); right:clamp(20px,5vmin,48px);
-             background:transparent; border:1px solid var(--border-tint); color:var(--muted);
-             border-radius:100px; padding:clamp(8px,1.5vmin,14px) clamp(16px,4vmin,32px);
-             font-size:clamp(11px,2vmin,17px); font-weight:600; cursor:pointer;
-             font-family:var(--font); letter-spacing:0.03em;">
-      ⌕ Search
-    </button>
   </div>
 
   <!-- Processing -->
@@ -787,117 +735,6 @@ html, body {
     <div class="return-bar" id="already-return">
       <div class="return-track"><div class="return-fill" id="already-fill" style="width:100%"></div></div>
       <div class="return-label" id="already-timer">Returning in 8s</div>
-    </div>
-  </div>
-
-  <!-- Self-Registration -->
-  <div class="screen" id="screen-register" style="padding:0; overflow:hidden;">
-    <div style="width:100%; height:100%; display:flex; flex-direction:column; overflow:hidden;">
-      <!-- Header -->
-      <div style="flex-shrink:0; padding:clamp(16px,4vmin,40px) clamp(20px,5vmin,60px) 0; display:flex; align-items:center; justify-content:space-between;">
-        <div style="font-size:clamp(18px,4vmin,36px); font-weight:800; color:var(--text);" id="reg-title">Register</div>
-        <button onclick="cancelRegistration()"
-          style="background:none;border:1px solid var(--border-tint);border-radius:8px;color:var(--muted);cursor:pointer;
-                 font-size:clamp(12px,2vmin,18px);padding:8px 16px;font-family:var(--font);">✕ Cancel</button>
-      </div>
-
-      <!-- Step: event selector (only shown for multi-event) -->
-      <div id="reg-step-event" style="display:none; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:clamp(12px,3vmin,32px); padding:clamp(16px,4vmin,40px);">
-        <div style="font-size:clamp(14px,3vmin,24px); color:var(--muted); text-align:center;">Which event are you registering for?</div>
-        <div id="reg-event-list" style="display:flex; flex-direction:column; gap:12px; width:100%; max-width:480px;"></div>
-      </div>
-
-      <!-- Step: form -->
-      <div id="reg-step-form" style="display:none; flex-direction:column; flex:1; overflow:hidden;">
-        <div style="flex:1; overflow-y:auto; padding:clamp(12px,3vmin,32px) clamp(20px,5vmin,60px);">
-          <div id="reg-form-fields" style="display:flex; flex-direction:column; gap:clamp(10px,2.5vmin,24px);"></div>
-        </div>
-        <!-- On-screen keyboard for touch input -->
-        <div id="reg-keyboard" style="flex-shrink:0; background:var(--surface); border-top:1px solid var(--border-tint); padding:8px 6px;">
-          <div id="kb-display" style="font-family:var(--mono); font-size:clamp(14px,3vmin,24px); color:var(--text);
-               background:var(--surface2); border:1px solid var(--border-tint); border-radius:8px;
-               padding:10px 16px; margin-bottom:8px; min-height:44px; letter-spacing:0.02em;"></div>
-          <div id="kb-rows" style="display:flex; flex-direction:column; gap:5px;"></div>
-          <div style="display:flex; gap:6px; margin-top:5px;">
-            <button class="kb-btn" style="flex:1;" onclick="kbAction('shift')">⇧</button>
-            <button class="kb-btn" style="flex:3;" onclick="kbAction('space')">Space</button>
-            <button class="kb-btn" style="flex:1;" onclick="kbAction('backspace')">⌫</button>
-            <button class="kb-btn" style="flex:1; background:var(--accent); color:#fff;" onclick="kbAction('done')">Done ✓</button>
-          </div>
-        </div>
-        <div style="flex-shrink:0; padding:10px clamp(20px,5vmin,60px); display:flex; gap:12px;">
-          <button onclick="regPrev()"
-            style="flex:1; padding:14px; border:1px solid var(--border-tint); border-radius:12px;
-                   background:none; color:var(--muted); font-size:clamp(13px,2.5vmin,20px); cursor:pointer; font-family:var(--font);">← Back</button>
-          <button onclick="regNext()"
-            style="flex:2; padding:14px; border:none; border-radius:12px;
-                   background:var(--accent); color:#fff; font-size:clamp(14px,2.5vmin,20px); font-weight:700; cursor:pointer; font-family:var(--font);">Next →</button>
-        </div>
-      </div>
-
-      <!-- Step: confirm -->
-      <div id="reg-step-confirm" style="display:none; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:clamp(12px,3vmin,28px); padding:clamp(16px,4vmin,40px);">
-        <div style="font-size:clamp(14px,3vmin,22px); color:var(--muted);">Please confirm your details:</div>
-        <div id="reg-confirm-details" style="background:var(--surface2); border-radius:14px; padding:clamp(16px,4vmin,32px); width:100%; max-width:440px; display:flex; flex-direction:column; gap:10px;"></div>
-        <div style="display:flex; gap:12px; width:100%; max-width:440px;">
-          <button onclick="regShowStep('form')"
-            style="flex:1; padding:14px; border:1px solid var(--border-tint); border-radius:12px;
-                   background:none; color:var(--muted); font-size:clamp(13px,2.5vmin,20px); cursor:pointer; font-family:var(--font);">← Edit</button>
-          <button onclick="submitRegistration()"
-            style="flex:2; padding:14px; border:none; border-radius:12px;
-                   background:var(--accent); color:#fff; font-size:clamp(14px,2.5vmin,20px); font-weight:700; cursor:pointer; font-family:var(--font);">✓ Register &amp; Print Badge</button>
-        </div>
-      </div>
-
-      <!-- Step: processing -->
-      <div id="reg-step-processing" style="display:none; flex-direction:column; align-items:center; justify-content:center; flex:1; gap:20px;">
-        <div class="spin"></div>
-        <div style="color:var(--muted); font-size:clamp(14px,3vmin,22px);">Registering…</div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Guest Search -->
-  <div class="screen" id="screen-search" style="padding:0; overflow:hidden;">
-    <div style="width:100%; height:100%; display:flex; flex-direction:column; overflow:hidden;">
-      <!-- Header -->
-      <div style="flex-shrink:0; padding:clamp(16px,4vmin,40px) clamp(20px,5vmin,60px) 0; display:flex; align-items:center; justify-content:space-between;">
-        <div style="font-size:clamp(18px,4vmin,36px); font-weight:800; color:var(--text);">Guest Search</div>
-        <button onclick="cancelGuestSearch()"
-          style="background:none;border:1px solid var(--border-tint);border-radius:8px;color:var(--muted);cursor:pointer;
-                 font-size:clamp(12px,2vmin,18px);padding:8px 16px;font-family:var(--font);">✕ Cancel</button>
-      </div>
-      <!-- Search input area -->
-      <div style="flex-shrink:0; padding:clamp(12px,3vmin,28px) clamp(20px,5vmin,60px) 0;">
-        <div style="position:relative;">
-          <div id="kiosk-search-display"
-            style="padding:clamp(12px,2.5vmin,22px) clamp(16px,3vmin,28px);
-                   border-radius:12px; border:2px solid var(--accent); background:var(--surface2);
-                   font-size:clamp(16px,3.5vmin,32px); color:var(--text); font-family:var(--mono);
-                   min-height:56px; letter-spacing:0.02em; cursor:default;"
-            onclick="kiosk_searchFocus()">
-            <span id="kiosk-search-text" style="color:var(--muted);">Type a name…</span>
-            <span style="display:inline-block;width:2px;height:1.1em;background:var(--accent);margin-left:2px;vertical-align:middle;animation:blink 1s step-end infinite;"></span>
-          </div>
-        </div>
-        <!-- Native input for mobile -->
-        <input id="kiosk-search-native" type="search" autocomplete="off" autocorrect="off"
-          placeholder="Type a name…"
-          oninput="onKioskSearchInput(this.value)"
-          style="position:absolute;opacity:0;pointer-events:none;width:1px;height:1px;"/>
-      </div>
-      <!-- Results -->
-      <div id="kiosk-search-results" style="flex:1; overflow-y:auto; padding:clamp(10px,2.5vmin,24px) clamp(20px,5vmin,60px);"></div>
-      <!-- On-screen keyboard (desktop only) -->
-      <div id="kiosk-search-keyboard" style="flex-shrink:0; background:var(--surface); border-top:1px solid var(--border-tint); padding:8px 6px; display:none;">
-        <div id="kiosk-kb-rows" style="display:flex; flex-direction:column; gap:5px;"></div>
-        <div style="display:flex; gap:6px; margin-top:5px;">
-          <button class="kb-btn" style="flex:1;" onclick="kioskKbAction('shift')">⇧</button>
-          <button class="kb-btn" style="flex:3;" onclick="kioskKbAction('space')">Space</button>
-          <button class="kb-btn" style="flex:1;" onclick="kioskKbAction('backspace')">⌫</button>
-          <button class="kb-btn" style="flex:1;" onclick="kioskKbAction('clear')">✕</button>
-        </div>
-      </div>
     </div>
   </div>
 
@@ -981,19 +818,22 @@ async function init() {
 }
 
 // ── Theme ─────────────────────────────────────────────────────────────────────
-function applyTheme({ accentColor, bgColor, bgColorLight, lightMode }) {
+function applyTheme({ accentColor, bgColor, lightMode }) {
   const root = document.documentElement;
   if (accentColor) root.style.setProperty('--accent', accentColor);
   // Set data-theme FIRST so CSS variables are in the right set
   root.setAttribute('data-theme', lightMode ? 'light' : 'dark');
+  // In dark mode, apply the station bgColor to --bg.
+  // In light mode, remove any inline --bg override so the CSS light values win.
   if (lightMode) {
-    // Apply the light background colour (or fall back to CSS default)
-    if (bgColorLight) root.style.setProperty('--bg', bgColorLight);
-    else root.style.removeProperty('--bg');
+    root.style.removeProperty('--bg');
+    root.style.removeProperty('--text');
+    root.style.removeProperty('--muted');
+    root.style.removeProperty('--surface-tint');
+    root.style.removeProperty('--border-tint');
+    root.style.removeProperty('--subtle-tint');
   } else {
-    // Apply the dark background colour
     if (bgColor) root.style.setProperty('--bg', bgColor);
-    else root.style.removeProperty('--bg');
   }
 }
 
@@ -1033,8 +873,9 @@ async function applyScreenBg(screenCfg) {
 }
 
 function applyStation(s, resolvedLogoText) {
-  applyTheme({ accentColor: s.accentColor, bgColor: s.bgColor, bgColorLight: s.bgColorLight, lightMode: s.lightMode });
+  applyTheme({ accentColor: s.accentColor, bgColor: s.bgColor, lightMode: s.lightMode });
   document.getElementById('kiosk').classList.toggle('no-gradient', !!s.disableGradient);
+  document.getElementById('kiosk').classList.toggle('hide-icon',    !!s.hideIcon);
   const logoText = s.logoText || resolvedLogoText || s.name || 'Check-in';
 
   // Apply font size overrides
@@ -1057,32 +898,11 @@ function applyStation(s, resolvedLogoText) {
   if (successCard) successCard.style.display = s.success?.hideGuestCard ? 'none' : '';
   if (alreadyCard) alreadyCard.style.display = s.alreadyCheckedIn?.hideGuestCard ? 'none' : '';
 
-  // Apply all logo labels — hide entire header (dot + text) if hideLogoText is set
+  // Apply all logo labels
   ['welcome','success','notfound','already'].forEach(k => {
-    const el     = document.getElementById(k + '-logo');
-    const header = document.querySelector(`#screen-${k} .station-header`);
-    if (!el) return;
-    if (s.hideLogoText) {
-      el.style.display = 'none';
-      if (header) header.style.display = 'none';
-    } else {
-      el.style.display = '';
-      el.textContent = logoText;
-      if (header) header.style.display = '';
-    }
+    const el = document.getElementById(k + '-logo');
+    if (el) el.textContent = logoText;
   });
-
-  // Show/hide the QR icon ring on the welcome screen
-  const iconRingEl = document.getElementById('welcome-icon-ring');
-  if (iconRingEl) iconRingEl.style.display = s.hideIcon ? 'none' : '';
-
-  // Show/hide self-registration button on welcome screen
-  const regBtn = document.getElementById('reg-btn');
-  if (regBtn) regBtn.style.display = s.selfRegistration?.enabled ? 'block' : 'none';
-
-  // Show/hide guest search button on welcome screen
-  const searchBtn = document.getElementById('search-btn');
-  if (searchBtn) searchBtn.style.display = s.guestSearch?.enabled ? 'block' : 'none';
 
   // Welcome
   setText('welcome-title', s.welcome?.title || 'Welcome');
@@ -1206,7 +1026,7 @@ function stopCamera() {
   const viewfinder = document.getElementById('camera-viewfinder');
   const prompt     = document.querySelector('.scan-prompt');
   if (video)      video.style.display      = 'none';
-  if (iconRing)   iconRing.style.display   = '';
+  if (iconRing)   iconRing.style.display   = document.getElementById('kiosk').classList.contains('hide-icon') ? 'none' : '';
   if (viewfinder) viewfinder.style.display = 'none';
   if (prompt)     prompt.style.display     = '';
 }
@@ -1244,45 +1064,37 @@ function tickCameraFrame(video, canvas) {
 function setupScanInput() {
   const input = document.getElementById('scan-input');
 
-  // Keep focus on the hidden input — but NOT when the registration or search screen is open.
-  // On iOS, focusing a readonly field with inputmode="none" does NOT open the software keyboard.
+  // Keep focus on the hidden input always
   function reFocus() {
-    const regScreen    = document.getElementById('screen-register');
-    const searchScreen = document.getElementById('screen-search');
-    if ((regScreen    && regScreen.classList.contains('active'))    ||
-        (searchScreen && searchScreen.classList.contains('active'))) return;
-    if (!isProcessing) input.focus({ preventScroll: true });
+    if (!isProcessing) input.focus();
   }
   document.addEventListener('click', reFocus);
   document.addEventListener('touchend', reFocus);
   input.addEventListener('blur', () => setTimeout(reFocus, 80));
   reFocus();
 
-  // Accumulate scanner keystrokes via keydown (works on readonly fields unlike 'input' event).
-  // Hardware barcode scanners emulate a keyboard — each character fires keydown.
-  input.addEventListener('keydown', (e) => {
-    const regScreen    = document.getElementById('screen-register');
-    const searchScreen = document.getElementById('screen-search');
-    if ((regScreen    && regScreen.classList.contains('active'))    ||
-        (searchScreen && searchScreen.classList.contains('active'))) return;
+  // Accumulate keyboard input (scanner sends Enter at end)
+  input.addEventListener('input', () => {
+    scanBuffer += input.value;
+    input.value = '';
+    clearTimeout(scanTimer);
+    scanTimer = setTimeout(() => {
+      const val = scanBuffer.trim();
+      scanBuffer = '';
+      if (val) handleScan(val);
+    }, SCAN_DEBOUNCE_MS);
+  });
 
+  // Enter key triggers immediately.
+  // keydown fires before the browser's 'input' event, so we must flush
+  // input.value into scanBuffer ourselves before reading it.
+  input.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
+      if (input.value) { scanBuffer += input.value; input.value = ''; }
       clearTimeout(scanTimer);
       const val = scanBuffer.trim();
       scanBuffer = '';
       if (val) handleScan(val);
-      return;
-    }
-
-    // Ignore modifier-only keys, function keys, etc.
-    if (e.key.length === 1) {
-      scanBuffer += e.key;
-      clearTimeout(scanTimer);
-      scanTimer = setTimeout(() => {
-        const val = scanBuffer.trim();
-        scanBuffer = '';
-        if (val) handleScan(val);
-      }, SCAN_DEBOUNCE_MS);
     }
   });
 }
@@ -1298,7 +1110,7 @@ async function handleScan(raw) {
     const res = await fetch('/api/kiosk/scan', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scan: raw, stationId })
+      body: JSON.stringify({ scan: raw })
     });
     const data = await res.json();
 
@@ -1306,14 +1118,6 @@ async function handleScan(raw) {
       showError(data.error);
       return;
     }
-
-    console.log('[Scan response]', JSON.stringify({
-      result: data.result,
-      matchedEventId: data.matchedEventId,
-      guestAttrsKeys: data.guest?.attributes ? Object.keys(data.guest.attributes) : '(no attributes key)',
-      rulesCount: data.badgeConfig?.rules?.length ?? '(no badgeConfig)',
-      fallback: data.badgeConfig?.fallback,
-    }, null, 2));
 
     switch (data.result) {
       case 'success':
@@ -1340,20 +1144,7 @@ async function handleScan(raw) {
 }
 
 // ── Result handlers ───────────────────────────────────────────────────────────
-
-// Fire-and-forget signal to LED/buzzer module if configured on this station.
-// status: 'success' | 'failed'
-function fireSignal(status) {
-  if (!station?.signalEndpoint) return;
-  fetch(`/api/kiosk/signal?stationId=${encodeURIComponent(stationId)}`, {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ status }),
-  }).catch(e => console.warn('[signal]', e.message));
-}
-
 async function handleSuccess(data) {
-  fireSignal('success');
   const g = data.guest || {};
   setText('success-name', [g.firstName, g.lastName].filter(Boolean).join(' ') || '—');
   setText('success-company', g.company || '');
@@ -1370,51 +1161,22 @@ async function handleSuccess(data) {
   startReturn('success', getReturnSecs(station?.success));
 }
 
-async function handleAlready(data) {
-  const behaviour = station?.alreadyCheckedIn?.behaviour || 'show';
-
-  if (behaviour === 'reprint') {
-    fireSignal('success');
-    const g = data.guest || {};
-    setText('success-name', [g.firstName, g.lastName].filter(Boolean).join(' ') || '—');
-    setText('success-company', g.company || '');
-    showScreen('success');
-    try { await printKioskBadge(data); } catch(e) { console.warn('Reprint error:', e); }
-    applyScreenBg(station?.success);
-    startReturn('success', getReturnSecs(station?.success));
-    return;
-  }
-
-  if (behaviour === 'deny') {
-    fireSignal('failed');
-    const titleEl = document.getElementById('notfound-title');
-    const subEl   = document.getElementById('notfound-sub');
-    if (titleEl) titleEl.textContent = station?.alreadyCheckedIn?.denyTitle    || 'Code Already Used';
-    if (subEl)   subEl.textContent   = station?.alreadyCheckedIn?.denySubtitle || 'This code has already been used. Please contact the registration desk.';
-    showScreen('notfound');
-    applyScreenBg(station?.notFound);
-    startReturn('notfound', getReturnSecs(station?.notFound));
-    return;
-  }
-
-  // Default: show already-checked-in screen
-  fireSignal('failed');
+function handleAlready(data) {
   const g = data.guest || {};
   setText('already-name', [g.firstName, g.lastName].filter(Boolean).join(' ') || '—');
   setText('already-company', g.company || '');
   const dateEl = document.getElementById('already-date');
   if (dateEl) dateEl.textContent = g.checkedInAt ? `Checked in ${g.checkedInAt}` : 'Already checked in';
   showScreen('already');
-  applyScreenBg(station?.alreadyCheckedIn);
+  applyScreenBg(station?.alreadyCheckedIn);  // fire-and-forget async
   startReturn('already', getReturnSecs(station?.alreadyCheckedIn));
 }
 
 function handleNotFound(msg) {
-  fireSignal('failed');
   const subEl = document.getElementById('notfound-sub');
   if (subEl && msg) subEl.textContent = station?.notFound?.subtitle || msg;
   showScreen('notfound');
-  applyScreenBg(station?.notFound);
+  applyScreenBg(station?.notFound);  // fire-and-forget async
   startReturn('notfound', getReturnSecs(station?.notFound));
 }
 
@@ -1481,57 +1243,14 @@ function evalCondition(c, attrs) {
   }
 }
 
-function selectTemplate(guest, badgeConfig) {
-  // Support both nested (.attributes / .properties) and flat guest objects
-  const attrs = (Object.keys(guest.attributes || {}).length > 0)
-    ? guest.attributes
-    : (guest.properties || guest.attributes || {});
-
-  const matchedEventId = attrs._matchedEventId;
-  const fallback = badgeConfig.fallback;
-
-  console.group('[Badge Routing]');
-  console.log('Attrs keys:', Object.keys(attrs));
-  console.log('matchedEventId:', matchedEventId);
-  console.log('eventGroups:', (badgeConfig.eventGroups||[]).length,
-              '| globalRules:', (badgeConfig.rules||[]).length,
-              '| fallback:', fallback);
-
-  function evalRules(rules, label) {
-    for (const rule of (rules || [])) {
-      const results = rule.conditions.map(c => {
-        const pass   = evalCondition(c, attrs);
-        const rawVal = attrs[c.attr];
-        console.log(`  [${label}] Rule "${rule.name}" | ${c.attr} ${c.op} "${c.value}"`,
-          `| value: ${JSON.stringify(rawVal)} | → ${pass ? '✓' : '✗'}`);
-        return pass;
-      });
-      const match = rule.logic === 'OR' ? results.some(Boolean) : results.every(Boolean);
-      if (match) {
-        console.log(`  ✅ Matched [${label}] "${rule.name}" → ${rule.template}`);
-        console.groupEnd();
-        return rule.template;
-      }
-    }
-    return null;
+function selectTemplate(guest, rules, fallback) {
+  const attrs = guest.attributes || {};
+  for (const rule of (rules || [])) {
+    const results = rule.conditions.map(c => evalCondition(c, attrs));
+    const match = rule.logic === 'OR' ? results.some(Boolean) : results.every(Boolean);
+    if (match) return rule.template;
   }
-
-  // 1. Event-scoped group
-  if (matchedEventId && Array.isArray(badgeConfig.eventGroups)) {
-    const group = badgeConfig.eventGroups.find(g => g.eventId === matchedEventId);
-    if (group) {
-      const key = evalRules(group.rules, `event:${matchedEventId.slice(0,8)}`);
-      if (key) return key;
-    }
-  }
-
-  // 2. Global rules
-  const key = evalRules(badgeConfig.rules, 'global');
-  if (key) return key;
-
-  console.log(`  ⚠️ No rule matched → fallback: ${fallback}`);
-  console.groupEnd();
-  return fallback || null;
+  return fallback || (rules?.[0]?.template) || null;
 }
 
 function resolveField(fieldSpec, attrs) {
@@ -1561,11 +1280,10 @@ async function printKioskBadge(data) {
   // embedded Roboto. document.fonts.load() resolves quickly if already cached.
   try { await document.fonts.load('16px Roboto'); } catch(e) {}
 
-  const attrs  = guest.attributes || {};
+  const attrs = guest.attributes || {};
   const templates = badgeConfig.templates || [];
-  // Use server-pre-selected template when available, otherwise evaluate locally
-  const tplKey = badgeConfig._selectedTemplate || selectTemplate(guest, badgeConfig);
-  const tpl    = templates.find(t => t.key === tplKey) || templates[0];
+  const tplKey = selectTemplate(guest, badgeConfig.rules, badgeConfig.fallback);
+  const tpl = templates.find(t => t.key === tplKey) || templates[0];
   if (!tpl) { console.warn('No badge template found'); return; }
 
   const bgImage      = await getBadgeImg(tpl.key);
@@ -1731,7 +1449,6 @@ function openConfig(isNew) {
   const s = (!isNew && station) ? station : {};
   document.getElementById('cfg-name').value           = s.name || '';
   document.getElementById('cfg-logo').value           = s.logoText || '';
-  document.getElementById('cfg-hide-logo').checked    = s.hideLogoText || false;
   document.getElementById('cfg-accent').value         = s.accentColor || '#d3222a';
   document.getElementById('cfg-bg').value             = s.bgColor || '#0a0a0a';
   document.getElementById('cfg-print-endpoint').value = s.printEndpoint || '';
@@ -1784,7 +1501,6 @@ async function saveConfig() {
     id:            (!_configIsNew && station?.id) ? station.id : undefined,
     name:          gv('cfg-name'),
     logoText:      gv('cfg-logo'),
-    hideLogoText:  gvc('cfg-hide-logo'),
     accentColor:   gv('cfg-accent'),
     bgColor:       gv('cfg-bg'),
     printEndpoint: gv('cfg-print-endpoint') || null,
@@ -1863,700 +1579,6 @@ function clearKioskScreenBg(screenKey) {
   document.getElementById('cfg-' + screenKey + '-bg-label').textContent = 'Upload image…';
   document.getElementById('cfg-' + screenKey + '-bg-clear').style.display = 'none';
   document.getElementById('cfg-' + screenKey + '-bg-file').value = '';
-}
-
-// ── Self-Registration ─────────────────────────────────────────────────────────
-let _regConfig    = null;  // loaded from /api/kiosk/registration-config
-let _regFormData  = {};    // { attr: value } accumulated by the form
-let _regEventId   = null;  // selected event (may be pre-set if single event)
-let _regActiveField = null; // attr name currently being edited by keyboard
-let _kbShift      = false;
-
-// Fixed fields always shown in registration (in order)
-const REG_FIXED_FIELDS = [
-  { attr: 'contact_firstName', label: 'First Name',    type: 'text', required: true },
-  { attr: 'contact_lastName',  label: 'Last Name',     type: 'text', required: true },
-  { attr: 'contact_email',     label: 'Email Address', type: 'text', required: true },
-  { attr: 'contact_commLang',  label: 'Language',      type: 'choice', required: true,
-    options: [{ value: 'de', label: 'Deutsch' }, { value: 'en', label: 'English' },
-              { value: 'fr', label: 'Français' }, { value: 'it', label: 'Italiano' }] },
-];
-
-async function showRegistration() {
-  if (!station?.selfRegistration?.enabled) return;
-  stopCamera();
-  cancelReturn();
-
-  // Load registration config (event list + field option labels)
-  try {
-    const r = await fetch(`/api/kiosk/registration-config?stationId=${encodeURIComponent(stationId)}`);
-    _regConfig = await r.json();
-  } catch(e) { showError('Registration unavailable'); return; }
-
-  if (!_regConfig?.enabled) { showError('Registration not configured'); return; }
-
-  _regFormData = {};
-  document.getElementById('reg-title').textContent = 'Register';
-
-  const eventIds = _regConfig.eventIds || [];
-  if (eventIds.length > 1) {
-    // Show event picker first
-    regShowStep('event');
-    const list = document.getElementById('reg-event-list');
-    list.innerHTML = eventIds.map(eid => {
-      const name = _regConfig.eventNames?.[eid] || `Event ${eid.slice(0,8)}…`;
-      return `<button onclick="regSelectEvent('${eid}')"
-        style="padding:clamp(14px,3vmin,24px); border:2px solid var(--border-tint); border-radius:14px;
-               background:var(--surface2); color:var(--text); cursor:pointer; font-family:var(--font);
-               font-size:clamp(14px,2.8vmin,22px); font-weight:700; text-align:left; width:100%;
-               transition:border-color 0.15s, background 0.15s;"
-        onmouseover="this.style.borderColor='var(--accent)'"
-        onmouseout="this.style.borderColor='var(--border-tint)'">
-        ${escKiosk(name)}
-      </button>`;
-    }).join('');
-  } else {
-    _regEventId = eventIds[0];
-    regShowStep('form');
-    renderRegForm();
-  }
-
-  showScreen('register');
-  applyScreenBg(null); // registration screen has no background image
-}
-
-function regSelectEvent(eid) {
-  _regEventId = eid;
-  regShowStep('form');
-  renderRegForm();
-}
-
-function regShowStep(step) {
-  ['event','form','confirm','processing'].forEach(s => {
-    document.getElementById('reg-step-' + s).style.display = s === step ? 'flex' : 'none';
-  });
-}
-
-function allRegFields() {
-  // Extra fields come from the per-event self-reg config in badge-config
-  const evCfg = (_regConfig?.selfReg || {})[_regEventId] || {};
-  const extra = (evCfg.fields || []).filter(f =>
-    !REG_FIXED_FIELDS.find(ff => ff.attr === f.attr)
-  );
-  return [...REG_FIXED_FIELDS, ...extra];
-}
-
-// Detect touch-based mobile devices (iOS / Android) — use native keyboard on these
-function isMobileDevice() {
-  return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent) ||
-    (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1); // iPadOS
-}
-
-function renderRegForm() {
-  const fields    = allRegFields();
-  const labelMap  = _regConfig?.labelMap || {};
-  const mobile    = isMobileDevice();
-  const container = document.getElementById('reg-form-fields');
-  container.innerHTML = fields.map(f => {
-    const val = _regFormData[f.attr] || '';
-    const labelHtml = `<label style="font-size:clamp(11px,2vmin,16px);color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.06em;">
-      ${escKiosk(f.label)}${f.required ? ' <span style="color:var(--accent)">*</span>' : ''}
-    </label>`;
-
-    if (f.type === 'choice') {
-      const opts = (f.options || []).map(o => {
-        const oLabel = labelMap[o.value] || o.label || o.value;
-        const sel = val === o.value;
-        return `<button onclick="regSetChoice('${f.attr}','${o.value}',this)"
-          style="padding:clamp(8px,1.8vmin,14px) clamp(10px,2vmin,18px); border-radius:10px; cursor:pointer;
-                 font-family:var(--font); font-size:clamp(12px,2.2vmin,18px); font-weight:600;
-                 border:2px solid ${sel ? 'var(--accent)' : 'var(--border-tint)'};
-                 background:${sel ? 'var(--accent)' : 'var(--surface2)'};
-                 color:${sel ? '#fff' : 'var(--text)'}; transition:all 0.15s;"
-          data-attr="${f.attr}" data-val="${o.value}">
-          ${escKiosk(oLabel)}
-        </button>`;
-      }).join('');
-      return `<div style="display:flex;flex-direction:column;gap:8px;">${labelHtml}
-        <div style="display:flex;flex-wrap:wrap;gap:8px;">${opts}</div>
-      </div>`;
-    }
-
-    if (f.type === 'boolean') {
-      const checked = val === true || val === 'true';
-      return `<div style="display:flex;align-items:center;justify-content:space-between;
-                   padding:clamp(12px,2.5vmin,24px) clamp(14px,3vmin,28px);
-                   border-radius:12px; border:2px solid var(--border-tint); background:var(--surface2);
-                   cursor:pointer; transition:border-color 0.15s;"
-               id="reg-bool-wrap-${f.attr}"
-               onclick="regToggleBool('${f.attr}')">
-        <span style="font-size:clamp(13px,2.8vmin,22px);color:var(--text);font-weight:600;">${escKiosk(f.label)}</span>
-        <div id="reg-bool-${f.attr}" style="
-          width:clamp(44px,7vmin,72px); height:clamp(24px,4vmin,40px); border-radius:100px;
-          background:${checked ? 'var(--accent)' : 'var(--border-tint)'};
-          position:relative; transition:background 0.2s; flex-shrink:0;">
-          <div style="
-            position:absolute; top:3px; left:${checked ? 'calc(100% - clamp(20px,3.5vmin,34px) - 3px)' : '3px'};
-            width:clamp(18px,3.5vmin,34px); height:clamp(18px,3.5vmin,34px);
-            border-radius:50%; background:#fff; transition:left 0.2s;"></div>
-        </div>
-      </div>`;
-    }
-
-    // Text field — native input on mobile, custom keyboard div on desktop
-    if (mobile) {
-      return `<div style="display:flex;flex-direction:column;gap:6px;">${labelHtml}
-        <input id="reg-field-${f.attr}"
-          type="${f.attr === 'contact_email' ? 'email' : 'text'}"
-          autocomplete="off" autocorrect="off" autocapitalize="${f.attr.includes('email') ? 'none' : 'words'}"
-          value="${escKiosk(val)}"
-          placeholder="${escKiosk('Enter ' + f.label.toLowerCase() + '…')}"
-          oninput="regUpdateFromInput('${f.attr}',this.value)"
-          style="padding:clamp(10px,2.2vmin,18px) clamp(12px,2.5vmin,20px); border-radius:10px;
-                 border:2px solid var(--border-tint); background:var(--surface2); min-height:44px;
-                 font-size:clamp(14px,2.8vmin,22px); color:var(--text);
-                 font-family:var(--mono); outline:none; width:100%; box-sizing:border-box;
-                 -webkit-appearance:none;"
-          data-attr="${f.attr}"/>
-      </div>`;
-    }
-
-    return `<div style="display:flex;flex-direction:column;gap:6px;">${labelHtml}
-      <div id="reg-field-${f.attr}"
-        onclick="regFocusField('${f.attr}')"
-        style="padding:clamp(10px,2.2vmin,18px) clamp(12px,2.5vmin,20px); border-radius:10px; cursor:text;
-               border:2px solid var(--border-tint); background:var(--surface2); min-height:44px;
-               font-size:clamp(14px,2.8vmin,22px); color:${val ? 'var(--text)' : 'var(--muted)'};
-               font-family:var(--mono); transition:border-color 0.15s;"
-        data-attr="${f.attr}">
-        ${val ? escKiosk(val) : escKiosk('Tap to enter…')}
-      </div>
-    </div>`;
-  }).join('');
-
-  if (mobile) {
-    hideKeyboard();
-    document.getElementById('reg-keyboard').style.display = 'none';
-  } else {
-    buildKeyboard();
-    hideKeyboard();
-  }
-  _regActiveField = null;
-}
-
-// Called by native <input> elements on mobile — keeps _regFormData in sync
-function regUpdateFromInput(attr, value) {
-  _regFormData[attr] = value;
-}
-
-function regSetChoice(attr, value, btn) {
-  _regFormData[attr] = value;
-  const allBtns = document.querySelectorAll(`[data-attr="${attr}"]`);
-  allBtns.forEach(b => {
-    const isSelected = b.dataset.val === value;
-    b.style.border = `2px solid ${isSelected ? 'var(--accent)' : 'var(--border-tint)'}`;
-    b.style.background = isSelected ? 'var(--accent)' : 'var(--surface2)';
-    b.style.color = isSelected ? '#fff' : 'var(--text)';
-  });
-}
-
-function regToggleBool(attr) {
-  const current = _regFormData[attr] === true || _regFormData[attr] === 'true';
-  const next = !current;
-  _regFormData[attr] = next;
-  // Update the toggle visually
-  const knob   = document.querySelector(`#reg-bool-${attr} div`);
-  const track  = document.getElementById(`reg-bool-${attr}`);
-  if (track)  track.style.background = next ? 'var(--accent)' : 'var(--border-tint)';
-  if (knob) {
-    const size = 'clamp(18px,3.5vmin,34px)';
-    knob.style.left = next ? `calc(100% - ${size} - 3px)` : '3px';
-  }
-}
-
-function regFocusField(attr) {
-  _regActiveField = attr;
-  // Highlight the focused field
-  document.querySelectorAll('[id^="reg-field-"]').forEach(el => {
-    el.style.borderColor = el.dataset.attr === attr ? 'var(--accent)' : 'var(--border-tint)';
-  });
-  // Show current value in keyboard display
-  document.getElementById('kb-display').textContent = _regFormData[attr] || '';
-  showKeyboard();
-}
-
-// ── On-screen keyboard ────────────────────────────────────────────────────────
-const KB_ROWS_LOWER = [
-  ['q','w','e','r','t','y','u','i','o','p'],
-  ['a','s','d','f','g','h','j','k','l'],
-  ['z','x','c','v','b','n','m'],
-];
-const KB_ROWS_UPPER = KB_ROWS_LOWER.map(row => row.map(k => k.toUpperCase()));
-const KB_NUMS = [['1','2','3','4','5','6','7','8','9','0'],
-                 ['-','_','.','@','#','+','(',')','/','!'],
-                 [',','?',':',';','=','&','%','"',"'"]];
-
-let _kbMode = 'lower'; // 'lower' | 'upper' | 'num'
-
-function buildKeyboard() {
-  const rows = document.getElementById('kb-rows');
-  rows.innerHTML = '';
-  const layout = _kbMode === 'num' ? KB_NUMS : (_kbMode === 'upper' ? KB_ROWS_UPPER : KB_ROWS_LOWER);
-  layout.forEach(row => {
-    const div = document.createElement('div');
-    div.style.cssText = 'display:flex;gap:5px;justify-content:center;';
-    row.forEach(k => {
-      const btn = document.createElement('button');
-      btn.className = 'kb-btn';
-      btn.style.flex = '1';
-      btn.textContent = k;
-      btn.onclick = () => kbType(k);
-      div.appendChild(btn);
-    });
-    rows.appendChild(div);
-  });
-  // Mode toggle row
-  const modeDiv = document.createElement('div');
-  modeDiv.style.cssText = 'display:flex;gap:5px;margin-top:5px;';
-  [['ABC/abc', 'shift'], ['123', 'num']].forEach(([label, action]) => {
-    const btn = document.createElement('button');
-    btn.className = 'kb-btn';
-    btn.style.flex = '1';
-    btn.textContent = label;
-    btn.onclick = () => kbAction(action);
-    modeDiv.appendChild(btn);
-  });
-  rows.appendChild(modeDiv);
-}
-
-function kbType(char) {
-  if (!_regActiveField) return;
-  _regFormData[_regActiveField] = (_regFormData[_regActiveField] || '') + char;
-  updateFieldDisplay(_regActiveField);
-  // Auto-switch back to lower after one uppercase letter
-  if (_kbMode === 'upper') { _kbMode = 'lower'; buildKeyboard(); }
-}
-
-function kbAction(action) {
-  if (action === 'shift') {
-    _kbMode = _kbMode === 'lower' ? 'upper' : 'lower';
-    buildKeyboard();
-  } else if (action === 'num') {
-    _kbMode = _kbMode === 'num' ? 'lower' : 'num';
-    buildKeyboard();
-  } else if (action === 'space') {
-    kbType(' ');
-  } else if (action === 'backspace') {
-    if (!_regActiveField) return;
-    const v = _regFormData[_regActiveField] || '';
-    _regFormData[_regActiveField] = v.slice(0, -1);
-    updateFieldDisplay(_regActiveField);
-  } else if (action === 'done') {
-    hideKeyboard();
-    _regActiveField = null;
-    document.querySelectorAll('[id^="reg-field-"]').forEach(el => {
-      el.style.borderColor = 'var(--border-tint)';
-    });
-  }
-}
-
-function updateFieldDisplay(attr) {
-  const el = document.getElementById('reg-field-' + attr);
-  const val = _regFormData[attr] || '';
-  if (el) {
-    el.textContent = val || 'Tap to enter…';
-    el.style.color = val ? 'var(--text)' : 'var(--muted)';
-  }
-  document.getElementById('kb-display').textContent = val;
-}
-
-function showKeyboard() {
-  document.getElementById('reg-keyboard').style.display = 'block';
-}
-function hideKeyboard() {
-  document.getElementById('reg-keyboard').style.display = 'none';
-}
-
-function escKiosk(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function regNext() {
-  const fields = allRegFields();
-  // Sync any native <input> values into _regFormData first (mobile path)
-  fields.forEach(f => {
-    if (f.type !== 'text' && f.type !== 'boolean' && f.type !== 'choice') return;
-    if (f.type === 'text') {
-      const el = document.getElementById('reg-field-' + f.attr);
-      if (el && el.tagName === 'INPUT') _regFormData[f.attr] = el.value;
-    }
-  });
-  // Validate required fields — booleans are always "filled" (false is a valid value)
-  const missing = fields.filter(f => {
-    if (!f.required) return false;
-    if (f.type === 'boolean') return false;
-    const v = _regFormData[f.attr];
-    return v === undefined || v === null || String(v).trim() === '';
-  });
-  if (missing.length) {
-    missing.forEach(f => {
-      const el = document.getElementById('reg-field-' + f.attr);
-      if (el) el.style.borderColor = '#f87171';
-    });
-    return;
-  }
-  // Build confirm view
-  regShowStep('confirm');
-  const labelMap = _regConfig?.labelMap || {};
-  document.getElementById('reg-confirm-details').innerHTML = fields.map(f => {
-    let val = _regFormData[f.attr];
-    let display;
-    if (f.type === 'boolean') {
-      display = (val === true || val === 'true') ? '✓ Yes' : '✕ No';
-    } else if (f.type === 'choice') {
-      const opt = (f.options||[]).find(o => o.value === val);
-      display = labelMap[val] || opt?.label || val || '—';
-    } else {
-      display = val || '—';
-    }
-    return `<div style="display:flex;justify-content:space-between;font-size:clamp(13px,2.5vmin,20px);">
-      <span style="color:var(--muted);">${escKiosk(f.label)}</span>
-      <span style="color:var(--text);font-weight:600;">${escKiosk(display)}</span>
-    </div>`;
-  }).join('');
-}
-
-function regPrev() {
-  const eventIds = _regConfig?.eventIds || [];
-  if (eventIds.length > 1) {
-    regShowStep('event');
-  } else {
-    cancelRegistration();
-  }
-}
-
-function cancelRegistration() {
-  showScreen('welcome');
-  applyWelcomeBg();
-  refocusScanInput();
-  if (station?.cameraMode) startCamera();
-}
-
-async function submitRegistration() {
-  regShowStep('processing');
-  try {
-    const attrs = { ..._regFormData };
-    const r = await fetch('/api/kiosk/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ eventId: _regEventId, attributes: attrs, stationId }),
-    });
-    const data = await r.json();
-    if (!data.ok) throw new Error(data.error || 'Registration failed');
-
-    // Show success screen and print badge
-    const g = data.guest || {};
-    setText('success-name', [g.firstName, g.lastName].filter(Boolean).join(' ') || '—');
-    setText('success-company', g.company || '');
-    showScreen('success');
-    applyScreenBg(station?.success);
-    startReturn('success', getReturnSecs(station?.success));
-
-    // Print badge
-    try { await printKioskBadge(data); } catch(e) { console.warn('[reg] badge error:', e); }
-  } catch(e) {
-    showError('Registration failed: ' + (e.message || 'Unknown error'));
-  }
-}
-
-// ── Guest Search ──────────────────────────────────────────────────────────────
-let _searchQuery   = '';
-let _searchTimer   = null;
-let _kbSearchMode  = 'lower';
-
-function showGuestSearch() {
-  if (!station?.guestSearch?.enabled) return;
-  cancelReturn();
-  stopCamera();
-  _searchQuery = '';
-  updateKioskSearchDisplay();
-  document.getElementById('kiosk-search-results').innerHTML =
-    `<div style="color:var(--muted);font-size:clamp(13px,2.8vmin,22px);text-align:center;padding:clamp(20px,5vmin,48px) 0;">Start typing to search for a guest</div>`;
-  showScreen('search');
-  applyScreenBg(null);
-
-  if (isMobileDevice()) {
-    // Use native keyboard on mobile
-    document.getElementById('kiosk-search-keyboard').style.display = 'none';
-    const ni = document.getElementById('kiosk-search-native');
-    ni.style.cssText = 'position:static;opacity:1;pointer-events:auto;width:100%;font-size:16px;padding:12px;border-radius:8px;border:none;background:transparent;color:transparent;caret-color:transparent;outline:none;';
-    ni.value = '';
-    setTimeout(() => ni.focus(), 100);
-  } else {
-    document.getElementById('kiosk-search-keyboard').style.display = 'block';
-    buildKioskSearchKeyboard();
-  }
-}
-
-function cancelGuestSearch() {
-  showScreen('welcome');
-  applyWelcomeBg();
-  refocusScanInput();
-  if (station?.cameraMode) startCamera();
-}
-
-function kiosk_searchFocus() {
-  if (isMobileDevice()) document.getElementById('kiosk-search-native').focus();
-}
-
-function onKioskSearchInput(val) {
-  _searchQuery = val;
-  updateKioskSearchDisplay();
-  scheduleKioskSearch();
-}
-
-function updateKioskSearchDisplay() {
-  const el = document.getElementById('kiosk-search-text');
-  if (!el) return;
-  if (_searchQuery) {
-    el.textContent = _searchQuery;
-    el.style.color = 'var(--text)';
-  } else {
-    el.textContent = 'Type a name…';
-    el.style.color = 'var(--muted)';
-  }
-}
-
-function scheduleKioskSearch() {
-  clearTimeout(_searchTimer);
-  if (_searchQuery.length < 2) {
-    document.getElementById('kiosk-search-results').innerHTML =
-      `<div style="color:var(--muted);font-size:clamp(13px,2.8vmin,22px);text-align:center;padding:clamp(20px,5vmin,48px) 0;">Keep typing…</div>`;
-    return;
-  }
-  _searchTimer = setTimeout(runKioskSearch, 400);
-}
-
-async function runKioskSearch() {
-  const q = _searchQuery.trim();
-  if (q.length < 2) return;
-  const resultsEl = document.getElementById('kiosk-search-results');
-  resultsEl.innerHTML = `<div style="display:flex;align-items:center;justify-content:center;gap:12px;padding:clamp(20px,5vmin,48px) 0;"><div class="spin" style="width:32px;height:32px;border-width:3px;margin:0;"></div><span style="color:var(--muted);font-size:clamp(13px,2.5vmin,20px);">Searching…</span></div>`;
-  try {
-    const r    = await fetch(`/api/kiosk/search?q=${encodeURIComponent(q)}&stationId=${encodeURIComponent(stationId)}`);
-    const data = await r.json();
-    if (data.error) throw new Error(data.error);
-    renderKioskSearchResults(data);
-  } catch(e) {
-    resultsEl.innerHTML = `<div style="color:#f87171;font-size:clamp(13px,2.5vmin,20px);text-align:center;padding:20px;">Search failed: ${escKiosk(e.message)}</div>`;
-  }
-}
-
-function renderKioskSearchResults(guests) {
-  const el = document.getElementById('kiosk-search-results');
-  if (!guests.length) {
-    el.innerHTML = `<div style="color:var(--muted);font-size:clamp(13px,2.8vmin,22px);text-align:center;padding:clamp(20px,5vmin,48px) 0;">No guests found for "${escKiosk(_searchQuery)}"</div>`;
-    return;
-  }
-  el.innerHTML = guests.map((g, idx) => {
-    const a        = g.attributes || g.properties || {};
-    const first    = a.contact_firstName || '';
-    const last     = a.contact_lastName  || '';
-    const company  = a.contact_x_companyName || '';
-    const status   = g.status || a.status || '';
-    const checkedIn = a.guest_x_checkedin === true ||
-      (a.guest_x_checkedinat && a.guest_x_checkedinat !== false && a.guest_x_checkedinat !== 'false' && a.guest_x_checkedinat !== '');
-    const statusColor = checkedIn ? 'var(--green)' : (status === 'REGISTERED' || status === 'PENDING' ? 'var(--orange)' : 'var(--muted)');
-    const statusLabel = checkedIn ? '✓ Checked in' : status;
-    return `<div
-      style="display:flex;align-items:center;justify-content:space-between;
-             padding:clamp(12px,2.5vmin,22px) clamp(14px,3vmin,28px);
-             background:var(--surface2); border:1px solid var(--border-tint); border-radius:12px;
-             margin-bottom:10px; cursor:pointer; transition:border-color 0.15s;"
-      onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border-tint)'"
-      data-idx="${idx}">
-      <div>
-        <div style="font-size:clamp(15px,3vmin,26px);font-weight:700;color:var(--text);">${escKiosk(first)} ${escKiosk(last)}</div>
-        ${company ? `<div style="font-size:clamp(11px,2vmin,18px);color:var(--muted);">${escKiosk(company)}</div>` : ''}
-      </div>
-      <div style="font-size:clamp(10px,1.8vmin,15px);font-family:var(--mono);color:${statusColor};flex-shrink:0;margin-left:12px;">${escKiosk(statusLabel)}</div>
-    </div>`;
-  }).join('');
-
-  // Store results for selection, then attach listeners imperatively.
-  // Using addEventListener (not inline onclick) lets us call preventDefault()
-  // on touchend to stop the reFocus handler from stealing focus mid-selection.
-  el._results = guests;
-  el.querySelectorAll('[data-idx]').forEach(row => {
-    const idx = parseInt(row.dataset.idx, 10);
-    // Touch devices: handle on touchend with preventDefault
-    row.addEventListener('touchend', e => {
-      e.preventDefault();
-      e.stopPropagation();
-      selectKioskSearchResult(idx);
-    }, { passive: false });
-    // Mouse / non-touch fallback
-    row.addEventListener('click', e => {
-      if (e.isTrusted && navigator.maxTouchPoints === 0) {
-        selectKioskSearchResult(idx);
-      }
-    });
-  });
-}
-
-// Fire-and-forget stats recording for events that bypass the scan route
-// (search-driven check-ins, etc.)
-function recordKioskEvent(event) {
-  if (!stationId) return;
-  fetch('/api/kiosk/record-event', {
-    method:  'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body:    JSON.stringify({ stationId, event }),
-  }).catch(() => {});
-}
-
-async function selectKioskSearchResult(idx) {
-  const el     = document.getElementById('kiosk-search-results');
-  const guests = el._results || [];
-  const guest  = guests[idx];
-  if (!guest) return;
-  if (isProcessing) return;
-  isProcessing = true;
-  cancelReturn();
-
-  const a          = guest.attributes || guest.properties || {};
-  const matchedEid = a._matchedEventId;
-  const guestId    = guest.id || guest.uid;
-  const status     = guest.status || a.status || '';
-  const isEligible = status === 'REGISTERED' || status === 'PENDING';
-  const checkedIn  = a.guest_x_checkedin === true ||
-    (a.guest_x_checkedinat && a.guest_x_checkedinat !== false && a.guest_x_checkedinat !== 'false' && a.guest_x_checkedinat !== '');
-
-  if (!isEligible) {
-    isProcessing = false;
-    recordKioskEvent('scan_failed');
-    handleNotFound(`Status: ${status} — not eligible for check-in`);
-    return;
-  }
-
-  if (checkedIn) {
-    isProcessing = false;
-    recordKioskEvent('scan_already');
-    handleAlready({
-      result: 'already_checked_in',
-      guest: {
-        firstName:  a.contact_firstName || '',
-        lastName:   a.contact_lastName  || '',
-        company:    a.contact_x_companyName || '',
-        checkedInAt: a.guest_x_checkedinat,
-        attributes: a,
-      },
-    });
-    return;
-  }
-
-  // Check in the guest
-  showScreen('processing');
-  try {
-    const r = await fetch(`/api/guests/${encodeURIComponent(matchedEid)}/${guestId}/checkin`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(guest),
-    });
-    const data = await r.json();
-    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
-
-    recordKioskEvent('scan_success');
-    fireSignal('success');
-    const first = a.contact_firstName || '';
-    const last  = a.contact_lastName  || '';
-    setText('success-name', `${first} ${last}`.trim() || '—');
-    setText('success-company', a.contact_x_companyName || '');
-    showScreen('success');
-    applyScreenBg(station?.success);
-    startReturn('success', getReturnSecs(station?.success));
-
-    // Print badge
-    try {
-      const badgeRes = await fetch('/api/badge-config');
-      const badgeCfg = await badgeRes.json();
-      await printKioskBadge({
-        guest: {
-          firstName:  first,
-          lastName:   last,
-          company:    a.contact_x_companyName || '',
-          attributes: { ...a, _matchedEventId: matchedEid },
-        },
-        badgeConfig: badgeCfg,
-      });
-    } catch(e) { console.warn('[search checkin] badge error:', e); }
-  } catch(e) {
-    recordKioskEvent('scan_failed');
-    fireSignal('failed');
-    showError('Check-in failed: ' + (e.message || 'Unknown error'));
-  } finally {
-    isProcessing = false;
-    refocusScanInput();
-  }
-}
-
-// ── On-screen keyboard for kiosk search (desktop only) ───────────────────────
-function buildKioskSearchKeyboard() {
-  const rows   = document.getElementById('kiosk-kb-rows');
-  rows.innerHTML = '';
-  const layout = _kbSearchMode === 'num' ? KB_NUMS
-    : (_kbSearchMode === 'upper' ? KB_ROWS_UPPER : KB_ROWS_LOWER);
-  layout.forEach(row => {
-    const div = document.createElement('div');
-    div.style.cssText = 'display:flex;gap:5px;justify-content:center;';
-    row.forEach(k => {
-      const btn = document.createElement('button');
-      btn.className = 'kb-btn';
-      btn.style.flex = '1';
-      btn.textContent = k;
-      btn.onclick = () => kioskKbType(k);
-      div.appendChild(btn);
-    });
-    rows.appendChild(div);
-  });
-  const modeDiv = document.createElement('div');
-  modeDiv.style.cssText = 'display:flex;gap:5px;margin-top:5px;';
-  [['ABC/abc','shift'],['123','num']].forEach(([label, action]) => {
-    const btn = document.createElement('button');
-    btn.className = 'kb-btn'; btn.style.flex = '1';
-    btn.textContent = label;
-    btn.onclick = () => kioskKbAction(action);
-    modeDiv.appendChild(btn);
-  });
-  rows.appendChild(modeDiv);
-}
-
-function kioskKbType(char) {
-  _searchQuery += char;
-  if (_kbSearchMode === 'upper') { _kbSearchMode = 'lower'; buildKioskSearchKeyboard(); }
-  updateKioskSearchDisplay();
-  scheduleKioskSearch();
-}
-
-function kioskKbAction(action) {
-  if (action === 'shift') {
-    _kbSearchMode = _kbSearchMode === 'lower' ? 'upper' : 'lower';
-    buildKioskSearchKeyboard();
-  } else if (action === 'num') {
-    _kbSearchMode = _kbSearchMode === 'num' ? 'lower' : 'num';
-    buildKioskSearchKeyboard();
-  } else if (action === 'space') {
-    kioskKbType(' ');
-  } else if (action === 'backspace') {
-    _searchQuery = _searchQuery.slice(0, -1);
-    updateKioskSearchDisplay();
-    scheduleKioskSearch();
-  } else if (action === 'clear') {
-    _searchQuery = '';
-    updateKioskSearchDisplay();
-    document.getElementById('kiosk-search-results').innerHTML =
-      `<div style="color:var(--muted);font-size:clamp(13px,2.8vmin,22px);text-align:center;padding:clamp(20px,5vmin,48px) 0;">Start typing to search for a guest</div>`;
-  }
 }
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
