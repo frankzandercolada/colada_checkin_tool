@@ -585,6 +585,10 @@
                 <label class="ks-toggle-wrap"><input type="checkbox" id="ks-light-mode"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
               </div>
               <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
+                <div><div class="form-label" style="margin-bottom:2px;">Disable Gradient</div><div style="font-size:11px; color:var(--muted);">Remove colour gradient overlay from all screens</div></div>
+                <label class="ks-toggle-wrap"><input type="checkbox" id="ks-disable-gradient"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
+              </div>
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
                 <div><div class="form-label" style="margin-bottom:2px;">Camera Scan Mode</div><div style="font-size:11px; color:var(--muted);">Enable QR scanning via device camera (iPad / iPhone)</div></div>
                 <label class="ks-toggle-wrap"><input type="checkbox" id="ks-camera-mode"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
               </div>
@@ -626,6 +630,7 @@
                 <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-welcome-title-size" type="number" min="20" max="120" placeholder="default"/></div>
                 <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-welcome-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
               </div>
+              <div><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-welcome-title-bold" style="width:14px;height:14px;accent-color:var(--accent);"/> Bold heading</label></div>
               <div>
                 <label class="form-label">Background Image</label>
                 <div style="display:flex;gap:8px;align-items:center;">
@@ -653,6 +658,7 @@
                 <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-success-title-size" type="number" min="20" max="120" placeholder="default"/></div>
                 <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-success-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
               </div>
+              <div><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-success-title-bold" style="width:14px;height:14px;accent-color:var(--accent);"/> Bold heading</label></div>
               <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-success-hide-card" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide guest name card</label>
               <div>
                 <label class="form-label">Background Image</label>
@@ -681,6 +687,7 @@
                 <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-notfound-title-size" type="number" min="20" max="120" placeholder="default"/></div>
                 <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-notfound-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
               </div>
+              <div><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-notfound-title-bold" style="width:14px;height:14px;accent-color:var(--accent);"/> Bold heading</label></div>
               <div>
                 <label class="form-label">Background Image</label>
                 <div style="display:flex;gap:8px;align-items:center;">
@@ -741,6 +748,7 @@
                 <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-already-title-size" type="number" min="20" max="120" placeholder="default"/></div>
                 <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-already-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
               </div>
+              <div><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-already-title-bold" style="width:14px;height:14px;accent-color:var(--accent);"/> Bold heading</label></div>
               <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-already-hide-card" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide guest name card</label>
               <div>
                 <label class="form-label">Background Image</label>
@@ -3756,6 +3764,7 @@ function openKioskStationModal() {
   document.getElementById('ks-signal-endpoint').value = '';
   document.getElementById('ks-camera-mode').checked = false;
   document.getElementById('ks-light-mode').checked  = false;
+  document.getElementById('ks-disable-gradient').checked = false;
   document.getElementById('ks-hide-logo').checked   = false;
   ['ks-name','ks-logo','ks-welcome-title','ks-welcome-sub','ks-success-title','ks-success-sub','ks-notfound-title','ks-notfound-sub','ks-already-title','ks-already-sub',
    'ks-welcome-title-size','ks-welcome-sub-size','ks-success-title-size','ks-success-sub-size',
@@ -3763,6 +3772,9 @@ function openKioskStationModal() {
     const el = document.getElementById(id);
   ['ks-welcome-bg-top','ks-success-bg-top','ks-notfound-bg-top','ks-already-bg-top'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
   ['welcome','success','notfound','already'].forEach(k => { const b = document.getElementById('ks-'+k+'-bg-clear'); if(b) { b.dataset.hasKey=''; b.dataset.cleared=''; } }); if (el) el.value = '';
+  });
+  ['ks-welcome-title-bold','ks-success-title-bold','ks-notfound-title-bold','ks-already-title-bold'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.checked = true;
   });
   document.getElementById('ks-accent').value = '#d3222a';
   document.getElementById('ks-bg').value = '#0a0a0a';
@@ -3798,6 +3810,7 @@ function editKioskStation(stationId) {
   document.getElementById('ks-signal-endpoint').value = s.signalEndpoint || '';
   document.getElementById('ks-camera-mode').checked = s.cameraMode || false;
   document.getElementById('ks-light-mode').checked  = s.lightMode      || false;
+  document.getElementById('ks-disable-gradient').checked = s.disableGradient || false;
   document.getElementById('ks-hide-logo').checked   = s.hideLogoText   || false;
   document.getElementById('ks-bg').value       = s.bgColor      || '#0a0a0a';
   document.getElementById('ks-bg-light').value = s.bgColorLight || '#f0f0f0';
@@ -3830,6 +3843,11 @@ function editKioskStation(stationId) {
   document.getElementById('ks-notfound-sub-size').value   = s.notFound?.subSize || '';
   document.getElementById('ks-already-title-size').value  = s.alreadyCheckedIn?.titleSize || '';
   document.getElementById('ks-already-sub-size').value    = s.alreadyCheckedIn?.subSize || '';
+  // bold headings — default checked (bold) when field absent
+  document.getElementById('ks-welcome-title-bold').checked  = s.welcome?.titleBold !== false;
+  document.getElementById('ks-success-title-bold').checked  = s.success?.titleBold !== false;
+  document.getElementById('ks-notfound-title-bold').checked = s.notFound?.titleBold !== false;
+  document.getElementById('ks-already-title-bold').checked  = s.alreadyCheckedIn?.titleBold !== false;
   // hide cards
   document.getElementById('ks-success-hide-card').checked = s.success?.hideGuestCard || false;
   document.getElementById('ks-already-hide-card').checked = s.alreadyCheckedIn?.hideGuestCard || false;
@@ -3885,6 +3903,7 @@ function ksScreen(domKey, extra = {}) {
     subtitle:  g('ks-' + domKey + '-sub').value,
     titleSize: parseInt(g('ks-' + domKey + '-title-size').value) || null,
     subSize:   parseInt(g('ks-' + domKey + '-sub-size').value)   || null,
+    titleBold: g('ks-' + domKey + '-title-bold') ? g('ks-' + domKey + '-title-bold').checked : null,
     // data URL if new upload, '' if explicitly cleared, null if unchanged
     bgImage:   bgData ? bgData : (cleared ? '' : null),
     bgImageTop: isNaN(bgTop) ? null : bgTop,
@@ -3907,6 +3926,7 @@ async function saveKioskStation() {
     signalEndpoint: document.getElementById('ks-signal-endpoint').value.trim() || null,
     cameraMode:     document.getElementById('ks-camera-mode').checked,
     lightMode:      document.getElementById('ks-light-mode').checked,
+    disableGradient: document.getElementById('ks-disable-gradient').checked,
     selfRegistration: collectRegConfig(),
     guestSearch: { enabled: document.getElementById('ks-search-enabled').checked },
     hideIcon:    document.getElementById('ks-hide-icon').checked,

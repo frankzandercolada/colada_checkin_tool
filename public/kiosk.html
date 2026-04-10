@@ -124,6 +124,9 @@ html, body {
 
 .screen > * { position: relative; z-index: 1; }
 
+/* Disable gradient overlay when station config sets disableGradient */
+#kiosk.no-gradient .screen::before { background: none !important; }
+
 /* ── Logo / station name ── */
 .station-header {
   position: absolute; top: clamp(18px, 5vmin, 56px); left: 0; right: 0;
@@ -1031,6 +1034,7 @@ async function applyScreenBg(screenCfg) {
 
 function applyStation(s, resolvedLogoText) {
   applyTheme({ accentColor: s.accentColor, bgColor: s.bgColor, bgColorLight: s.bgColorLight, lightMode: s.lightMode });
+  document.getElementById('kiosk').classList.toggle('no-gradient', !!s.disableGradient);
   const logoText = s.logoText || resolvedLogoText || s.name || 'Check-in';
 
   // Apply font size overrides
@@ -1039,6 +1043,7 @@ function applyStation(s, resolvedLogoText) {
     const titleEl = document.getElementById(screenId + '-title');
     const subEl   = document.getElementById(screenId + '-sub');
     if (titleEl && cfg.titleSize) titleEl.style.fontSize = cfg.titleSize + 'px';
+    if (titleEl) titleEl.style.fontWeight = cfg.titleBold === false ? '400' : cfg.titleBold === true ? '800' : '';
     if (subEl   && cfg.subSize)   subEl.style.fontSize   = cfg.subSize   + 'px';
   };
   applyScreen('welcome',          'welcome');
