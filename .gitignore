@@ -1,1 +1,4 @@
 .DS_Store
+data/projects.json
+data/projects/**/badge-config.json
+data/projects/**/kiosk-stations.json
