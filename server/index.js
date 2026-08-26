@@ -95,7 +95,7 @@ const fetch = global._trackedFetch; // eslint-disable-line no-shadow
 
 // Stats endpoint
 app.get('/api/stats/traffic', (req, res) => {
-  const pid      = getActiveProjectId ? getActiveProjectId() : null;
+  const pid      = resolveProjectId(req);
   const stations = pid ? loadKioskStations(pid) : [];
   const enriched = Object.fromEntries(
     Object.entries(_stats.stations).map(([id, s]) => {
@@ -223,6 +223,17 @@ const DEFAULT_RULES = [
 ];
 const DEFAULT_FALLBACK = 'gv_gast';
 
+// ─── Badge-config concurrency meta ───────────────────────────────────────────
+// Each section carries its own version counter so two admins editing different
+// sections (e.g. templates vs. rules) never conflict, and a stale full-document
+// save can be rejected instead of silently overwriting the other admin's work.
+const BADGE_SECTIONS = ['templates', 'eventGroups', 'rules', 'fallback', 'selfRegistration'];
+function badgeMeta(cfg) {
+  const versions = {};
+  for (const s of BADGE_SECTIONS) versions[s] = cfg?._meta?.versions?.[s] || 0;
+  return { versions, updatedAt: cfg?._meta?.updatedAt || null };
+}
+
 // Like loadProjectBadgeConfig but always returns non-null arrays —
 // falls back to DEFAULT_TEMPLATES / DEFAULT_RULES when the file has nulls.
 function loadProjectBadgeConfigWithDefaults(id) {
@@ -328,6 +339,15 @@ function getActiveProjectId() {
   if (config.activeProjectId && projects.find(p => p.id === config.activeProjectId)) return config.activeProjectId;
   if (projects.length > 0) { config.activeProjectId = projects[0].id; saveConfig(config); return config.activeProjectId; }
   return null;
+}
+
+// Resolve which project a request targets. Backoffice clients pin the project
+// they are editing via ?projectId= so concurrent admins can work on different
+// projects; kiosks send nothing and keep following the globally active project.
+function resolveProjectId(req) {
+  const q = (req.query.projectId || '').trim();
+  if (q) return q;
+  return getActiveProjectId();
 }
 
 // ─── Token cache (per-project) ───────────────────────────────────────────────
@@ -510,8 +530,8 @@ app.post('/api/projects/active', (req, res) => {
 // ─── Badge Config (project-scoped) ────────────────────────────────────────────
 app.get('/api/badge-config', (req, res) => {
   const id = req.query.projectId || getActiveProjectId();
-  if (!id) return res.json({ templates: DEFAULT_TEMPLATES, rules: DEFAULT_RULES, fallback: DEFAULT_FALLBACK });
-  res.json(loadProjectBadgeConfigWithDefaults(id));
+  if (!id) return res.json({ templates: DEFAULT_TEMPLATES, rules: DEFAULT_RULES, fallback: DEFAULT_FALLBACK, _meta: badgeMeta(null) });
+  res.json({ ...loadProjectBadgeConfigWithDefaults(id), _meta: badgeMeta(loadProjectBadgeConfig(id)) });
 });
 
 app.post('/api/badge-config', (req, res) => {
@@ -519,14 +539,35 @@ app.post('/api/badge-config', (req, res) => {
     const id = req.query.projectId || getActiveProjectId();
     if (!id) return res.status(400).json({ error:'no active project' });
     const existing = loadProjectBadgeConfig(id);
+    const meta = badgeMeta(existing);
+    const submitted = BADGE_SECTIONS.filter(s => req.body[s] !== undefined);
+
+    // Optimistic locking: clients send the section versions their edit was based
+    // on. If another admin saved a submitted section in the meantime, reject
+    // with 409 + the current server state so the client can refresh and retry.
+    const base = req.body._baseVersions;
+    if (base && typeof base === 'object') {
+      const conflicts = submitted.filter(s => base[s] !== undefined && base[s] !== meta.versions[s]);
+      if (conflicts.length) {
+        return res.status(409).json({
+          error: 'conflict', conflicts,
+          current: loadProjectBadgeConfigWithDefaults(id),
+          _meta: meta,
+        });
+      }
+    }
+
+    for (const s of submitted) meta.versions[s]++;
+    meta.updatedAt = new Date().toISOString();
     saveProjectBadgeConfig(id, {
       templates:        req.body.templates        !== undefined ? req.body.templates        : existing.templates,
       eventGroups:      req.body.eventGroups      !== undefined ? req.body.eventGroups      : (existing.eventGroups || []),
       rules:            req.body.rules            !== undefined ? req.body.rules            : existing.rules,
       fallback:         req.body.fallback         !== undefined ? req.body.fallback         : existing.fallback,
       selfRegistration: req.body.selfRegistration !== undefined ? req.body.selfRegistration : (existing.selfRegistration || {}),
+      _meta: meta,
     });
-    res.json({ ok:true });
+    res.json({ ok:true, _meta: meta });
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
 
@@ -535,7 +576,7 @@ app.post('/api/badge-config', (req, res) => {
 // Returns the resolved badge config (with defaults) plus the raw file content,
 // so you can confirm rules are populated without performing an actual scan.
 app.get('/api/kiosk/routing-debug', (req, res) => {
-  const id = getActiveProjectId();
+  const id = resolveProjectId(req);
   if (!id) return res.status(400).json({ error: 'no active project' });
   const raw  = loadProjectBadgeConfig(id);
   const resolved = loadProjectBadgeConfigWithDefaults(id);
@@ -633,7 +674,7 @@ app.post('/api/config', (req, res) => {
 
 app.get('/api/token/test', async (req, res) => {
   try {
-    const id = getActiveProjectId();
+    const id = resolveProjectId(req);
     if (id && tokenCaches[id]) tokenCaches[id] = { token:null, expires:0 };
     await getToken(id);
     const cache = tokenCaches[id||'global'] || { expires: Date.now()+300000 };
@@ -644,7 +685,7 @@ app.get('/api/token/test', async (req, res) => {
 // ─── Events & Guests ──────────────────────────────────────────────────────────
 app.get('/api/events', async (req, res) => {
   try {
-    const id = getActiveProjectId();
+    const id = resolveProjectId(req);
     const token = await getToken(id);
     const { apiBase } = getEffectiveCredentials(id);
     const r = await fetch(`${apiBase}/_gw/s-events/external-api/events`,{headers:{Authorization:`Bearer ${token}`}});
@@ -653,7 +694,7 @@ app.get('/api/events', async (req, res) => {
 });
 app.get('/api/event/:id', async (req, res) => {
   try {
-    const pid = getActiveProjectId();
+    const pid = resolveProjectId(req);
     const token = await getToken(pid);
     const { apiBase } = getEffectiveCredentials(pid);
     const r = await fetch(`${apiBase}/_gw/s-events/external-api/events/${req.params.id}`,{headers:{Authorization:`Bearer ${token}`}});
@@ -666,7 +707,7 @@ app.get('/api/event/:id', async (req, res) => {
 // Returns { names: { uuid: "Event Name", … }, errors: { uuid: "message", … } }
 app.get('/api/events/names', async (req, res) => {
   try {
-    const pid = getActiveProjectId();
+    const pid = resolveProjectId(req);
     const token = await getToken(pid);
     const { apiBase } = getEffectiveCredentials(pid);
     const ids = (req.query.ids || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -712,7 +753,7 @@ app.get('/api/events/names', async (req, res) => {
 // Returns { groups: [{ id, name }] }
 app.get('/api/events/:eventId/participantgroups', async (req, res) => {
   try {
-    const pid = getActiveProjectId();
+    const pid = resolveProjectId(req);
     const token = await getToken(pid);
     const { apiBase } = getEffectiveCredentials(pid);
     const { eventId } = req.params;
@@ -740,7 +781,7 @@ app.get('/api/events/:eventId/participantgroups', async (req, res) => {
 // Schema endpoint — scans all guests and infers field types + unique values
 app.get('/api/guests/:eventId/schema', async (req, res) => {
   try {
-    const pid = getActiveProjectId();
+    const pid = resolveProjectId(req);
     const token = await getToken(pid);
     const { apiBase } = getEffectiveCredentials(pid);
     const base = `${apiBase}/_gw/s-events-guests/external-api/events/${req.params.eventId}/guests`;
@@ -806,7 +847,7 @@ app.get('/api/guests/:eventId/schema', async (req, res) => {
 // Tries multiple known Colada365 API endpoint patterns.
 app.get('/api/guests/:eventId/optionlabels', async (req, res) => {
   try {
-    const pid = getActiveProjectId();
+    const pid = resolveProjectId(req);
     const token = await getToken(pid);
     const { apiBase } = getEffectiveCredentials(pid);
     const eventId = req.params.eventId;
@@ -856,7 +897,7 @@ app.get('/api/guests/:eventId/optionlabels', async (req, res) => {
 
 app.get('/api/guests/:eventId', async (req, res) => {
   try {
-    const pid = getActiveProjectId();
+    const pid = resolveProjectId(req);
     const token = await getToken(pid);
     const { apiBase } = getEffectiveCredentials(pid);
     let scanInput = req.query.scan || '';
@@ -890,7 +931,7 @@ app.get('/api/guests/:eventId', async (req, res) => {
 
 app.post('/api/guests/:eventId/:guestId/checkin', async (req, res) => {
   try {
-    const pid = getActiveProjectId();
+    const pid = resolveProjectId(req);
     const token = await getToken(pid);
     const { apiBase } = getEffectiveCredentials(pid);
     const projects = loadProjects();
@@ -925,7 +966,7 @@ app.post('/api/guests/:eventId/:guestId/checkin', async (req, res) => {
 
 app.post('/api/guests/:eventId/:guestId/undo-checkin', async (req, res) => {
   try {
-    const pid = getActiveProjectId();
+    const pid = resolveProjectId(req);
     const token = await getToken(pid);
     const { apiBase } = getEffectiveCredentials(pid);
     const projects = loadProjects();
@@ -1211,19 +1252,27 @@ app.get('/api/kiosk/stations/status', (req, res) => {
 });
 
 app.get('/api/kiosk/stations', (req, res) => {
-  const id = getActiveProjectId();
+  const id = resolveProjectId(req);
   if (!id) return res.json([]);
   res.json(loadKioskStations(id));
 });
 
 app.post('/api/kiosk/stations', (req, res) => {
-  const id = getActiveProjectId();
+  const id = resolveProjectId(req);
   if (!id) return res.status(400).json({ error: 'no active project' });
   const { name, welcome, success, notFound, alreadyCheckedIn, accentColor, bgColor, logoText, printEndpoint, cameraMode, disableGradient } = req.body;
   if (!name?.trim()) return res.status(400).json({ error: 'name required' });
   const stations = loadKioskStations(id);
   const stationId = req.body.id || uuidv4();
   const existing = stations.findIndex(s => s.id === stationId);
+
+  // Optimistic locking: reject a save based on a stale copy of the station so
+  // one admin's edit can't silently overwrite another's. Clients that don't
+  // send _version (older kiosk pages) keep the old last-writer-wins behavior.
+  if (existing >= 0 && req.body._version !== undefined && req.body._version !== null
+      && req.body._version !== (stations[existing]._version || 0)) {
+    return res.status(409).json({ error: 'conflict', station: stations[existing] });
+  }
 
   // Extract bgImage data URLs from each screen and save them as separate image files.
   // This keeps kiosk-stations.json small — only a bgImageKey is stored, not the full base64.
@@ -1279,6 +1328,7 @@ app.post('/api/kiosk/stations', (req, res) => {
     selfRegistration: { enabled: !!(req.body.selfRegistration?.enabled) },
     guestSearch:      { enabled: !!(req.body.guestSearch?.enabled) },
     hideIcon:         !!(req.body.hideIcon),
+    _version: (existing >= 0 ? (stations[existing]._version || 0) : 0) + 1,
   };
   if (existing >= 0) stations[existing] = station; else stations.push(station);
   saveKioskStations(id, stations);
@@ -1286,7 +1336,7 @@ app.post('/api/kiosk/stations', (req, res) => {
 });
 
 app.delete('/api/kiosk/stations/:stationId', (req, res) => {
-  const id = getActiveProjectId();
+  const id = resolveProjectId(req);
   if (!id) return res.status(400).json({ error: 'no active project' });
   const stations = loadKioskStations(id).filter(s => s.id !== req.params.stationId);
   saveKioskStations(id, stations);
@@ -1294,7 +1344,7 @@ app.delete('/api/kiosk/stations/:stationId', (req, res) => {
 });
 
 app.post('/api/kiosk/stations/:stationId/duplicate', (req, res) => {
-  const pid = getActiveProjectId();
+  const pid = resolveProjectId(req);
   if (!pid) return res.status(400).json({ error: 'no active project' });
   const stations = loadKioskStations(pid);
   const src = stations.find(s => s.id === req.params.stationId);
@@ -1308,6 +1358,7 @@ app.post('/api/kiosk/stations/:stationId/duplicate', (req, res) => {
   const copy = JSON.parse(JSON.stringify(src));
   copy.id   = newId;
   copy.name = newName;
+  copy._version = 1;
 
   // For each screen, copy the image file and update the bgImageKey reference
   const SCREENS = [
@@ -1644,6 +1695,30 @@ app.post('/api/kiosk/record-event', express.json(), (req, res) => {
 
 app.get('/kiosk/:stationId', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/kiosk.html'));
+});
+
+// ─── Sync state ───────────────────────────────────────────────────────────────
+// Cheap polling endpoint for the backoffice: lets each admin session detect
+// changes made by other admins (badge config, stations, projects, live project)
+// without re-downloading full configs.
+app.get('/api/sync-state', (req, res) => {
+  const pid = resolveProjectId(req);
+  const out = {
+    activeProjectId: getActiveProjectId(),
+    projectId: pid,
+    badgeVersions: null,
+    stationsMtime: null,
+    projectsMtime: null,
+  };
+  try { if (fs.existsSync(PROJECTS_PATH)) out.projectsMtime = fs.statSync(PROJECTS_PATH).mtimeMs; } catch(e) {}
+  if (pid) {
+    try { out.badgeVersions = badgeMeta(loadProjectBadgeConfig(pid)).versions; } catch(e) {}
+    try {
+      const p = kioskStationsPath(pid);
+      if (fs.existsSync(p)) out.stationsMtime = fs.statSync(p).mtimeMs;
+    } catch(e) {}
+  }
+  res.json(out);
 });
 
 // ─── SPA fallback ─────────────────────────────────────────────────────────────

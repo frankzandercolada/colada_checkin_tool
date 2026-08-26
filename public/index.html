@@ -35,9 +35,10 @@
     <div class="project-switcher">
       <div style="font-size:10px;font-family:var(--font-mono);color:var(--muted);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:6px;">Project</div>
       <div class="project-selector">
-        <select class="project-select" id="project-select" onchange="switchProject(this.value)" title="Active project"></select>
+        <select class="project-select" id="project-select" onchange="switchProject(this.value)" title="Project you are editing in this browser (● = live on kiosks)"></select>
         <button class="btn-project-manage" onclick="openProjectModal()" title="Manage projects">⋯</button>
       </div>
+      <div id="editing-live-hint" style="display:none;font-size:10px;font-family:var(--font-mono);margin-top:5px;line-height:1.4;"></div>
     </div>
         <div class="nav-section">Main</div>
     <div class="nav-item active" data-page="scan">
@@ -975,7 +976,7 @@ async function testToken() {
   const el = document.getElementById('token-result');
   el.innerHTML = '<div style="display:flex;gap:8px;align-items:center;"><div class="spinner"></div><span style="color:var(--muted);font-size:13px;">Fetching token…</span></div>';
   try {
-    const r = await fetch('/api/token/test');
+    const r = await fetch(withPid('/api/token/test'));
     const data = await r.json();
     if (data.ok) {
       el.innerHTML = `<div class="badge badge-green" style="font-size:13px;padding:8px 14px;">✓ Connected — token valid for ${data.expiresIn}</div>`;
@@ -992,7 +993,7 @@ async function browseEvents() {
   const container = document.getElementById('events-list');
   container.innerHTML = '<div style="display:flex;gap:8px;align-items:center;"><div class="spinner"></div><span style="color:var(--muted);font-size:13px;">Loading events…</span></div>';
   try {
-    const r = await fetch('/api/events');
+    const r = await fetch(withPid('/api/events'));
     const data = await r.json();
 
     // Colada365 returns { events: [ { id, properties: { start, end, ... } } ] }
@@ -1127,7 +1128,7 @@ async function lookupGuest(uid) {
     if (projEventIds.length === 1) {
       // Single event — direct lookup first, then filter[uid]
       const eid  = projEventIds[0];
-      const r    = await fetch(`/api/guests/${encodeURIComponent(eid)}?scan=${encodeURIComponent(uid)}`);
+      const r    = await fetch(withPid(`/api/guests/${encodeURIComponent(eid)}?scan=${encodeURIComponent(uid)}`));
       const data = await r.json();
       const arr  = Array.isArray(data) ? data : (data.data || []);
       if (arr.length) { guest = arr[0]; matchedEventId = eid; }
@@ -1136,7 +1137,7 @@ async function lookupGuest(uid) {
       const results = await Promise.all(
         projEventIds.map(async eid => {
           try {
-            const r    = await fetch(`/api/guests/${encodeURIComponent(eid)}?scan=${encodeURIComponent(uid)}`);
+            const r    = await fetch(withPid(`/api/guests/${encodeURIComponent(eid)}?scan=${encodeURIComponent(uid)}`));
             const data = await r.json();
             const arr  = Array.isArray(data) ? data : (data.data || []);
             return arr.length ? { guest: arr[0], matchedEventId: eid } : null;
@@ -1214,7 +1215,7 @@ async function searchGuests(term) {
     const perEvent = await Promise.all(
       projEventIds.map(async eid => {
         try {
-          const r = await fetch(`/api/guests/${encodeURIComponent(eid)}?search=${encodeURIComponent(term)}`);
+          const r = await fetch(withPid(`/api/guests/${encodeURIComponent(eid)}?search=${encodeURIComponent(term)}`));
           const data = await r.json();
           const arr = Array.isArray(data) ? data : [];
           // Inject _matchedEventId so routing works when guest is selected
@@ -1512,7 +1513,7 @@ async function refreshCurrentGuest() {
   if (!lookupKey) return;
 
   try {
-    const r    = await fetch(`/api/guests/${encodeURIComponent(state.eventId)}?scan=${encodeURIComponent(lookupKey)}`);
+    const r    = await fetch(withPid(`/api/guests/${encodeURIComponent(state.eventId)}?scan=${encodeURIComponent(lookupKey)}`));
     const data = await r.json();
     const arr  = Array.isArray(data) ? data : (data.data || []);
     if (!arr.length) return;
@@ -1545,7 +1546,7 @@ async function doCheckin(printAfter = true) {
   const guestId = guest.id || guest.uid;
 
   try {
-    const r = await fetch(`/api/guests/${encodeURIComponent(state.eventId)}/${guestId}/checkin`, {
+    const r = await fetch(withPid(`/api/guests/${encodeURIComponent(state.eventId)}/${guestId}/checkin`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(guest)
@@ -1602,7 +1603,7 @@ async function undoCheckin() {
   const guestId = guest.id || guest.uid;
 
   try {
-    const r = await fetch(`/api/guests/${encodeURIComponent(state.eventId)}/${guestId}/undo-checkin`, {
+    const r = await fetch(withPid(`/api/guests/${encodeURIComponent(state.eventId)}/${guestId}/undo-checkin`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(guest),
@@ -1642,6 +1643,7 @@ const _badgeCache = {
   images: {},
   ready: false,
   _loadPromise: null,
+  _versions: {}, // per-section server versions for optimistic locking
 };
 
 // Load all badge config from server once; subsequent calls use cache.
@@ -1650,13 +1652,14 @@ async function ensureBadgeConfigLoaded() {
   if (_badgeCache._loadPromise) return _badgeCache._loadPromise;
   _badgeCache._loadPromise = (async () => {
     try {
-      const res = await fetch('/api/badge-config');
+      const res = await fetch(withPid('/api/badge-config'));
       const data = await res.json();
       if (data.templates)        _badgeCache.templates        = data.templates;
       if (data.eventGroups)      _badgeCache.eventGroups      = data.eventGroups;
       if (data.rules)            _badgeCache.rules            = data.rules;
       if (data.fallback)         _badgeCache.fallback         = data.fallback;
       if (data.selfRegistration) _badgeCache.selfRegistration = data.selfRegistration;
+      if (data._meta?.versions)  _badgeCache._versions        = data._meta.versions;
 
       // If rules or templates were missing on disk (first run / new project),
       // write defaults back to the server NOW so the kiosk scan route always
@@ -1667,11 +1670,11 @@ async function ensureBadgeConfigLoaded() {
       }
 
       // Load all stored images
-      const imgRes = await fetch('/api/badge-images');
+      const imgRes = await fetch(withPid('/api/badge-images'));
       const { keys } = await imgRes.json();
       await Promise.all(keys.map(async k => {
         try {
-          const r = await fetch(`/api/badge-images/${k}`);
+          const r = await fetch(withPid(`/api/badge-images/${k}`));
           const d = await r.json();
           if (d.dataUrl) _badgeCache.images[k] = d.dataUrl;
         } catch(e) {}
@@ -1685,21 +1688,61 @@ async function ensureBadgeConfigLoaded() {
   return _badgeCache._loadPromise;
 }
 
-// Push full config to server
-async function _saveBadgeConfigToServer() {
+// Push config to server. Pass the section names that actually changed
+// (e.g. ['rules']) so other admins' concurrent edits to OTHER sections are
+// never overwritten. With no argument, all sections are sent (seed path).
+// Each save carries the section versions it was based on; if another admin
+// saved the same section first, the server answers 409 and we reload their
+// state instead of clobbering it.
+async function _saveBadgeConfigToServer(sections) {
+  const ALL = ['templates', 'eventGroups', 'rules', 'fallback', 'selfRegistration'];
+  const secs = (sections && sections.length) ? sections : ALL;
+  const current = {
+    templates:        _badgeCache.templates        || loadTemplates(),
+    eventGroups:      _badgeCache.eventGroups      || [],
+    rules:            _badgeCache.rules            || loadRules(),
+    fallback:         _badgeCache.fallback         || 'gv_gast',
+    selfRegistration: _badgeCache.selfRegistration || {},
+  };
+  const body = { _baseVersions: {} };
+  for (const s of secs) {
+    body[s] = current[s];
+    body._baseVersions[s] = (_badgeCache._versions || {})[s] || 0;
+  }
   try {
-    await fetch('/api/badge-config', {
+    const res = await fetch(withPid('/api/badge-config'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        templates:        _badgeCache.templates        || loadTemplates(),
-        eventGroups:      _badgeCache.eventGroups      || [],
-        rules:            _badgeCache.rules            || loadRules(),
-        fallback:         _badgeCache.fallback         || 'gv_gast',
-        selfRegistration: _badgeCache.selfRegistration || {},
-      }),
+      body: JSON.stringify(body),
     });
-  } catch(e) { console.error('[badge-config] save error:', e.message); }
+    if (res.status === 409) {
+      const data = await res.json().catch(() => ({}));
+      if (data.current) {
+        _badgeCache.templates        = data.current.templates;
+        _badgeCache.eventGroups      = data.current.eventGroups;
+        _badgeCache.rules            = data.current.rules;
+        _badgeCache.fallback         = data.current.fallback;
+        _badgeCache.selfRegistration = data.current.selfRegistration;
+      }
+      if (data._meta?.versions) _badgeCache._versions = data._meta.versions;
+      toast('⚠ Another admin just changed this — reloaded their version. Please re-apply your change.', 'error');
+      _rerenderBadgeViews();
+      return false;
+    }
+    const data = await res.json().catch(() => ({}));
+    if (data._meta?.versions) _badgeCache._versions = data._meta.versions;
+    return true;
+  } catch(e) { console.error('[badge-config] save error:', e.message); return false; }
+}
+
+// Re-render whichever badge-related view is on screen after the cache was
+// replaced with fresh server state (conflict reload or background sync).
+function _rerenderBadgeViews() {
+  try {
+    const activePage = document.querySelector('.page.active')?.id?.replace('page-', '');
+    if (activePage === 'badges') loadBadgesPage();
+    else renderRoutingRulesList();
+  } catch(e) {}
 }
 
 async function refreshBadgeConfigFromServer() {
@@ -1778,7 +1821,7 @@ function loadTemplates() {
 }
 function saveTemplates(tpls) {
   _badgeCache.templates = tpls;
-  _saveBadgeConfigToServer();
+  _saveBadgeConfigToServer(['templates']);
 }
 function loadRules() {
   return _badgeCache.rules
@@ -1787,7 +1830,7 @@ function loadRules() {
 }
 function saveRules(rules) {
   _badgeCache.rules = rules;
-  _saveBadgeConfigToServer();
+  _saveBadgeConfigToServer(['rules']);
 }
 function loadEventGroups() {
   return _badgeCache.eventGroups
@@ -1796,7 +1839,7 @@ function loadEventGroups() {
 }
 function saveEventGroups(groups) {
   _badgeCache.eventGroups = groups;
-  _saveBadgeConfigToServer();
+  _saveBadgeConfigToServer(['eventGroups']);
 }
 function getFallbackTemplate() {
   return _badgeCache.fallback || 'gv_gast';
@@ -1805,7 +1848,7 @@ function saveFallbackTemplate() {
   const v = document.getElementById('fallback-template-select')?.value;
   if (!v) return;
   _badgeCache.fallback = v;
-  _saveBadgeConfigToServer();
+  _saveBadgeConfigToServer(['fallback']);
 }
 
 // ── Per-event self-registration config ───────────────────────────────────────
@@ -1815,7 +1858,7 @@ function loadSelfRegForEvent(eventId) {
 function saveSelfRegForEvent(eventId, cfg) {
   if (!_badgeCache.selfRegistration) _badgeCache.selfRegistration = {};
   _badgeCache.selfRegistration[eventId] = cfg;
-  _saveBadgeConfigToServer();
+  _saveBadgeConfigToServer(['selfRegistration']);
 }
 
 // Badge background images — served from server, cached in memory
@@ -1825,7 +1868,7 @@ function getBadgeImage(key) {
 function setBadgeImage(key, b64) {
   _badgeCache.images[key] = b64;
   // Fire-and-forget upload to server
-  fetch(`/api/badge-images/${encodeURIComponent(key)}`, {
+  fetch(withPid(`/api/badge-images/${encodeURIComponent(key)}`), {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ dataUrl: b64 }),
@@ -1833,7 +1876,7 @@ function setBadgeImage(key, b64) {
 }
 function deleteBadgeImage(key) {
   delete _badgeCache.images[key];
-  fetch(`/api/badge-images/${encodeURIComponent(key)}`, { method: 'DELETE' })
+  fetch(withPid(`/api/badge-images/${encodeURIComponent(key)}`), { method: 'DELETE' })
     .catch(e => console.error('[badge-img] delete error:', e.message));
 }
 async function renameBadgeImage(oldKey, newKey) {
@@ -1842,7 +1885,7 @@ async function renameBadgeImage(oldKey, newKey) {
     delete _badgeCache.images[oldKey];
   }
   try {
-    await fetch('/api/badge-images/rename', {
+    await fetch(withPid('/api/badge-images/rename'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ oldKey, newKey }),
@@ -2032,7 +2075,7 @@ async function populateEventRegGroups(eventId) {
   if (!sel) return;
   const saved = loadSelfRegForEvent(eventId).participantGroup || '';
   try {
-    const r = await fetch(`/api/events/${encodeURIComponent(eventId)}/participantgroups`);
+    const r = await fetch(withPid(`/api/events/${encodeURIComponent(eventId)}/participantgroups`));
     const data = await r.json();
     const groups = data.groups || [];
     sel.innerHTML = '<option value="">— none / event default —</option>' +
@@ -2493,8 +2536,8 @@ async function ensureGuestSchema() {
     } else {
       // Fetch inferred field schema AND real option labels from upstream guestschema in parallel
       const [schemaData, labelsData] = await Promise.all([
-        fetch(`/api/guests/${eventId}/schema`).then(r => r.json()).catch(() => null),
-        fetch(`/api/guests/${eventId}/optionlabels`).then(r => r.json()).catch(() => null),
+        fetch(withPid(`/api/guests/${eventId}/schema`)).then(r => r.json()).catch(() => null),
+        fetch(withPid(`/api/guests/${eventId}/optionlabels`)).then(r => r.json()).catch(() => null),
       ]);
       _guestSchema = {
         ...(schemaData || {}),
@@ -2587,7 +2630,7 @@ async function openRuleEditor(scope, idx) {
 
   // Fetch real event names in the background and update the dropdown
   if (projEventIds.length) {
-    fetch(`/api/events/names?ids=${projEventIds.map(encodeURIComponent).join(',')}`)
+    fetch(withPid(`/api/events/names?ids=${projEventIds.map(encodeURIComponent).join(',')}`))
       .then(r => r.json())
       .then(data => {
         if (data?.names) {
@@ -3151,7 +3194,7 @@ function stopMonitorRefresh() {
 async function loadMonitor() {
   if (!document.getElementById('page-monitor')?.classList.contains('active')) return;
   try {
-    const r    = await fetch('/api/stats/traffic');
+    const r    = await fetch(withPid('/api/stats/traffic'));
     const data = await r.json();
     const th   = _monTheme();
 
@@ -3318,8 +3361,8 @@ async function loadDashboard() {
   // Fetch event metadata + guests for all events in parallel
   const results = await Promise.allSettled(eventIds.map(async eid => {
     const [evRes, guestRes] = await Promise.all([
-      fetch(`/api/event/${encodeURIComponent(eid)}`),
-      fetch(`/api/guests/${encodeURIComponent(eid)}`),
+      fetch(withPid(`/api/event/${encodeURIComponent(eid)}`)),
+      fetch(withPid(`/api/guests/${encodeURIComponent(eid)}`)),
     ]);
     const evData    = await evRes.json();
     const guestData = await guestRes.json();
@@ -3476,8 +3519,38 @@ function toggleTheme() {
 })();
 
 // ── Project Management ───────────────────────────────────────────────────────
+// _activeProjectId is THIS browser's editing project (pinned per-device via
+// localStorage). _liveProjectId is the server-global project the kiosks run.
+// They can differ — switching your editing project no longer affects other
+// admins or the kiosks; going live is a separate, explicit action.
 let _projects = [];
 let _activeProjectId = null;
+let _liveProjectId = null;
+const EDIT_PROJECT_KEY = 'ckt-editing-project';
+
+// Append this session's pinned project to an API URL so the server acts on the
+// project being edited here — not whatever happens to be globally active.
+function withPid(url) {
+  if (!_activeProjectId) return url;
+  return url + (url.includes('?') ? '&' : '?') + 'projectId=' + encodeURIComponent(_activeProjectId);
+}
+
+function getProjEventIdsLocal(project) {
+  return project?.eventIds?.length ? project.eventIds : (project?.eventId ? [project.eventId] : []);
+}
+
+function updateEditingBanner() {
+  const el = document.getElementById('editing-live-hint');
+  if (!el) return;
+  if (_activeProjectId && _liveProjectId && _activeProjectId !== _liveProjectId) {
+    const live = _projects.find(p => p.id === _liveProjectId);
+    el.style.display = 'block';
+    el.innerHTML = `⚠ Kiosks run: <b>${escHtml(live?.name || 'other project')}</b>`;
+    el.style.color = 'var(--orange, #f59e0b)';
+  } else {
+    el.style.display = 'none';
+  }
+}
 
 // Returns true if a guest's attributes indicate they are checked in,
 // accounting for the active project's check-in schema.
@@ -3511,8 +3584,18 @@ async function loadProjects() {
     const res = await fetch('/api/projects');
     const data = await res.json();
     _projects = data.projects || [];
-    _activeProjectId = data.activeProjectId;
+    _liveProjectId = data.activeProjectId;
+    // Restore this browser's pinned editing project; fall back to the live one
+    let stored = null;
+    try { stored = localStorage.getItem(EDIT_PROJECT_KEY); } catch(e) {}
+    _activeProjectId = (stored && _projects.find(p => p.id === stored)) ? stored : data.activeProjectId;
+    try { if (_activeProjectId) localStorage.setItem(EDIT_PROJECT_KEY, _activeProjectId); } catch(e) {}
+    // Point the scan page at the editing project's first event
+    const proj = _projects.find(p => p.id === _activeProjectId);
+    const ids = getProjEventIdsLocal(proj);
+    if (ids[0]) { state.eventId = ids[0]; updateEventBadge(ids[0]); }
     renderProjectSelect();
+    updateEditingBanner();
   } catch(e) { console.error('[projects] load error:', e.message); }
 }
 
@@ -3520,21 +3603,19 @@ function renderProjectSelect() {
   const sel = document.getElementById('project-select');
   if (!sel) return;
   sel.innerHTML = _projects.map(p =>
-    `<option value="${p.id}" ${p.id === _activeProjectId ? 'selected' : ''}>${p.name}</option>`
+    `<option value="${p.id}" ${p.id === _activeProjectId ? 'selected' : ''}>${escHtml(p.name)}${p.id === _liveProjectId ? ' ●' : ''}</option>`
   ).join('');
 }
 
+// Switch which project THIS browser edits — local only, other admins and
+// kiosks are unaffected. Use setLiveProject() to change what kiosks run.
 async function switchProject(projectId) {
   if (projectId === _activeProjectId) return;
+  const project = _projects.find(p => p.id === projectId);
+  if (!project) { toast('Project not found', 'error'); return; }
   try {
-    const res = await fetch('/api/projects/active', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ projectId }),
-    });
-    const data = await res.json();
-    if (!data.ok) throw new Error(data.error);
     _activeProjectId = projectId;
+    try { localStorage.setItem(EDIT_PROJECT_KEY, projectId); } catch(e) {}
     // Reset badge cache and reload
     _badgeCache.templates        = null;
     _badgeCache.eventGroups      = null;
@@ -3543,10 +3624,11 @@ async function switchProject(projectId) {
     _badgeCache.selfRegistration = null;
     _badgeCache.images           = {};
     _badgeCache.ready            = false;
+    _badgeCache._versions        = {};
     _guestSchema    = null; // invalidate schema cache — new project has a different event
     _eventNameCache = {};   // clear event name cache for new project
     // Update event ID from project (use first event ID for badge display)
-    const firstEventId = data.eventIds?.[0] || data.eventId || '';
+    const firstEventId = getProjEventIdsLocal(project)[0] || '';
     if (firstEventId) {
       state.eventId = firstEventId;
       updateEventBadge(firstEventId);
@@ -3558,9 +3640,11 @@ async function switchProject(projectId) {
       ensureGuestSchema(),
     ]);
     ensureEventNames(); // pre-fetch event names for scan page search results
-    const project = _projects.find(p => p.id === projectId);
-    toast(`Switched to "${project?.name}"`, 'success');
-    addLog(`Project switched to "${project?.name}"`, 'info');
+    renderProjectSelect();
+    updateEditingBanner();
+    const liveNote = projectId === _liveProjectId ? '' : ' — kiosks still run the live project';
+    toast(`Now editing "${project.name}"${liveNote}`, 'success');
+    addLog(`Editing project switched to "${project.name}" (this browser only)`, 'info');
     // Re-render active page with fresh data
     const activePage = document.querySelector('.page.active')?.id?.replace('page-', '');
     if (activePage === 'badges') {
@@ -3569,7 +3653,30 @@ async function switchProject(projectId) {
       // Always re-render routing rules so condition summaries show correct project counts
       renderRoutingRulesList();
     }
+    if (activePage === 'kiosk') loadKioskStations();
+    if (activePage === 'settings') loadSettings();
   } catch(e) { toast(`Switch failed: ${e.message}`, 'error'); }
+}
+
+// Make a project the LIVE project that all kiosks use — global, explicit action.
+async function setLiveProject(projectId) {
+  const project = _projects.find(p => p.id === projectId);
+  if (!confirm(`Make "${project?.name}" the live project for all kiosk stations?`)) return;
+  try {
+    const res = await fetch('/api/projects/active', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ projectId }),
+    });
+    const data = await res.json();
+    if (!data.ok) throw new Error(data.error);
+    _liveProjectId = projectId;
+    renderProjectSelect();
+    renderProjectList();
+    updateEditingBanner();
+    toast(`"${project?.name}" is now live for kiosks`, 'success');
+    addLog(`Project "${project?.name}" set LIVE for kiosks`, 'info');
+  } catch(e) { toast(`Set live failed: ${e.message}`, 'error'); }
 }
 
 function openProjectModal() {
@@ -3589,14 +3696,19 @@ function renderProjectList() {
     return;
   }
   container.innerHTML = _projects.map(p => {
-    const isActive = p.id === _activeProjectId;
-    return `<div class="project-row ${isActive ? 'is-active' : ''}">
+    const isEditing = p.id === _activeProjectId;
+    const isLive    = p.id === _liveProjectId;
+    const chips =
+      (isEditing ? ' <span style="font-size:10px;color:var(--accent);font-weight:600;">EDITING</span>' : '') +
+      (isLive    ? ' <span style="font-size:10px;color:#4ade80;font-weight:600;">● LIVE</span>' : '');
+    return `<div class="project-row ${isEditing ? 'is-active' : ''}">
       <div class="project-row-info">
-        <div class="project-row-name">${escHtml(p.name)}${isActive ? ' <span style="font-size:10px;color:var(--accent);font-weight:600;">ACTIVE</span>' : ''}</div>
+        <div class="project-row-name">${escHtml(p.name)}${chips}</div>
         <div class="project-row-meta">${(() => { const ids = p.eventIds?.length ? p.eventIds : (p.eventId ? [p.eventId] : []); return ids.length === 1 ? `Event: ${ids[0].slice(0,8)}…` : ids.length > 1 ? `Events: ${ids.length} configured` : 'No event'; })()}  · Created: ${p.createdAt ? new Date(p.createdAt).toLocaleDateString() : '—'}</div>
       </div>
       <div class="project-row-actions">
-        ${!isActive ? `<button class="btn btn-primary" style="font-size:11px;padding:4px 10px;" onclick="switchProjectFromModal('${p.id}')">Use</button>` : ''}
+        ${!isEditing ? `<button class="btn btn-primary" style="font-size:11px;padding:4px 10px;" onclick="switchProjectFromModal('${p.id}')">Edit</button>` : ''}
+        ${!isLive ? `<button class="btn btn-secondary" style="font-size:11px;padding:4px 10px;" title="Make this the project all kiosk stations use" onclick="setLiveProject('${p.id}')">Go live</button>` : ''}
         <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="openRenameProject('${p.id}')">✎</button>
         <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" title="Duplicate" onclick="duplicateProject('${p.id}')">⎘</button>
         ${_projects.length > 1 ? `<button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;color:var(--red);" onclick="deleteProject('${p.id}')">✕</button>` : ''}
@@ -3640,12 +3752,15 @@ async function deleteProject(id) {
     const data = await res.json();
     if (!data.ok) throw new Error(data.error);
     _projects = _projects.filter(p => p.id !== id);
-    if (data.activeProjectId && data.activeProjectId !== _activeProjectId) {
-      _activeProjectId = data.activeProjectId;
-      await switchProject(_activeProjectId);
+    if (data.activeProjectId) _liveProjectId = data.activeProjectId;
+    if (id === _activeProjectId) {
+      // Our editing project was deleted — fall back to the live project
+      _activeProjectId = null;
+      await switchProject(data.activeProjectId || _projects[0]?.id);
     }
     renderProjectSelect();
     renderProjectList();
+    updateEditingBanner();
     toast(`Project deleted`, 'info');
   } catch(e) { toast(`Delete failed: ${e.message}`, 'error'); }
 }
@@ -3716,16 +3831,93 @@ function escHtml(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 (async () => {
-  await loadSettings();
-  // Load projects and badge config in parallel
+  // Projects must load first — they determine this browser's pinned editing
+  // project, which every subsequent request is scoped to via withPid().
+  await loadProjects();
   await Promise.all([
-    loadProjects(),
+    loadSettings(),
     ensureBadgeConfigLoaded(),
   ]);
   // Pre-fetch event names so search results show event labels immediately
   ensureEventNames();
   addLog('App initialized', 'info');
+  _startSyncPolling();
 })();
+
+// ── Multi-admin sync ─────────────────────────────────────────────────────────
+// Polls the server for changes made by other admins: badge config edits,
+// station edits, project list changes, and live-project switches. Views are
+// refreshed only when this admin isn't in the middle of editing something.
+let _syncSnapshot = null;
+
+function _anyEditorOpen() {
+  return ['tpl-modal', 'rule-modal', 'kiosk-modal', 'project-modal', 'project-rename-popover']
+    .some(id => {
+      const el = document.getElementById(id);
+      return el && el.style.display && el.style.display !== 'none';
+    });
+}
+
+function _userIsTyping() {
+  const el = document.activeElement;
+  return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT');
+}
+
+function _startSyncPolling() {
+  setInterval(async () => {
+    try {
+      const s = await fetch(withPid('/api/sync-state')).then(r => r.json());
+      const prev = _syncSnapshot;
+      _syncSnapshot = s;
+
+      // Live-project switched by another admin
+      if (s.activeProjectId && s.activeProjectId !== _liveProjectId) {
+        _liveProjectId = s.activeProjectId;
+        renderProjectSelect();
+        updateEditingBanner();
+        const live = _projects.find(p => p.id === _liveProjectId);
+        toast(`Live kiosk project was switched to "${live?.name || 'another project'}" by another admin`, 'info');
+      }
+
+      if (!prev) return; // first poll only records the baseline
+
+      // Project list changed elsewhere (create/rename/delete/settings)
+      if (s.projectsMtime !== prev.projectsMtime && !_anyEditorOpen()) {
+        const res = await fetch('/api/projects');
+        const data = await res.json();
+        _projects = data.projects || [];
+        _liveProjectId = data.activeProjectId;
+        if (_activeProjectId && !_projects.find(p => p.id === _activeProjectId)) {
+          // Our editing project was deleted elsewhere — fall back to live
+          _activeProjectId = null;
+          await switchProject(_liveProjectId || _projects[0]?.id);
+          toast('Your editing project was deleted by another admin — switched to the live project', 'error');
+        }
+        renderProjectSelect();
+        updateEditingBanner();
+      }
+
+      // Badge config changed by another admin — refresh unless this admin is
+      // mid-edit (open editor modal or typing in a field)
+      const localV  = _badgeCache._versions || {};
+      const remoteV = s.badgeVersions || {};
+      const badgeChanged = Object.keys(remoteV).some(k => (localV[k] || 0) !== remoteV[k]);
+      if (_badgeCache.ready && badgeChanged && !_anyEditorOpen() && !_userIsTyping()) {
+        await refreshBadgeConfigFromServer();
+        _rerenderBadgeViews();
+        toast('Badge config was updated by another admin — view refreshed', 'info');
+      }
+
+      // Stations changed — refresh the list if it's on screen and not being edited
+      if (s.stationsMtime !== prev.stationsMtime) {
+        const onKioskPage = document.querySelector('.page.active')?.id === 'page-kiosk';
+        const kioskModal  = document.getElementById('kiosk-modal');
+        const modalOpen   = kioskModal && kioskModal.style.display && kioskModal.style.display !== 'none';
+        if (onKioskPage && !modalOpen) loadKioskStations();
+      }
+    } catch(e) { /* offline or server restarting — retry next tick */ }
+  }, 10000);
+}
 
 // ── Kiosk Stations management ────────────────────────────────────────────────
 let _editingKioskId = null;
@@ -3740,7 +3932,7 @@ async function loadKioskStations() {
   if (!list) return;
   try {
     const [stations, statusMap] = await Promise.all([
-      fetch('/api/kiosk/stations').then(r => r.json()),
+      fetch(withPid('/api/kiosk/stations')).then(r => r.json()),
       fetch('/api/kiosk/stations/status').then(r => r.json()).catch(() => ({}))
     ]);
     if (!stations.length) {
@@ -3942,6 +4134,9 @@ async function saveKioskStation() {
   if (!name) { toast('Station name is required', 'error'); return; }
   const payload = {
     id: _editingKioskId || undefined,
+    // Version of the station this edit was based on — lets the server reject
+    // the save if another admin changed the station in the meantime.
+    _version: _editingKioskId ? (_kioskStationCache[_editingKioskId]?._version ?? 0) : null,
     name,
     logoText:     document.getElementById('ks-logo').value.trim(),
     hideLogoText: document.getElementById('ks-hide-logo').checked,
@@ -3961,7 +4156,15 @@ async function saveKioskStation() {
     alreadyCheckedIn: ksScreen('already',  { returnSecs: parseInt(document.getElementById('ks-already-return-secs').value)||null, hideGuestCard: document.getElementById('ks-already-hide-card').checked, behaviour: document.querySelector('input[name="ks-already-behaviour"]:checked')?.value || 'show', denyTitle: document.getElementById('ks-deny-title').value.trim(), denySubtitle: document.getElementById('ks-deny-sub').value.trim() }),
   };
   try {
-    const res = await fetch('/api/kiosk/stations', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    const res = await fetch(withPid('/api/kiosk/stations'), { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(payload) });
+    if (res.status === 409) {
+      // Another admin saved this station after we opened the editor. Refresh
+      // the cached copy; the modal stays open with this admin's inputs, and
+      // saving again will now knowingly overwrite the other admin's version.
+      await loadKioskStations();
+      toast('⚠ Another admin changed this station in the meantime. Review your inputs — saving again will overwrite their change.', 'error');
+      return;
+    }
     const data = await res.json();
     if (!data.ok) throw new Error(data.error || 'Save failed');
     closeKioskModal();
@@ -3994,7 +4197,7 @@ function clearKioskAdminScreenBg(screenKey) {
 
 async function deleteKioskStation(id) {
   if (!confirm('Delete this station?')) return;
-  await fetch('/api/kiosk/stations/' + id, { method: 'DELETE' });
+  await fetch(withPid('/api/kiosk/stations/' + id), { method: 'DELETE' });
   loadKioskStations();
   toast('Station deleted', 'ok');
 }
@@ -4005,7 +4208,7 @@ async function duplicateKioskStation(id) {
   const name = prompt('Duplicate station as:', defaultName);
   if (name === null) return; // cancelled
   try {
-    const res  = await fetch(`/api/kiosk/stations/${id}/duplicate`, {
+    const res  = await fetch(withPid(`/api/kiosk/stations/${id}/duplicate`), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name: name.trim() || defaultName }),

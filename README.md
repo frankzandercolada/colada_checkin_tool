@@ -136,7 +136,21 @@ Projects allow you to manage multiple events from one server instance. Each proj
 - Badge templates and routing rules
 - Kiosk station configs
 
-**Switching projects** triggers a full reload of badge config, guest schema, and option labels. The active project is stored server-side so all connected browsers (including kiosks) share the same active event.
+**Switching projects** triggers a full reload of badge config, guest schema, and option labels.
+
+### Editing project vs. live project (multi-admin)
+
+Multiple admins can work in the backoffice at the same time without stepping on each other:
+
+- The project dropdown selects the project **this browser edits** (pinned per device via localStorage). Switching it does not affect other admins or the kiosks.
+- The **live project** — the one all kiosk stations run — is set explicitly via **Go live** in the project manager. The sidebar shows a warning when you are editing a project that is not live.
+- Every backoffice API call carries `?projectId=` for the pinned project; kiosk pages send nothing and always follow the live project.
+
+### Conflict protection
+
+- Badge config is saved **per section** (templates, rules, event groups, fallback, self-registration), each with its own version counter. A save based on a stale version is rejected (HTTP 409); the backoffice then reloads the other admin's state and asks you to re-apply your change. Edits to *different* sections never conflict.
+- Kiosk stations carry a `_version` that works the same way per station.
+- Each backoffice session polls `/api/sync-state` every 10 s and refreshes its view when another admin changed something (skipped while you have an editor open or are typing).
 
 ---
 
