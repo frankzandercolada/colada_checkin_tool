@@ -737,6 +737,7 @@ html, body {
     <div class="guest-card" id="success-guest">
       <div class="guest-name" id="success-name">—</div>
       <div class="guest-company" id="success-company">—</div>
+      <div class="guest-company" id="success-companions" style="display:none;"></div>
       <span class="guest-badge-label badge-success">✓ Badge printing</span>
     </div>
     <div class="return-bar" id="success-return">
@@ -1353,11 +1354,21 @@ function fireSignal(status) {
   .catch(e => console.warn('[signal] fetch failed:', e.message));
 }
 
+// Shows "+ N companions checked in" on the success screen (hidden when none)
+function updateSuccessCompanions(companions) {
+  const el = document.getElementById('success-companions');
+  if (!el) return;
+  const n = (companions || []).filter(c => c.checkedIn || c.alreadyCheckedIn).length;
+  el.style.display = n > 0 ? '' : 'none';
+  if (n > 0) el.textContent = `+ ${n} ${n > 1 ? 'companions' : 'companion'} checked in`;
+}
+
 async function handleSuccess(data) {
   fireSignal('success');
   const g = data.guest || {};
   setText('success-name', [g.firstName, g.lastName].filter(Boolean).join(' ') || '—');
   setText('success-company', g.company || '');
+  updateSuccessCompanions(data.companions);
   showScreen('success');
 
   // Print badge
@@ -1379,6 +1390,7 @@ async function handleAlready(data) {
     const g = data.guest || {};
     setText('success-name', [g.firstName, g.lastName].filter(Boolean).join(' ') || '—');
     setText('success-company', g.company || '');
+    updateSuccessCompanions(data.companions);
     showScreen('success');
     try { await printKioskBadge(data); } catch(e) { console.warn('Reprint error:', e); }
     applyScreenBg(station?.success);
@@ -1556,8 +1568,36 @@ async function getBadgeImg(key) {
   } catch(e) { badgeImages[key] = null; return null; }
 }
 
+// Entry point after a check-in: prints one or several tickets depending on the
+// companion settings delivered by the server.
+// - 'together' + printMode 'main': ONE ticket for the main guest whose seat
+//   field carries the combined, comma-separated seats of the whole party.
+// - 'together' + printMode 'all':  the combined main ticket PLUS one ticket per
+//   companion with their own seat and their own routing-rule template.
 async function printKioskBadge(data) {
   const { guest, badgeConfig } = data;
+  if (!guest || !badgeConfig) return;
+  const comp     = Array.isArray(data.companions) ? data.companions : [];
+  const together = data.companionSettings?.checkinMode === 'together' && comp.length > 0;
+
+  let mainGuest = guest;
+  if (together && data.seatingAll) {
+    const seatField = data.companionSettings?.seatField || 'guest_x_designer_seat';
+    mainGuest = { ...guest, attributes: { ...(guest.attributes || {}), [seatField]: data.seatingAll } };
+  }
+  await printSingleKioskBadge(mainGuest, badgeConfig, badgeConfig._selectedTemplate);
+
+  if (together && data.companionSettings?.printMode === 'all') {
+    for (const c of comp) {
+      if (!(c.checkedIn || c.alreadyCheckedIn)) continue; // skip ineligible/failed companions
+      await printSingleKioskBadge(
+        { firstName: c.firstName, lastName: c.lastName, company: c.company, attributes: c.attributes || {} },
+        badgeConfig, c._selectedTemplate);
+    }
+  }
+}
+
+async function printSingleKioskBadge(guest, badgeConfig, tplKeyOverride) {
   if (!guest || !badgeConfig) return;
 
   // Ensure Roboto is loaded in the browser before measuring text widths.
@@ -1569,7 +1609,7 @@ async function printKioskBadge(data) {
   const attrs  = guest.attributes || {};
   const templates = badgeConfig.templates || [];
   // Use server-pre-selected template when available, otherwise evaluate locally
-  const tplKey = badgeConfig._selectedTemplate || selectTemplate(guest, badgeConfig);
+  const tplKey = tplKeyOverride || selectTemplate(guest, badgeConfig);
   const tpl    = templates.find(t => t.key === tplKey) || templates[0];
   if (!tpl) { console.warn('No badge template found'); return; }
 
@@ -1670,17 +1710,21 @@ async function printKioskBadge(data) {
     // directly. Direct HTTP fetch from an HTTPS page is blocked by iOS Safari
     // (mixed content). The proxy at /api/kiosk/print forwards to the endpoint
     // server-side where mixed content rules don't apply.
-    pdfMake.createPdf(dd).getBase64(async (b64) => {
-      try {
-        const res = await fetch(`/api/kiosk/print?stationId=${encodeURIComponent(stationId)}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain' },
-          body: b64,
-        });
-        if (!res.ok) console.error('Print proxy returned', res.status);
-      } catch(e) {
-        console.error('Print proxy error:', e);
-      }
+    // Awaited so multi-ticket prints (companions) reach the printer in order.
+    await new Promise(resolve => {
+      pdfMake.createPdf(dd).getBase64(async (b64) => {
+        try {
+          const res = await fetch(`/api/kiosk/print?stationId=${encodeURIComponent(stationId)}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'text/plain' },
+            body: b64,
+          });
+          if (!res.ok) console.error('Print proxy returned', res.status);
+        } catch(e) {
+          console.error('Print proxy error:', e);
+        }
+        resolve();
+      });
     });
   } else {
     pdfMake.createPdf(dd).print();
@@ -2477,11 +2521,12 @@ async function selectKioskSearchResult(idx) {
     const last  = a.contact_lastName  || '';
     setText('success-name', `${first} ${last}`.trim() || '—');
     setText('success-company', a.contact_x_companyName || '');
+    updateSuccessCompanions(data._companions);
     showScreen('success');
     applyScreenBg(station?.success);
     startReturn('success', getReturnSecs(station?.success));
 
-    // Print badge
+    // Print badge — companion data comes back from the check-in endpoint
     try {
       const badgeRes = await fetch('/api/badge-config');
       const badgeCfg = await badgeRes.json();
@@ -2493,6 +2538,9 @@ async function selectKioskSearchResult(idx) {
           attributes: { ...a, _matchedEventId: matchedEid },
         },
         badgeConfig: badgeCfg,
+        companions:        data._companions,
+        seatingAll:        data._seatingAll,
+        companionSettings: data._companionSettings,
       });
     } catch(e) { console.warn('[search checkin] badge error:', e); }
   } catch(e) {

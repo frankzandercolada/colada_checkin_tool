@@ -66,6 +66,7 @@ function _recordKiosk(stationId, stationName, event) {
   else if (event === 'scan_failed')  { s.scans++; s.failed++;  }
   else if (event === 'search')       { s.searches++;           }
   else if (event === 'register')     { s.registers++;          }
+  else if (event === 'companion_checkin') { s.checkins++;      } // companion checked in alongside a scan — counts as a check-in, not a scan
 }
 
 // Wrap node-fetch to measure outbound Colada API calls.
@@ -181,6 +182,134 @@ function getCheckinSchema(project) {
 // Returns current datetime in the format Colada365 assistant fields expect: YYYY-MM-DDTHH:MM:SS
 function assistantNow() {
   return new Date().toISOString().replace(/\.\d{3}Z$/, '');
+}
+
+// ─── Companions ──────────────────────────────────────────────────────────────
+// Colada365 guests can carry a top-level companions array:
+//   companions: [{ guestId, firstName, lastName, email }]
+// referencing other guest records of the same event.
+const DEFAULT_SEAT_FIELD = 'guest_x_designer_seat';
+
+function getCompanionRefs(guest) {
+  const arr = guest?.companions;
+  if (!Array.isArray(arr)) return [];
+  return arr
+    .map(c => (typeof c === 'string' ? { guestId: c } : c))
+    .filter(c => c && (c.guestId || c.id))
+    .map(c => ({ ...c, guestId: c.guestId || c.id }));
+}
+
+// Effective companion behavior for a check-in. A kiosk station can override
+// the project default; 'inherit' (or absence) falls through to the project.
+//   checkinMode: 'separate' (default) | 'together'
+//   printMode:   'main' (one ticket for the main guest, seats combined)
+//              | 'all'  (main ticket with combined seats + one per companion)
+function resolveCompanionSettings(project, station) {
+  const proj = project?.companions || {};
+  const st   = station?.companions || {};
+  const pick = (a, b, dflt) => (a && a !== 'inherit') ? a : (b && b !== 'inherit' ? b : dflt);
+  return {
+    checkinMode: pick(st.checkinMode, proj.checkinMode, 'separate'),
+    printMode:   pick(st.printMode,   proj.printMode,   'main'),
+    seatField:   (proj.seatField || '').trim() || DEFAULT_SEAT_FIELD,
+  };
+}
+
+function isCheckedInAttrs(attrs, checkinSchema) {
+  if (checkinSchema === 'assistant') {
+    const v = attrs.guest_x_assistant_checkedin;
+    return !!(v && v !== '' && v !== false);
+  }
+  return attrs.guest_x_checkedin === true ||
+    !!(attrs.guest_x_checkedinat && attrs.guest_x_checkedinat !== false &&
+       attrs.guest_x_checkedinat !== 'false' && attrs.guest_x_checkedinat !== '');
+}
+
+// Fetch every companion's full record and — depending on mode — check them in
+// ('checkin'), undo their check-in ('undo'), or just read them ('none', used
+// for reprints). Individual companion failures are logged and skipped: a
+// companion problem must never block the main guest's check-in.
+// Returns { companions: [...], seatingAll } where seatingAll is the
+// comma-separated seatField values of the main guest plus all companions.
+async function processCompanions({ apiBase, token, eventId, guest, mainAttrs, checkinSchema, stationId, seatField, mode }) {
+  const refs = getCompanionRefs(guest);
+  if (!refs.length) return { companions: [], seatingAll: '' };
+  const base    = `${apiBase}/_gw/s-events-guests/external-api/events/${eventId}/guests`;
+  const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+  const now     = assistantNow();
+  const today   = now.split('T')[0];
+
+  const results = await Promise.all(refs.map(async ref => {
+    try {
+      const r = await fetch(`${base}/${encodeURIComponent(ref.guestId)}`, { headers });
+      if (!r.ok) throw new Error(`fetch ${r.status}`);
+      const cg    = await r.json();
+      const attrs = cg.attributes || cg.properties || {};
+      const status    = cg.status || attrs.status || '';
+      const eligible  = status === 'REGISTERED' || status === 'PENDING';
+      const alreadyIn = isCheckedInAttrs(attrs, checkinSchema);
+      let checkedIn = alreadyIn;
+
+      if (mode === 'checkin' && eligible && !alreadyIn) {
+        let patchAttrs;
+        if (checkinSchema === 'assistant') {
+          patchAttrs = { ...attrs,
+            guest_x_assistant_checkedin:          now,
+            guest_x_assistant_scanner_checkin_id: stationId || '',
+          };
+        } else {
+          patchAttrs = { ...attrs, guest_x_checkedin: true, guest_x_checkedinat: today };
+        }
+        const ph = { ...headers, 'Content-Type': 'application/json' };
+        const rev = cg.revision || attrs.revision;
+        if (rev) ph['If-Match'] = rev;
+        const pr = await fetch(`${base}/${encodeURIComponent(ref.guestId)}`, { method: 'PATCH', headers: ph, body: JSON.stringify({ attributes: patchAttrs }) });
+        checkedIn = pr.ok;
+        if (!pr.ok) console.warn(`[companions] check-in failed for ${ref.guestId}: ${pr.status}`);
+      } else if (mode === 'undo' && alreadyIn) {
+        let patchAttrs, unsetFields;
+        if (checkinSchema === 'assistant') {
+          patchAttrs = { ...attrs };
+          delete patchAttrs.guest_x_assistant_checkedin;
+          delete patchAttrs.guest_x_assistant_scanner_checkin_id;
+          unsetFields = {
+            'attributes.guest_x_assistant_checkedin':          true,
+            'attributes.guest_x_assistant_scanner_checkin_id': true,
+          };
+        } else {
+          patchAttrs = { ...attrs, guest_x_checkedin: false };
+          delete patchAttrs.guest_x_checkedinat;
+          unsetFields = { 'attributes.guest_x_checkedinat': true };
+        }
+        const ph = { ...headers, 'Content-Type': 'application/json' };
+        const rev = cg.revision || attrs.revision;
+        if (rev) ph['If-Match'] = rev;
+        const pr = await fetch(`${base}/${encodeURIComponent(ref.guestId)}`, { method: 'PATCH', headers: ph, body: JSON.stringify({ attributes: patchAttrs, $unset: unsetFields }) });
+        checkedIn = !pr.ok; // still checked in only if the undo failed
+        if (!pr.ok) console.warn(`[companions] undo failed for ${ref.guestId}: ${pr.status}`);
+      }
+
+      return {
+        id:        cg.id || ref.guestId,
+        firstName: attrs.contact_firstName || ref.firstName || '',
+        lastName:  attrs.contact_lastName  || ref.lastName  || '',
+        company:   attrs.contact_x_companyName || '',
+        seat:      attrs[seatField] || '',
+        eligible, alreadyCheckedIn: alreadyIn, checkedIn,
+        attributes: attrs,
+      };
+    } catch(e) {
+      console.warn(`[companions] skipping ${ref.guestId}: ${e.message}`);
+      return null;
+    }
+  }));
+
+  const companions = results.filter(Boolean);
+  const seats = [
+    String(mainAttrs?.[seatField] || ''),
+    ...companions.filter(c => c.eligible || c.checkedIn || c.alreadyCheckedIn).map(c => String(c.seat || '')),
+  ].filter(Boolean);
+  return { companions, seatingAll: seats.join(', ') };
 }
 
 function projectDir(id)        { return path.join(DATA_DIR, 'projects', id); }
@@ -478,6 +607,14 @@ app.patch('/api/projects/:id', (req, res) => {
   if (req.body.tokenUrl !== undefined) projects[idx].tokenUrl = req.body.tokenUrl;
   if (req.body.apiBase !== undefined) projects[idx].apiBase = req.body.apiBase;
   if (req.body.checkinSchema !== undefined) projects[idx].checkinSchema = req.body.checkinSchema;
+  if (req.body.companions !== undefined) {
+    const c = req.body.companions || {};
+    projects[idx].companions = {
+      checkinMode: c.checkinMode === 'together' ? 'together' : 'separate',
+      printMode:   c.printMode   === 'all'      ? 'all'      : 'main',
+      seatField:   (c.seatField || '').trim() || DEFAULT_SEAT_FIELD,
+    };
+  }
   saveProjects(projects);
   res.json({ ok:true, project:projects[idx] });
 });
@@ -960,7 +1097,39 @@ app.post('/api/guests/:eventId/:guestId/checkin', async (req, res) => {
     const r = await fetch(`${apiBase}/_gw/s-events-guests/external-api/events/${req.params.eventId}/guests/${req.params.guestId}`, { method: 'PATCH', headers, body: JSON.stringify({ attributes: patchAttrs }) });
     const text = await r.text();
     if (!r.ok) throw new Error(`API error ${r.status}: ${text.slice(0, 200)}`);
-    try { res.json(JSON.parse(text)); } catch(e) { res.json({ ok: true }); }
+
+    // Together mode: cascade the check-in to companions. The client-sent guest
+    // body usually lacks the top-level companions array, so re-fetch the record.
+    // Kiosk search check-ins send a stationId — honor that station's override.
+    let companionData = null;
+    const ciStation = stationId ? loadKioskStations(pid).find(s => s.id === stationId) : null;
+    const compSettings = resolveCompanionSettings(project, ciStation);
+    if (compSettings.checkinMode === 'together') {
+      let compSrc = guest;
+      if (!getCompanionRefs(compSrc).length) {
+        try {
+          const gr = await fetch(`${apiBase}/_gw/s-events-guests/external-api/events/${req.params.eventId}/guests/${req.params.guestId}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+          if (gr.ok) compSrc = await gr.json();
+        } catch(e) {}
+      }
+      if (getCompanionRefs(compSrc).length) {
+        companionData = await processCompanions({ apiBase, token, eventId: req.params.eventId, guest: compSrc, mainAttrs: patchAttrs, checkinSchema, stationId, seatField: compSettings.seatField, mode: 'checkin' });
+      }
+    }
+
+    let parsed = { ok: true };
+    try { const p = JSON.parse(text); if (p && typeof p === 'object' && !Array.isArray(p)) parsed = p; } catch(e) {}
+    if (companionData) {
+      // Pre-select each companion's badge template via the normal routing rules
+      const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
+      parsed._companions = companionData.companions.map(c => ({
+        ...c,
+        _selectedTemplate: selectTemplateKey({ ...c.attributes, _matchedEventId: req.params.eventId }, badgeCfg),
+      }));
+      parsed._seatingAll        = companionData.seatingAll;
+      parsed._companionSettings = compSettings;
+    }
+    res.json(parsed);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -998,6 +1167,22 @@ app.post('/api/guests/:eventId/:guestId/undo-checkin', async (req, res) => {
     const r = await fetch(`${apiBase}/_gw/s-events-guests/external-api/events/${req.params.eventId}/guests/${req.params.guestId}`, { method: 'PATCH', headers, body: JSON.stringify(body) });
     const text = await r.text();
     if (!r.ok) throw new Error(`API error ${r.status}: ${text.slice(0, 200)}`);
+
+    // Together mode: undo companions' check-ins as well
+    const compSettings = resolveCompanionSettings(project, null);
+    if (compSettings.checkinMode === 'together') {
+      let compSrc = guest;
+      if (!getCompanionRefs(compSrc).length) {
+        try {
+          const gr = await fetch(`${apiBase}/_gw/s-events-guests/external-api/events/${req.params.eventId}/guests/${req.params.guestId}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+          if (gr.ok) compSrc = await gr.json();
+        } catch(e) {}
+      }
+      if (getCompanionRefs(compSrc).length) {
+        await processCompanions({ apiBase, token, eventId: req.params.eventId, guest: compSrc, mainAttrs: {}, checkinSchema, stationId: null, seatField: compSettings.seatField, mode: 'undo' });
+      }
+    }
+
     try { res.json(JSON.parse(text)); } catch(e) { res.json({ ok: true }); }
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -1328,6 +1513,10 @@ app.post('/api/kiosk/stations', (req, res) => {
     selfRegistration: { enabled: !!(req.body.selfRegistration?.enabled) },
     guestSearch:      { enabled: !!(req.body.guestSearch?.enabled) },
     hideIcon:         !!(req.body.hideIcon),
+    companions: {
+      checkinMode: ['together','separate'].includes(req.body.companions?.checkinMode) ? req.body.companions.checkinMode : 'inherit',
+      printMode:   ['main','all'].includes(req.body.companions?.printMode)            ? req.body.companions.printMode   : 'inherit',
+    },
     _version: (existing >= 0 ? (stations[existing]._version || 0) : 0) + 1,
   };
   if (existing >= 0) stations[existing] = station; else stations.push(station);
@@ -1560,22 +1749,42 @@ app.post('/api/kiosk/scan', async (req, res) => {
       return res.json({ result: 'invalid_status', status, guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '' } });
     }
 
+    // Companion behavior for this scan — station override falls back to project
+    const scanStation   = scanStationId ? loadKioskStations(pid).find(s => s.id === scanStationId) : null;
+    const compSettings  = resolveCompanionSettings(project, scanStation);
+    const hasCompanions = compSettings.checkinMode === 'together' && getCompanionRefs(guest).length > 0;
+
+    // Attach companion + combined-seating data to a response payload; assigns
+    // each companion its own badge template via the normal routing rules.
+    function attachCompanionData(payload, companionData, badgeCfg) {
+      if (!companionData) return payload;
+      payload.companions = companionData.companions.map(c => ({
+        ...c,
+        _selectedTemplate: selectTemplateKey({ ...c.attributes, _matchedEventId: matchedEventId }, badgeCfg),
+      }));
+      payload.seatingAll        = companionData.seatingAll;
+      payload.companionSettings = compSettings;
+      return payload;
+    }
+
     // Already-checked-in detection — schema-aware
-    const alreadyIn = checkinSchema === 'assistant'
-      ? !!(attrs.guest_x_assistant_checkedin && attrs.guest_x_assistant_checkedin !== '' && attrs.guest_x_assistant_checkedin !== false)
-      : attrs.guest_x_checkedin === true || (attrs.guest_x_checkedinat && attrs.guest_x_checkedinat !== false && attrs.guest_x_checkedinat !== 'false' && attrs.guest_x_checkedinat !== '');
+    const alreadyIn = isCheckedInAttrs(attrs, checkinSchema);
 
     if (alreadyIn) {
       _recordKiosk(scanStationId, null, 'scan_already');
       const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
       const selectedTemplate = selectTemplateKey(attrs, badgeCfg);
       const checkedInAt = checkinSchema === 'assistant' ? attrs.guest_x_assistant_checkedin : attrs.guest_x_checkedinat;
-      return res.json({
+      // Read (but don't touch) companions so a reprint reproduces the combined ticket
+      const companionData = hasCompanions
+        ? await processCompanions({ apiBase, token, eventId: matchedEventId, guest, mainAttrs: attrs, checkinSchema, stationId: scanStationId, seatField: compSettings.seatField, mode: 'none' })
+        : null;
+      return res.json(attachCompanionData({
         result: 'already_checked_in',
         matchedEventId,
         guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', id: guest.id, attributes: attrs, checkedInAt },
         badgeConfig: { templates: badgeCfg.templates, eventGroups: badgeCfg.eventGroups, rules: badgeCfg.rules, fallback: badgeCfg.fallback, _selectedTemplate: selectedTemplate },
-      });
+      }, companionData, badgeCfg));
     }
 
     // Build check-in PATCH attributes — schema-aware
@@ -1600,15 +1809,25 @@ app.post('/api/kiosk/scan', async (req, res) => {
     if (!pr.ok) throw new Error(`Check-in failed: ${pr.status}`);
 
     _recordKiosk(scanStationId, null, 'scan_success');
+
+    // Together mode: also check in every companion referenced by this guest
+    let companionData = null;
+    if (hasCompanions) {
+      companionData = await processCompanions({ apiBase, token, eventId: matchedEventId, guest, mainAttrs: attrs, checkinSchema, stationId: scanStationId, seatField: compSettings.seatField, mode: 'checkin' });
+      companionData.companions
+        .filter(c => c.checkedIn && !c.alreadyCheckedIn)
+        .forEach(() => _recordKiosk(scanStationId, null, 'companion_checkin'));
+    }
+
     const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
     const selectedTemplate = selectTemplateKey(attrs, badgeCfg);
 
-    res.json({
+    res.json(attachCompanionData({
       result: 'success',
       matchedEventId,
       guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', id: guest.id, attributes: attrs },
       badgeConfig: { templates: badgeCfg.templates, eventGroups: badgeCfg.eventGroups, rules: badgeCfg.rules, fallback: badgeCfg.fallback, _selectedTemplate: selectedTemplate },
-    });
+    }, companionData, badgeCfg));
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 

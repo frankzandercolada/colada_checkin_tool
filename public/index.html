@@ -237,6 +237,31 @@
             </label>
           </div>
         </div>
+        <div style="margin-top:16px;">
+          <label style="font-size:13px;font-weight:600;display:block;margin-bottom:6px;">Companions</label>
+          <div class="form-grid cols-1" style="gap:10px;">
+            <div class="field">
+              <label>Check-in behaviour</label>
+              <select id="cfg-comp-checkin" class="form-input">
+                <option value="separate">Separate — every guest checks in individually</option>
+                <option value="together">Together — companions are checked in automatically with the main guest</option>
+              </select>
+              <span class="hint">Applies when a guest has entries in their companions list. Kiosk stations can override this.</span>
+            </div>
+            <div class="field">
+              <label>Ticket printing (together mode)</label>
+              <select id="cfg-comp-print" class="form-input">
+                <option value="main">Main guest only — one ticket with all seats combined</option>
+                <option value="all">Ticket per guest — combined main ticket plus one ticket per companion</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Seat field</label>
+              <input id="cfg-comp-seatfield" class="form-input" placeholder="guest_x_designer_seat" style="font-family:var(--font-mono);font-size:11px;"/>
+              <span class="hint">Attribute whose values are printed comma-separated for the whole party on the main ticket</span>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div class="card">
@@ -614,6 +639,25 @@
                 <label class="ks-toggle-wrap"><input type="checkbox" id="ks-search-enabled"/><span class="ks-toggle-track"><span class="ks-toggle-knob"></span></span></label>
               </div>
 
+              <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; padding-bottom:6px; border-bottom:1px solid var(--border); margin-top:4px;">Companions</div>
+
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
+                <div><div class="form-label" style="margin-bottom:2px;">Companion Check-in</div><div style="font-size:11px; color:var(--muted);">Check in the guest's companions together with the main guest</div></div>
+                <select id="ks-comp-checkin" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-family:var(--font-mono);font-size:12px;padding:5px 8px;border-radius:5px;">
+                  <option value="inherit">Project default</option>
+                  <option value="together">Together</option>
+                  <option value="separate">Separate</option>
+                </select>
+              </div>
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
+                <div><div class="form-label" style="margin-bottom:2px;">Companion Tickets</div><div style="font-size:11px; color:var(--muted);">Tickets printed when checked in together: only the main guest's (all seats combined) or one per guest</div></div>
+                <select id="ks-comp-print" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-family:var(--font-mono);font-size:12px;padding:5px 8px;border-radius:5px;">
+                  <option value="inherit">Project default</option>
+                  <option value="main">Main ticket only</option>
+                  <option value="all">Ticket per guest</option>
+                </select>
+              </div>
+
               <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; padding-bottom:6px; border-bottom:1px solid var(--border); margin-top:4px;">Print</div>
 
               <div>
@@ -896,6 +940,12 @@ async function loadSettings() {
     const checkinSchema = proj?.checkinSchema || 'classic';
     const schemaRadio = document.querySelector(`input[name="cfg-checkinSchema"][value="${checkinSchema}"]`);
     if (schemaRadio) schemaRadio.checked = true;
+
+    // Companion behavior (per-project defaults; stations may override)
+    const comp = proj?.companions || {};
+    document.getElementById('cfg-comp-checkin').value   = comp.checkinMode || 'separate';
+    document.getElementById('cfg-comp-print').value     = comp.printMode   || 'main';
+    document.getElementById('cfg-comp-seatfield').value = comp.seatField && comp.seatField !== 'guest_x_designer_seat' ? comp.seatField : '';
   } catch(e) { toast('Failed to load config', 'error'); }
 }
 
@@ -913,6 +963,11 @@ async function saveSettings() {
     tokenUrl:      document.getElementById('cfg-tokenUrl').value.trim(),
     apiBase:       document.getElementById('cfg-apiBase').value.trim(),
     checkinSchema: (document.querySelector('input[name="cfg-checkinSchema"]:checked')?.value) || 'classic',
+    companions: {
+      checkinMode: document.getElementById('cfg-comp-checkin').value,
+      printMode:   document.getElementById('cfg-comp-print').value,
+      seatField:   document.getElementById('cfg-comp-seatfield').value.trim(),
+    },
   };
   const projSecret = document.getElementById('cfg-clientSecret').value.trim();
   if (projSecret) projPatch.clientSecret = projSecret;
@@ -4010,6 +4065,8 @@ function openKioskStationModal() {
   document.getElementById('ks-reg-enabled').checked    = false;
   document.getElementById('ks-search-enabled').checked = false;
   document.getElementById('ks-hide-icon').checked      = false;
+  document.getElementById('ks-comp-checkin').value     = 'inherit';
+  document.getElementById('ks-comp-print').value       = 'inherit';
   document.getElementById('ks-already-show').checked   = true; // default
   document.getElementById('ks-deny-fields').style.display = 'none';
   document.getElementById('ks-deny-title').value = '';
@@ -4043,6 +4100,8 @@ function editKioskStation(stationId) {
   document.getElementById('ks-reg-enabled').checked    = reg.enabled || false;
   document.getElementById('ks-search-enabled').checked = s.guestSearch?.enabled || false;
   document.getElementById('ks-hide-icon').checked      = s.hideIcon || false;
+  document.getElementById('ks-comp-checkin').value     = s.companions?.checkinMode || 'inherit';
+  document.getElementById('ks-comp-print').value       = s.companions?.printMode   || 'inherit';
   const behaviour = s.alreadyCheckedIn?.behaviour || 'show';
   document.getElementById('ks-already-show').checked    = behaviour === 'show';
   document.getElementById('ks-already-reprint').checked = behaviour === 'reprint';
@@ -4150,6 +4209,10 @@ async function saveKioskStation() {
     selfRegistration: collectRegConfig(),
     guestSearch: { enabled: document.getElementById('ks-search-enabled').checked },
     hideIcon:    document.getElementById('ks-hide-icon').checked,
+    companions: {
+      checkinMode: document.getElementById('ks-comp-checkin').value,
+      printMode:   document.getElementById('ks-comp-print').value,
+    },
     welcome:          ksScreen('welcome',  { returnSecs: parseInt(document.getElementById('ks-welcome-return-secs').value)||null }),
     success:          ksScreen('success',  { returnSecs: parseInt(document.getElementById('ks-success-return-secs').value)||null,  hideGuestCard: document.getElementById('ks-success-hide-card').checked }),
     notFound:         ksScreen('notfound', { returnSecs: parseInt(document.getElementById('ks-notfound-return-secs').value)||null }),

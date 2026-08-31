@@ -146,6 +146,16 @@ Multiple admins can work in the backoffice at the same time without stepping on 
 - The **live project** — the one all kiosk stations run — is set explicitly via **Go live** in the project manager. The sidebar shows a warning when you are editing a project that is not live.
 - Every backoffice API call carries `?projectId=` for the pinned project; kiosk pages send nothing and always follow the live project.
 
+### Companions
+
+Colada365 guests can reference other guests in their top-level `companions` array. Per project (Settings → Companions), with an optional per-station override in the station editor:
+
+- **Check-in behaviour** — `Separate` (default): every guest checks in individually. `Together`: scanning the main guest also checks in every companion (eligible `REGISTERED`/`PENDING` only; already-checked-in and cancelled companions are skipped, and a companion failure never blocks the main guest). Undo from the backoffice un-checks the companions again.
+- **Ticket printing** (together mode) — `Main guest only`: one ticket whose seat field carries the comma-separated seat values of the whole party. `Ticket per guest`: the combined main ticket plus one ticket per companion with their own seat, each routed through the normal badge rules.
+- **Seat field** — the attribute that is combined, default `guest_x_designer_seat`.
+
+Reprints (station behaviour "reprint") reproduce the combined ticket(s). Works with both check-in field schemas.
+
 ### Conflict protection
 
 - Badge config is saved **per section** (templates, rules, event groups, fallback, self-registration), each with its own version counter. A save based on a stale version is rejected (HTTP 409); the backoffice then reloads the other admin's state and asks you to re-apply your change. Edits to *different* sections never conflict.
