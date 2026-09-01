@@ -379,6 +379,20 @@ You can run any number of stations simultaneously — different entrance doors, 
 
 ---
 
+## Distributable Packages
+
+`npm run build:dist` (or `bash packaging/build-dist.sh [linux|macos|windows]`) builds self-contained packages into `dist/` — the binary embeds the Node runtime, so target machines need nothing installed:
+
+| Package | Installer | Runs as |
+|---|---|---|
+| `…-linux-x64.tar.gz` / `…-linux-arm64.tar.gz` (Raspberry Pi 64-bit) | `sudo ./install.sh [--port N]` | systemd service `colada-checkin`, dedicated user, auto-restart, data in `/var/lib/colada-checkin` |
+| `…-macos-arm64.tar.gz` / `…-macos-x64.tar.gz` | `./install.sh [--port N]` (no sudo) | LaunchAgent at login, data in `~/Library/Application Support/colada-checkin/data` |
+| `…-windows-x64.zip` | `powershell -ExecutionPolicy Bypass -File install.ps1 [-Port N]` | Scheduled Task at logon, data in `%LOCALAPPDATA%\ColadaCheckin\data` |
+
+Re-running an installer upgrades in place (binary replaced, data and port config preserved). `uninstall.sh` / `uninstall.ps1` removes the app but keeps the data unless `--purge` / `-Purge` is passed. Packaged installs read/write everything under the data dir (`CHECKIN_DATA_DIR`), including `config.json` and optional `caddy-root.cer`/`.crt` files for the certificate download page.
+
+---
+
 ## Deployment
 
 ### Recommended Stack

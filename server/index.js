@@ -115,8 +115,13 @@ app.get('/api/stats/traffic', (req, res) => {
 
 // Serve root CA cert for iOS device enrollment.
 // iOS requires DER format (.cer) with the x509-ca-cert MIME type.
+function certFilePath(name) {
+  const inData = path.join(DATA_DIR, name);
+  if (fs.existsSync(inData)) return inData; // packaged installs drop certs here
+  return path.join(__dirname, '../public/' + name);
+}
 app.get('/caddy-root.cer', (req, res) => {
-  const certPath = path.join(__dirname, '../public/caddy-root.cer');
+  const certPath = certFilePath('caddy-root.cer');
   res.setHeader('Content-Type', 'application/x-x509-ca-cert');
   res.setHeader('Content-Disposition', 'attachment; filename="caddy-root.cer"');
   res.sendFile(certPath, err => {
@@ -125,7 +130,7 @@ app.get('/caddy-root.cer', (req, res) => {
 });
 // Also serve PEM for non-iOS devices
 app.get('/caddy-root.crt', (req, res) => {
-  const certPath = path.join(__dirname, '../public/caddy-root.crt');
+  const certPath = certFilePath('caddy-root.crt');
   res.setHeader('Content-Type', 'application/x-x509-ca-cert');
   res.setHeader('Content-Disposition', 'attachment; filename="caddy-root.crt"');
   res.sendFile(certPath, err => {
@@ -134,7 +139,12 @@ app.get('/caddy-root.crt', (req, res) => {
 });
 app.use(express.static(path.join(__dirname, '../public')));
 
-const DATA_DIR = path.join(__dirname, '../data');
+// Packaged installs (single-binary builds) set CHECKIN_DATA_DIR to a writable
+// location (e.g. /var/lib/colada-checkin); config.json then lives inside it.
+// Dev checkouts keep the repo-relative default.
+const DATA_DIR = process.env.CHECKIN_DATA_DIR
+  ? path.resolve(process.env.CHECKIN_DATA_DIR)
+  : path.join(__dirname, '../data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
 // ─── uuid helper (no extra dep) ───────────────────────────────────────────────
@@ -146,7 +156,9 @@ function uuidv4() {
 }
 
 // ─── Config ───────────────────────────────────────────────────────────────────
-const CONFIG_PATH = path.join(__dirname, '../config.json');
+const CONFIG_PATH = process.env.CHECKIN_DATA_DIR
+  ? path.join(DATA_DIR, 'config.json')
+  : path.join(__dirname, '../config.json');
 function loadConfig() {
   try { if (fs.existsSync(CONFIG_PATH)) return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')); } catch(e) {}
   return { clientId:'external_client_s-ge', clientSecret:'aPCcOA7D3jti7t7Q',
