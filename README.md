@@ -202,6 +202,12 @@ If no rule matches a guest, the **fallback template** is used. Configure it in t
 
 ---
 
+## Device Setup (HTTPS certificate)
+
+When `caddy-root.cer` / `caddy-root.crt` are present in `public/`, the backoffice sidebar shows a **Device Setup → HTTPS Certificate** entry. Opening the main app URL on an iPad and tapping it gives a guided download of the root certificate (`.cer`, iOS DER format) with the install steps (profile install + Certificate Trust Settings). A PEM version (`.crt`) is linked for Android/desktop. Without the deployed cert files the entry stays hidden.
+
+---
+
 ## Kiosk Stations
 
 Kiosk stations provide a self-service check-in experience, designed for display on a Raspberry Pi with a large touchscreen or TV.
