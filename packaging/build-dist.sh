@@ -33,9 +33,38 @@ done
 
 echo "→ Building binaries: ${targets[*]}"
 IFS=,; TARGET_CSV="${targets[*]}"; unset IFS
+# Build from a CLEAN staging copy containing only server/, public/ and
+# package.json — pkg's static analysis follows fs references and must never
+# get the chance to embed config.json or the data/ directory (credentials!).
+BUILD_SRC=dist/build-src
+BIN_OUT_ABS="$(pwd)/$BIN_OUT"
+rm -rf "$BUILD_SRC"; mkdir -p "$BUILD_SRC"
+cp -R server public package.json "$BUILD_SRC/"
+ln -sfn "$(pwd)/node_modules" "$BUILD_SRC/node_modules"
 # --public/--public-packages ship plain JS instead of V8 bytecode — bytecode
 # is host-specific and cross-compiled binaries would crash on the target OS.
-npx -y @yao-pkg/pkg . --public --public-packages "*" --targets "$TARGET_CSV" --out-path "$BIN_OUT"
+(cd "$BUILD_SRC" && npx -y @yao-pkg/pkg . --public --public-packages "*" --targets "$TARGET_CSV" --out-path "$BIN_OUT_ABS")
+rm -rf "$BUILD_SRC"
+
+# Guard: abort if any credential from the local config/data ended up in a binary
+echo "→ Scanning binaries for leaked credentials"
+SECRETS=$(node -e '
+const fs = require("fs");
+const out = new Set();
+const grab = o => { for (const k of ["clientSecret", "clientId"]) if (o && o[k]) out.add(o[k]); };
+try { grab(JSON.parse(fs.readFileSync("config.json", "utf8"))); } catch(e) {}
+try { JSON.parse(fs.readFileSync("data/projects.json", "utf8")).forEach(grab); } catch(e) {}
+console.log([...out].join("\n"));')
+for bin in "$BIN_OUT"/*; do
+  while IFS= read -r sec; do
+    [ -z "$sec" ] && continue
+    if grep -qa -- "$sec" "$bin"; then
+      echo "❌ SECURITY: credential string found in $(basename "$bin") — aborting build."
+      exit 1
+    fi
+  done <<< "$SECRETS"
+done
+echo "   ✓ no local credentials found in any binary"
 
 # pkg names outputs <name>-<platform>-<arch>[.exe]
 package_tar() { # $1=binary  $2=platform-dir-with-installers  $3=archive-suffix

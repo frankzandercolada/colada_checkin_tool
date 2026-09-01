@@ -161,7 +161,10 @@ const CONFIG_PATH = process.env.CHECKIN_DATA_DIR
   : path.join(__dirname, '../config.json');
 function loadConfig() {
   try { if (fs.existsSync(CONFIG_PATH)) return JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8')); } catch(e) {}
-  return { clientId:'external_client_s-ge', clientSecret:'aPCcOA7D3jti7t7Q',
+  // No credentials in the defaults — fresh installs get the standard Colada365
+  // endpoints only; client ID/secret are entered in Settings or arrive via a
+  // project import after installation.
+  return { clientId:'', clientSecret:'',
     tokenUrl:'https://admin.colada365.com/auth/realms/default/protocol/openid-connect/token',
     apiBase:'https://admin.colada365.com', activeProjectId:null, tokenRefreshInterval:240, qwertyCorrection:true };
 }
