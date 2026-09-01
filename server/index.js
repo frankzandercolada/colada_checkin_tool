@@ -651,6 +651,117 @@ app.post('/api/projects/:id/duplicate', (req, res) => {
   res.json({ ok:true, project:newProject });
 });
 
+// ─── Project export / import ─────────────────────────────────────────────────
+// Export bundles everything that defines a project into one JSON file:
+// settings (credentials only on request), badge config, badge images and
+// kiosk stations. Import creates a NEW project from such a file — station IDs
+// are preserved so existing kiosk URLs keep working on the target install.
+const EXPORT_FORMAT = 'colada-checkin-project';
+
+app.get('/api/projects/:id/export', (req, res) => {
+  try {
+    const project = loadProjects().find(p => p.id === req.params.id);
+    if (!project) return res.status(404).json({ error: 'not found' });
+    const includeCredentials = req.query.includeCredentials === '1';
+
+    const proj = {
+      name:          project.name,
+      eventId:       project.eventId  || '',
+      eventIds:      getProjectEventIds(project),
+      checkinSchema: project.checkinSchema || 'classic',
+      companions:    project.companions || null,
+    };
+    if (includeCredentials) {
+      proj.clientId     = project.clientId     || '';
+      proj.clientSecret = project.clientSecret || '';
+      proj.tokenUrl     = project.tokenUrl     || '';
+      proj.apiBase      = project.apiBase      || '';
+    }
+
+    const { _meta, ...badgeConfig } = loadProjectBadgeConfig(project.id);
+
+    const badgeImages = {};
+    const imgDir = projectImagesDir(project.id);
+    if (fs.existsSync(imgDir)) {
+      for (const f of fs.readdirSync(imgDir).filter(f => f.endsWith('.txt'))) {
+        try { badgeImages[f.replace(/\.txt$/, '')] = fs.readFileSync(path.join(imgDir, f), 'utf-8'); } catch(e) {}
+      }
+    }
+
+    const kioskStations = loadKioskStations(project.id).map(({ _version, ...s }) => s);
+
+    const safeName = (project.name || 'project').replace(/[^a-z0-9-_ ]/gi, '').trim().replace(/\s+/g, '-').toLowerCase() || 'project';
+    res.setHeader('Content-Disposition', `attachment; filename="${safeName}-config.json"`);
+    res.json({
+      format: EXPORT_FORMAT,
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      includesCredentials: includeCredentials,
+      project: proj,
+      badgeConfig,
+      badgeImages,
+      kioskStations,
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/projects/import', (req, res) => {
+  try {
+    const data = req.body;
+    if (data?.format !== EXPORT_FORMAT) return res.status(400).json({ error: 'Not a project export file' });
+    const src = data.project || {};
+    if (!src.name) return res.status(400).json({ error: 'Export file has no project name' });
+
+    const projects = loadProjects();
+    // De-duplicate the name so an import never masquerades as an existing project
+    let name = String(src.name).trim();
+    while (projects.find(p => p.name === name)) name += ' (import)';
+
+    const eventIds = Array.isArray(src.eventIds) ? src.eventIds.map(s => (s || '').trim()).filter(Boolean) : [];
+    const c = src.companions || {};
+    const project = {
+      id: uuidv4(),
+      name,
+      eventId:       eventIds[0] || '',
+      eventIds,
+      clientId:      src.clientId     || '',
+      clientSecret:  src.clientSecret || '',
+      tokenUrl:      src.tokenUrl     || '',
+      apiBase:       src.apiBase      || '',
+      checkinSchema: src.checkinSchema === 'assistant' ? 'assistant' : 'classic',
+      companions: {
+        checkinMode:  c.checkinMode  === 'together' ? 'together' : 'separate',
+        printMode:    c.printMode    === 'all'      ? 'all'      : 'main',
+        showInSearch: c.showInSearch === 'show'     ? 'show'     : 'hide',
+        seatField:    (c.seatField || '').trim() || DEFAULT_SEAT_FIELD,
+      },
+      createdAt: new Date().toISOString(),
+      importedAt: new Date().toISOString(),
+    };
+
+    ensureProjectDirs(project.id);
+    if (data.badgeConfig && typeof data.badgeConfig === 'object') {
+      const { _meta, ...cfg } = data.badgeConfig; // versions restart at 0 on the target install
+      saveProjectBadgeConfig(project.id, cfg);
+    }
+    for (const [key, dataUrl] of Object.entries(data.badgeImages || {})) {
+      if (typeof dataUrl !== 'string') continue;
+      const safeKey = String(key).replace(/[^a-z0-9_-]/gi, '_');
+      try { fs.writeFileSync(path.join(projectImagesDir(project.id), `${safeKey}.txt`), dataUrl, 'utf-8'); } catch(e) {}
+    }
+    if (Array.isArray(data.kioskStations)) {
+      // Keep original station IDs so kiosk URLs survive the move; reset versions
+      saveKioskStations(project.id, data.kioskStations
+        .filter(s => s && s.id && s.name)
+        .map(s => ({ ...s, _version: 1 })));
+    }
+
+    projects.push(project);
+    saveProjects(projects);
+    res.json({ ok: true, project, stationCount: (data.kioskStations || []).length, imageCount: Object.keys(data.badgeImages || {}).length });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/projects/active', (req, res) => {
   const { projectId } = req.body;
   const projects = loadProjects();

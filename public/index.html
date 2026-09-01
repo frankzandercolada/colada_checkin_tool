@@ -3797,6 +3797,7 @@ function renderProjectList() {
         ${!isLive ? `<button class="btn btn-secondary" style="font-size:11px;padding:4px 10px;" title="Make this the project all kiosk stations use" onclick="setLiveProject('${p.id}')">Go live</button>` : ''}
         <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" onclick="openRenameProject('${p.id}')">✎</button>
         <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" title="Duplicate" onclick="duplicateProject('${p.id}')">⎘</button>
+        <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;" title="Export full configuration (settings, badges, images, stations)" onclick="exportProject('${p.id}')">⬇</button>
         ${_projects.length > 1 ? `<button class="btn btn-ghost" style="font-size:11px;padding:4px 8px;color:var(--red);" onclick="deleteProject('${p.id}')">✕</button>` : ''}
       </div>
     </div>`;
@@ -3867,6 +3868,54 @@ async function duplicateProject(id) {
     renderProjectList();
     toast(`Duplicated as "${data.project.name}"`, 'success');
   } catch(e) { toast(`Duplicate failed: ${e.message}`, 'error'); }
+}
+
+// ── Project export / import ──────────────────────────────────────────────────
+async function exportProject(id) {
+  const p = _projects.find(x => x.id === id);
+  const withCreds = confirm(
+    `Export "${p?.name}" with API credentials (client ID + secret)?\n\n` +
+    `OK — include credentials (full transfer to another install; keep the file safe!)\n` +
+    `Cancel — export without credentials (safe to share)`);
+  try {
+    const r = await fetch(`/api/projects/${id}/export${withCreds ? '?includeCredentials=1' : ''}`);
+    const data = await r.json();
+    if (data.error) throw new Error(data.error);
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const safeName = (p?.name || 'project').replace(/[^a-z0-9-_ ]/gi, '').trim().replace(/\s+/g, '-').toLowerCase() || 'project';
+    a.download = `${safeName}-config.json`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    toast(`Project exported${withCreds ? ' (incl. credentials)' : ''}`, 'success');
+    addLog(`Project "${p?.name}" exported${withCreds ? ' with credentials' : ''}`, 'info');
+  } catch(e) { toast(`Export failed: ${e.message}`, 'error'); }
+}
+
+async function importProjectFile(input) {
+  const file = input.files[0];
+  input.value = ''; // allow re-selecting the same file later
+  if (!file) return;
+  try {
+    const text = await file.text();
+    let data;
+    try { data = JSON.parse(text); } catch(e) { throw new Error('Not a valid JSON file'); }
+    const r = await fetch('/api/projects/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    const resp = await r.json();
+    if (!resp.ok) throw new Error(resp.error || 'Import failed');
+    _projects.push(resp.project);
+    renderProjectSelect();
+    renderProjectList();
+    toast(`Imported "${resp.project.name}" (${resp.stationCount} stations, ${resp.imageCount} images)`, 'success');
+    addLog(`Project "${resp.project.name}" imported from ${file.name}`, 'info');
+  } catch(e) { toast(`Import failed: ${e.message}`, 'error'); }
 }
 
 function openRenameProject(id) {
@@ -4354,6 +4403,12 @@ async function duplicateKioskStation(id) {
         </div>
         <!-- List -->
         <div class="project-list" id="project-list-container"></div>
+        <!-- Import -->
+        <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;">
+          <span style="font-size:11px;color:var(--muted);">Restore or transfer a full project configuration from an export file.</span>
+          <button class="btn btn-secondary" style="font-size:12px;flex-shrink:0;" onclick="document.getElementById('project-import-file').click()">⬆ Import project…</button>
+          <input type="file" id="project-import-file" accept=".json,application/json" style="display:none;" onchange="importProjectFile(this)"/>
+        </div>
       </div>
     </div>
   </div>

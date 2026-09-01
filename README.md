@@ -165,6 +165,10 @@ Reprints (station behaviour "reprint") reproduce the combined ticket(s). Works w
 
 ---
 
+### Export / Import
+
+Every project can be exported as a single JSON file (⬇ in the project manager): settings, check-in schema, companion options, badge templates/rules, badge images, and kiosk stations. API credentials are included only when you confirm it — exports without credentials are safe to share. **Import project…** restores such a file as a *new* project (never overwriting an existing one); kiosk station IDs are preserved so existing kiosk URLs keep working after moving to another install.
+
 ## Badge Templates & Routing Rules
 
 ### Templates
