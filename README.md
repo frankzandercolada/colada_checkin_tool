@@ -153,6 +153,7 @@ Colada365 guests can reference other guests in their top-level `companions` arra
 - **Check-in behaviour** — `Separate` (default): every guest checks in individually. `Together`: scanning the main guest also checks in every companion (eligible `REGISTERED`/`PENDING` only; already-checked-in and cancelled companions are skipped, and a companion failure never blocks the main guest). Undo from the backoffice un-checks the companions again.
 - **Ticket printing** (together mode) — `Main guest only`: one ticket whose seat field carries the comma-separated seat values of the whole party. `Ticket per guest`: the combined main ticket plus one ticket per companion with their own seat, each routed through the normal badge rules.
 - **Seat field** — the attribute that is combined, default `guest_x_designer_seat`.
+- **Search results** — optionally list each guest's companions ("👥 +2: …") in the kiosk guest search and the backoffice scan-page search, so staff see the whole party before checking in. Project setting with per-station override.
 
 Reprints (station behaviour "reprint") reproduce the combined ticket(s). Works with both check-in field schemas.
 

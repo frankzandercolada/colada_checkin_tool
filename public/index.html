@@ -260,6 +260,14 @@
               </select>
             </div>
             <div class="field">
+              <label>Search results</label>
+              <select id="cfg-comp-search" class="form-input">
+                <option value="hide">Hide companions — search shows only the guest found</option>
+                <option value="show">Show companions — list each guest's companions in the search results</option>
+              </select>
+              <span class="hint">Applies to the kiosk guest search and the backoffice scan-page search. Kiosk stations can override this.</span>
+            </div>
+            <div class="field">
               <label>Seat field</label>
               <input id="cfg-comp-seatfield" class="form-input" placeholder="guest_x_designer_seat" style="font-family:var(--font-mono);font-size:11px;"/>
               <span class="hint">Attribute whose values are printed comma-separated for the whole party on the main ticket</span>
@@ -661,6 +669,14 @@
                   <option value="all">Ticket per guest</option>
                 </select>
               </div>
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:6px 0;">
+                <div><div class="form-label" style="margin-bottom:2px;">Companions in Search</div><div style="font-size:11px; color:var(--muted);">List each guest's companions in this station's search results</div></div>
+                <select id="ks-comp-search" style="background:var(--surface2);border:1px solid var(--border2);color:var(--text);font-family:var(--font-mono);font-size:12px;padding:5px 8px;border-radius:5px;">
+                  <option value="inherit">Project default</option>
+                  <option value="show">Show</option>
+                  <option value="hide">Hide</option>
+                </select>
+              </div>
 
               <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; padding-bottom:6px; border-bottom:1px solid var(--border); margin-top:4px;">Print</div>
 
@@ -950,6 +966,7 @@ async function loadSettings() {
     const comp = proj?.companions || {};
     document.getElementById('cfg-comp-checkin').value   = comp.checkinMode || 'separate';
     document.getElementById('cfg-comp-print').value     = comp.printMode   || 'main';
+    document.getElementById('cfg-comp-search').value    = comp.showInSearch || 'hide';
     document.getElementById('cfg-comp-seatfield').value = comp.seatField && comp.seatField !== 'guest_x_designer_seat' ? comp.seatField : '';
   } catch(e) { toast('Failed to load config', 'error'); }
 }
@@ -969,9 +986,10 @@ async function saveSettings() {
     apiBase:       document.getElementById('cfg-apiBase').value.trim(),
     checkinSchema: (document.querySelector('input[name="cfg-checkinSchema"]:checked')?.value) || 'classic',
     companions: {
-      checkinMode: document.getElementById('cfg-comp-checkin').value,
-      printMode:   document.getElementById('cfg-comp-print').value,
-      seatField:   document.getElementById('cfg-comp-seatfield').value.trim(),
+      checkinMode:  document.getElementById('cfg-comp-checkin').value,
+      printMode:    document.getElementById('cfg-comp-print').value,
+      showInSearch: document.getElementById('cfg-comp-search').value,
+      seatField:    document.getElementById('cfg-comp-seatfield').value.trim(),
     },
   };
   const projSecret = document.getElementById('cfg-clientSecret').value.trim();
@@ -1318,6 +1336,8 @@ async function searchGuests(term) {
       const checkedin = isGuestCheckedIn(a);
       const status_val = a.status || g.status || '';
       const evLabel = _eventNameCache[a._matchedEventId] || (a._matchedEventId ? `Event ${a._matchedEventId.slice(0,8)}…` : '');
+      const compNames = _showCompanionsInSearch() ? (g.companions || [])
+        .map(c => [c.firstName, c.lastName].filter(Boolean).join(' ')).filter(Boolean) : [];
       return `<div onclick="selectSearchResult(${i})" data-idx="${i}" style="
         padding:10px 14px; cursor:pointer; border-bottom:1px solid var(--border);
         display:flex; justify-content:space-between; align-items:center;
@@ -1327,6 +1347,7 @@ async function searchGuests(term) {
           <div style="font-weight:600; color:var(--text);">${fname} ${lname}</div>
           <div style="font-size:12px; color:var(--muted); font-family:var(--font-mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${company}${email ? ' · ' + email : ''}</div>
           ${evLabel ? `<div style="margin-top:4px;"><span style="font-size:10px;font-family:var(--font-mono);background:var(--accent-dim);color:var(--accent);border:1px solid var(--accent);border-radius:3px;padding:1px 6px;letter-spacing:0.03em;">⬡ ${escHtml(evLabel)}</span></div>` : ''}
+          ${compNames.length ? `<div style="font-size:11px;color:var(--muted);margin-top:3px;">👥 +${compNames.length}: ${escHtml(compNames.join(', '))}</div>` : ''}
         </div>
         <div style="text-align:right; flex-shrink:0; margin-left:12px;">
           ${checkedin ? '<span class="badge badge-green" style="font-size:10px;">✓ In</span>' : '<span class="badge badge-orange" style="font-size:10px;">Pending</span>'}
@@ -3612,6 +3633,11 @@ function updateEditingBanner() {
   }
 }
 
+// Whether search results should list each guest's companions (project setting)
+function _showCompanionsInSearch() {
+  return _projects.find(p => p.id === _activeProjectId)?.companions?.showInSearch === 'show';
+}
+
 // Returns true if a guest's attributes indicate they are checked in,
 // accounting for the active project's check-in schema.
 function isGuestCheckedIn(attrs) {
@@ -4086,6 +4112,7 @@ function openKioskStationModal() {
   document.getElementById('ks-hide-icon').checked      = false;
   document.getElementById('ks-comp-checkin').value     = 'inherit';
   document.getElementById('ks-comp-print').value       = 'inherit';
+  document.getElementById('ks-comp-search').value      = 'inherit';
   document.getElementById('ks-already-show').checked   = true; // default
   document.getElementById('ks-deny-fields').style.display = 'none';
   document.getElementById('ks-deny-title').value = '';
@@ -4119,8 +4146,9 @@ function editKioskStation(stationId) {
   document.getElementById('ks-reg-enabled').checked    = reg.enabled || false;
   document.getElementById('ks-search-enabled').checked = s.guestSearch?.enabled || false;
   document.getElementById('ks-hide-icon').checked      = s.hideIcon || false;
-  document.getElementById('ks-comp-checkin').value     = s.companions?.checkinMode || 'inherit';
-  document.getElementById('ks-comp-print').value       = s.companions?.printMode   || 'inherit';
+  document.getElementById('ks-comp-checkin').value     = s.companions?.checkinMode  || 'inherit';
+  document.getElementById('ks-comp-print').value       = s.companions?.printMode    || 'inherit';
+  document.getElementById('ks-comp-search').value      = s.companions?.showInSearch || 'inherit';
   const behaviour = s.alreadyCheckedIn?.behaviour || 'show';
   document.getElementById('ks-already-show').checked    = behaviour === 'show';
   document.getElementById('ks-already-reprint').checked = behaviour === 'reprint';
@@ -4229,8 +4257,9 @@ async function saveKioskStation() {
     guestSearch: { enabled: document.getElementById('ks-search-enabled').checked },
     hideIcon:    document.getElementById('ks-hide-icon').checked,
     companions: {
-      checkinMode: document.getElementById('ks-comp-checkin').value,
-      printMode:   document.getElementById('ks-comp-print').value,
+      checkinMode:  document.getElementById('ks-comp-checkin').value,
+      printMode:    document.getElementById('ks-comp-print').value,
+      showInSearch: document.getElementById('ks-comp-search').value,
     },
     welcome:          ksScreen('welcome',  { returnSecs: parseInt(document.getElementById('ks-welcome-return-secs').value)||null }),
     success:          ksScreen('success',  { returnSecs: parseInt(document.getElementById('ks-success-return-secs').value)||null,  hideGuestCard: document.getElementById('ks-success-hide-card').checked }),

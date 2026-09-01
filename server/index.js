@@ -209,9 +209,10 @@ function resolveCompanionSettings(project, station) {
   const st   = station?.companions || {};
   const pick = (a, b, dflt) => (a && a !== 'inherit') ? a : (b && b !== 'inherit' ? b : dflt);
   return {
-    checkinMode: pick(st.checkinMode, proj.checkinMode, 'separate'),
-    printMode:   pick(st.printMode,   proj.printMode,   'main'),
-    seatField:   (proj.seatField || '').trim() || DEFAULT_SEAT_FIELD,
+    checkinMode:  pick(st.checkinMode,  proj.checkinMode,  'separate'),
+    printMode:    pick(st.printMode,    proj.printMode,    'main'),
+    showInSearch: pick(st.showInSearch, proj.showInSearch, 'hide'),
+    seatField:    (proj.seatField || '').trim() || DEFAULT_SEAT_FIELD,
   };
 }
 
@@ -610,9 +611,10 @@ app.patch('/api/projects/:id', (req, res) => {
   if (req.body.companions !== undefined) {
     const c = req.body.companions || {};
     projects[idx].companions = {
-      checkinMode: c.checkinMode === 'together' ? 'together' : 'separate',
-      printMode:   c.printMode   === 'all'      ? 'all'      : 'main',
-      seatField:   (c.seatField || '').trim() || DEFAULT_SEAT_FIELD,
+      checkinMode:  c.checkinMode  === 'together' ? 'together' : 'separate',
+      printMode:    c.printMode    === 'all'      ? 'all'      : 'main',
+      showInSearch: c.showInSearch === 'show'     ? 'show'     : 'hide',
+      seatField:    (c.seatField || '').trim() || DEFAULT_SEAT_FIELD,
     };
   }
   saveProjects(projects);
@@ -1439,7 +1441,10 @@ app.get('/api/kiosk/stations/status', (req, res) => {
 app.get('/api/kiosk/stations', (req, res) => {
   const id = resolveProjectId(req);
   if (!id) return res.json([]);
-  res.json(loadKioskStations(id));
+  const project = loadProjects().find(p => p.id === id);
+  // _effectiveCompanions = station override merged with project defaults,
+  // so the kiosk client can act on it without knowing the project config
+  res.json(loadKioskStations(id).map(s => ({ ...s, _effectiveCompanions: resolveCompanionSettings(project, s) })));
 });
 
 app.post('/api/kiosk/stations', (req, res) => {
@@ -1514,8 +1519,9 @@ app.post('/api/kiosk/stations', (req, res) => {
     guestSearch:      { enabled: !!(req.body.guestSearch?.enabled) },
     hideIcon:         !!(req.body.hideIcon),
     companions: {
-      checkinMode: ['together','separate'].includes(req.body.companions?.checkinMode) ? req.body.companions.checkinMode : 'inherit',
-      printMode:   ['main','all'].includes(req.body.companions?.printMode)            ? req.body.companions.printMode   : 'inherit',
+      checkinMode:  ['together','separate'].includes(req.body.companions?.checkinMode) ? req.body.companions.checkinMode  : 'inherit',
+      printMode:    ['main','all'].includes(req.body.companions?.printMode)            ? req.body.companions.printMode    : 'inherit',
+      showInSearch: ['show','hide'].includes(req.body.companions?.showInSearch)        ? req.body.companions.showInSearch : 'inherit',
     },
     _version: (existing >= 0 ? (stations[existing]._version || 0) : 0) + 1,
   };

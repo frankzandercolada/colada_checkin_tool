@@ -2407,11 +2407,14 @@ function renderKioskSearchResults(guests) {
     el.innerHTML = `<div style="color:var(--muted);font-size:clamp(13px,2.8vmin,22px);text-align:center;padding:clamp(20px,5vmin,48px) 0;">No guests found for "${escKiosk(_searchQuery)}"</div>`;
     return;
   }
+  const showCompanions = station?._effectiveCompanions?.showInSearch === 'show';
   el.innerHTML = guests.map((g, idx) => {
     const a        = g.attributes || g.properties || {};
     const first    = a.contact_firstName || '';
     const last     = a.contact_lastName  || '';
     const company  = a.contact_x_companyName || '';
+    const compNames = showCompanions ? (g.companions || [])
+      .map(c => [c.firstName, c.lastName].filter(Boolean).join(' ')).filter(Boolean) : [];
     const status   = g.status || a.status || '';
     const checkedIn = a.guest_x_checkedin === true ||
       (a.guest_x_checkedinat && a.guest_x_checkedinat !== false && a.guest_x_checkedinat !== 'false' && a.guest_x_checkedinat !== '');
@@ -2427,6 +2430,7 @@ function renderKioskSearchResults(guests) {
       <div>
         <div style="font-size:clamp(15px,3vmin,26px);font-weight:700;color:var(--text);">${escKiosk(first)} ${escKiosk(last)}</div>
         ${company ? `<div style="font-size:clamp(11px,2vmin,18px);color:var(--muted);">${escKiosk(company)}</div>` : ''}
+        ${compNames.length ? `<div style="font-size:clamp(10px,1.8vmin,16px);color:var(--muted);margin-top:3px;">👥 +${compNames.length}: ${escKiosk(compNames.join(', '))}</div>` : ''}
       </div>
       <div style="font-size:clamp(10px,1.8vmin,15px);font-family:var(--mono);color:${statusColor};flex-shrink:0;margin-left:12px;">${escKiosk(statusLabel)}</div>
     </div>`;
