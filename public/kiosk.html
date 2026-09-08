@@ -1449,6 +1449,10 @@ async function handleAlready(data) {
     const subEl   = document.getElementById('notfound-sub');
     if (titleEl) titleEl.textContent = station?.alreadyCheckedIn?.denyTitle    || 'Code Already Used';
     if (subEl)   subEl.textContent   = station?.alreadyCheckedIn?.denySubtitle || 'This code has already been used. Please contact the registration desk.';
+    // Deny borrows the Not Found screen — its message must be visible even if
+    // that screen is configured with "Hide heading & subtitle"
+    if (titleEl) titleEl.style.display = '';
+    if (subEl)   subEl.style.display   = '';
     showScreen('notfound');
     applyScreenBg(station?.notFound);
     startReturn('notfound', getReturnSecs(station?.notFound));
@@ -1473,6 +1477,10 @@ function handleNotFound(msg) {
   // left over from a previous handleAlready(deny) call on the same DOM element
   const titleEl = document.getElementById('notfound-title');
   const subEl   = document.getElementById('notfound-sub');
+  // Restore the screen's own hide-text setting (deny may have forced it visible)
+  const nfHide = !!station?.notFound?.hideText;
+  if (titleEl) titleEl.style.display = nfHide ? 'none' : '';
+  if (subEl)   subEl.style.display   = nfHide ? 'none' : '';
   if (titleEl) titleEl.textContent = station?.notFound?.title    || 'Guest Not Found';
   if (subEl)   subEl.textContent   = station?.notFound?.subtitle || msg || 'Please see the registration desk for assistance.';
   showScreen('notfound');
@@ -1961,6 +1969,34 @@ function sendHeartbeat() {
 function startHeartbeat() {
   sendHeartbeat(); // immediate on load
   setInterval(sendHeartbeat, 20000); // every 20s
+  setInterval(refreshStationConfig, 15000); // pick up backoffice edits without a reload
+}
+
+// ── Live station-config refresh ──────────────────────────────────────────────
+// The kiosk used to read its station config only at page load, so a behaviour
+// change in the backoffice (e.g. switching "Already In" to deny) didn't apply
+// until someone reloaded the kiosk. Poll for changes and swap the config in;
+// visuals are re-applied only while idle on the welcome screen so a guest
+// mid-interaction never sees the UI change under them.
+let _stationJson = null;
+async function refreshStationConfig() {
+  if (!stationId || !station) return;
+  try {
+    const stations = await fetch('/api/kiosk/stations').then(r => r.json());
+    const fresh = Array.isArray(stations) ? stations.find(s => s.id === stationId) : null;
+    if (!fresh) return;
+    const freshJson = JSON.stringify(fresh);
+    if (_stationJson === null) { _stationJson = JSON.stringify(station); }
+    if (freshJson === _stationJson) return;
+    _stationJson = freshJson;
+    station = fresh; // behaviour/settings take effect on the next scan immediately
+    console.log('[station] config updated from backoffice');
+    const onWelcome = document.querySelector('.screen.active')?.id === 'screen-welcome';
+    if (onWelcome) {
+      applyStation(station);
+      applyWelcomeBg();
+    }
+  } catch(e) { /* offline or server restarting — retry next tick */ }
 }
 
 
@@ -2552,8 +2588,12 @@ async function selectKioskSearchResult(idx) {
   const guestId    = guest.id || guest.uid;
   const status     = guest.status || a.status || '';
   const isEligible = status === 'REGISTERED' || status === 'PENDING';
+  // Schema-agnostic: a guest counts as checked in if EITHER field set says so —
+  // the kiosk doesn't know the project's check-in schema, and missing the
+  // assistant fields here caused re-check-ins + reprints past the deny setting.
   const checkedIn  = a.guest_x_checkedin === true ||
-    (a.guest_x_checkedinat && a.guest_x_checkedinat !== false && a.guest_x_checkedinat !== 'false' && a.guest_x_checkedinat !== '');
+    (a.guest_x_checkedinat && a.guest_x_checkedinat !== false && a.guest_x_checkedinat !== 'false' && a.guest_x_checkedinat !== '') ||
+    !!(a.guest_x_assistant_checkedin && a.guest_x_assistant_checkedin !== '' && a.guest_x_assistant_checkedin !== false);
 
   if (!isEligible) {
     isProcessing = false;
@@ -2571,7 +2611,7 @@ async function selectKioskSearchResult(idx) {
         firstName:  a.contact_firstName || '',
         lastName:   a.contact_lastName  || '',
         company:    a.contact_x_companyName || '',
-        checkedInAt: a.guest_x_checkedinat,
+        checkedInAt: a.guest_x_checkedinat || a.guest_x_assistant_checkedin,
         attributes: a,
       },
     });
