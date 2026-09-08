@@ -1623,10 +1623,27 @@ app.post('/api/kiosk/stations', (req, res) => {
     return s;
   }
 
+  // Custom font — stored in the project image store like screen backgrounds.
+  // fontData: data URL = new upload, '' = clear, null/absent = unchanged.
+  const fontImgKey  = `kiosk-${stationId}-font`;
+  const fontPath    = path.join(projectImagesDir(id), `${fontImgKey}.txt`);
+  let fontKey  = existingStation.fontKey  || null;
+  let fontName = existingStation.fontName || null;
+  if (typeof req.body.fontData === 'string' && req.body.fontData.startsWith('data:')) {
+    ensureProjectDirs(id);
+    fs.writeFileSync(fontPath, req.body.fontData, 'utf-8');
+    fontKey  = fontImgKey;
+    fontName = String(req.body.fontName || 'custom font').slice(0, 80);
+  } else if (req.body.fontData === '') {
+    try { if (fs.existsSync(fontPath)) fs.unlinkSync(fontPath); } catch(e) {}
+    fontKey = null; fontName = null;
+  }
+
   const { lightMode } = req.body;
   const station = {
     id: stationId,
     name: name.trim(),
+    fontKey, fontName,
     welcome:          extractScreenBg(welcome,          'welcome',  existingStation.welcome),
     success:          extractScreenBg(success,          'success',  existingStation.success),
     notFound:         extractScreenBg(notFound,         'notfound', existingStation.notFound),
@@ -1705,6 +1722,18 @@ app.post('/api/kiosk/stations/:stationId/duplicate', (req, res) => {
     } catch(e) {
       delete screen.bgImageKey; // non-fatal — skip image if copy fails
     }
+  }
+
+  // Copy the custom font file (if any) under the new station's key
+  if (copy.fontKey) {
+    const srcFont    = path.join(imgDir, `${copy.fontKey}.txt`);
+    const newFontKey = `kiosk-${newId}-font`;
+    try {
+      if (fs.existsSync(srcFont)) {
+        fs.copyFileSync(srcFont, path.join(imgDir, `${newFontKey}.txt`));
+        copy.fontKey = newFontKey;
+      } else { copy.fontKey = null; copy.fontName = null; }
+    } catch(e) { copy.fontKey = null; copy.fontName = null; }
   }
 
   stations.push(copy);

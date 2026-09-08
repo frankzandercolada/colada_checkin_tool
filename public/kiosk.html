@@ -1035,8 +1035,34 @@ async function applyScreenBg(screenCfg) {
   }
 }
 
+// ── Custom station font ──────────────────────────────────────────────────────
+// Loaded once per page; applied to all screen text via the --font CSS variable
+// and reused for printed tickets (registered with pdfMake in printSingleKioskBadge).
+let _customFontDataUrl = null;
+let _customFontLoading = null;
+async function applyCustomFont(s) {
+  if (!s?.fontKey) return;
+  if (_customFontLoading) return _customFontLoading;
+  _customFontLoading = (async () => {
+    try {
+      const r = await fetch(`/api/kiosk/badge-image/${encodeURIComponent(s.fontKey)}`);
+      if (!r.ok) return;
+      const { dataUrl } = await r.json();
+      if (!dataUrl || !dataUrl.startsWith('data:')) return;
+      const ff = new FontFace('KioskCustom', `url(${dataUrl})`);
+      await ff.load();
+      document.fonts.add(ff);
+      _customFontDataUrl = dataUrl;
+      document.documentElement.style.setProperty('--font', "'KioskCustom', 'Outfit', sans-serif");
+      console.log('[font] custom station font active:', s.fontName || s.fontKey);
+    } catch(e) { console.warn('[font] could not load custom font:', e.message); }
+  })();
+  return _customFontLoading;
+}
+
 function applyStation(s, resolvedLogoText) {
   applyTheme({ accentColor: s.accentColor, bgColor: s.bgColor, bgColorLight: s.bgColorLight, lightMode: s.lightMode });
+  applyCustomFont(s); // async — screens repaint as soon as the font is ready
 
   // Apply CSS class toggles — these survive screen cloning and stopCamera()
   const kiosk = document.getElementById('kiosk');
@@ -1054,6 +1080,22 @@ function applyStation(s, resolvedLogoText) {
     if (titleEl && cfg.titleSize) titleEl.style.fontSize = cfg.titleSize + 'px';
     if (titleEl) titleEl.style.fontWeight = cfg.titleBold === false ? '400' : cfg.titleBold === true ? '800' : '';
     if (subEl   && cfg.subSize)   subEl.style.fontSize   = cfg.subSize   + 'px';
+    // Per-screen text visibility — BG images may already carry all the wording
+    if (titleEl) titleEl.style.display = cfg.hideText ? 'none' : '';
+    if (subEl)   subEl.style.display   = cfg.hideText ? 'none' : '';
+    // Per-screen vertical position: anchor the content column at N% from the
+    // top instead of centering, so text lands in the free area of the BG image.
+    // Inline styles survive the cloneNode() screen transition.
+    const screenEl = document.getElementById('screen-' + screenId);
+    if (screenEl) {
+      if (cfg.textTop != null && cfg.textTop !== '') {
+        screenEl.style.justifyContent = 'flex-start';
+        screenEl.style.paddingTop = cfg.textTop + 'vh';
+      } else {
+        screenEl.style.justifyContent = '';
+        screenEl.style.paddingTop = '';
+      }
+    }
   };
   applyScreen('welcome',          'welcome');
   applyScreen('success',          'success');
@@ -1597,14 +1639,39 @@ async function printKioskBadge(data) {
   }
 }
 
+// Register the station's custom font with pdfMake so printed tickets embed it.
+// Returns the font family name to use ('KioskCustom' or the default 'Roboto').
+let _pdfCustomFontReady = false;
+function ensurePdfCustomFont() {
+  if (!_customFontDataUrl) return 'Roboto';
+  if (_pdfCustomFontReady) return 'KioskCustom';
+  try {
+    const b64 = _customFontDataUrl.split(',')[1];
+    if (!b64) return 'Roboto';
+    pdfMake.vfs['kiosk-custom.ttf'] = b64;
+    // Setting pdfMake.fonts replaces the implicit default — re-declare Roboto
+    pdfMake.fonts = {
+      Roboto: { normal: 'Roboto-Regular.ttf', bold: 'Roboto-Medium.ttf', italics: 'Roboto-Italic.ttf', bolditalics: 'Roboto-MediumItalic.ttf' },
+      KioskCustom: { normal: 'kiosk-custom.ttf', bold: 'kiosk-custom.ttf', italics: 'kiosk-custom.ttf', bolditalics: 'kiosk-custom.ttf' },
+    };
+    _pdfCustomFontReady = true;
+    return 'KioskCustom';
+  } catch(e) {
+    console.warn('[font] pdfMake registration failed, tickets fall back to Roboto:', e.message);
+    return 'Roboto';
+  }
+}
+
 async function printSingleKioskBadge(guest, badgeConfig, tplKeyOverride) {
   if (!guest || !badgeConfig) return;
 
-  // Ensure Roboto is loaded in the browser before measuring text widths.
+  const pdfFont = ensurePdfCustomFont();
+
+  // Ensure the ticket font is loaded in the browser before measuring text widths.
   // measureSvgText uses the browser DOM to measure — if Roboto isn't ready
   // it falls back to a system font, causing width mismatches vs pdfMake's
   // embedded Roboto. document.fonts.load() resolves quickly if already cached.
-  try { await document.fonts.load('16px Roboto'); } catch(e) {}
+  try { await document.fonts.load(`16px ${pdfFont === 'KioskCustom' ? 'KioskCustom' : 'Roboto'}`); } catch(e) {}
 
   const attrs  = guest.attributes || {};
   const templates = badgeConfig.templates || [];
@@ -1626,7 +1693,7 @@ async function printSingleKioskBadge(guest, badgeConfig, tplKeyOverride) {
       const svg = document.createElementNS(ns, 'svg');
       svg.style.cssText = 'position:absolute;visibility:hidden;top:-9999px;left:-9999px';
       const t = document.createElementNS(ns, 'text');
-      t.setAttribute('font-family', 'Roboto, Arial, sans-serif'); // match pdfMake's embedded font
+      t.setAttribute('font-family', pdfFont + ', Arial, sans-serif'); // match the font embedded in the PDF
       t.setAttribute('font-size', fontSize);
       if (bold) t.setAttribute('font-weight', 'bold');
       t.textContent = text;
@@ -1668,7 +1735,7 @@ async function printSingleKioskBadge(guest, badgeConfig, tplKeyOverride) {
     const cx = pageW / 2, cy = slotH / 2;
     const textY = cy + fs * 0.35;
     const rotate = mirrored ? ` transform="rotate(180,${cx.toFixed(2)},${cy.toFixed(2)})"` : '';
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${pageW}" height="${slotH}"><text x="${cx.toFixed(2)}" y="${textY.toFixed(2)}" font-family="Roboto" font-size="${fs}" ${bold?'font-weight="bold" ':''}fill="${escSvg(color)}" text-anchor="middle"${rotate}>${escSvg(text)}</text></svg>`;
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${pageW}" height="${slotH}"><text x="${cx.toFixed(2)}" y="${textY.toFixed(2)}" font-family="${pdfFont}" font-size="${fs}" ${bold?'font-weight="bold" ':''}fill="${escSvg(color)}" text-anchor="middle"${rotate}>${escSvg(text)}</text></svg>`;
   }
 
   const svgItems = [];

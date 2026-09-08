@@ -615,6 +615,18 @@
               <div style="font-size:11px; color:var(--muted); font-family:var(--font-mono); text-transform:uppercase; letter-spacing:0.1em; padding-bottom:6px; border-bottom:1px solid var(--border);">Branding</div>
 
               <div><label class="form-label">Logo / Event Text</label><input class="form-input" id="ks-logo" placeholder="e.g. AWF 2025"/></div>
+              <div>
+                <label class="form-label">Custom Font (.ttf)</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <label style="flex:1;padding:8px 12px;background:var(--surface2);border:1px solid var(--border2);border-radius:8px;cursor:pointer;font-size:13px;color:var(--muted);text-align:center;">
+                    <span id="ks-font-label">Upload font…</span>
+                    <input type="file" id="ks-font-file" accept=".ttf,font/ttf" style="display:none;" onchange="loadKioskFont(this)"/>
+                  </label>
+                  <button class="btn btn-secondary" id="ks-font-clear" onclick="clearKioskFont()" style="display:none;font-size:12px;padding:5px 10px;">✕</button>
+                </div>
+                <input type="hidden" id="ks-font-data"/>
+                <div style="font-size:11px;color:var(--muted);margin-top:4px;">Used for all text on the kiosk screens and on printed tickets. TrueType (.ttf) only.</div>
+              </div>
               <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px;">
                 <div><label class="form-label">Accent</label><input class="form-input" id="ks-accent" type="color" value="#d3222a" style="height:40px; padding:4px 8px;"/></div>
                 <div><label class="form-label">BG Dark</label><input class="form-input" id="ks-bg" type="color" value="#0a0a0a" style="height:40px; padding:4px 8px;"/></div>
@@ -704,6 +716,10 @@
                 <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-welcome-title-size" type="number" min="20" max="120" placeholder="default"/></div>
                 <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-welcome-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
               </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div><label class="form-label">Text position (% from top)</label><input class="form-input" id="ks-welcome-text-top" type="number" min="0" max="90" placeholder="centered"/></div>
+                <div style="display:flex;align-items:flex-end;padding-bottom:10px;"><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-welcome-hide-text" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide heading &amp; subtitle</label></div>
+              </div>
               <div>
                 <label class="form-label">Background Image</label>
                 <div style="display:flex;gap:8px;align-items:center;">
@@ -730,6 +746,10 @@
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-success-title-size" type="number" min="20" max="120" placeholder="default"/></div>
                 <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-success-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div><label class="form-label">Text position (% from top)</label><input class="form-input" id="ks-success-text-top" type="number" min="0" max="90" placeholder="centered"/></div>
+                <div style="display:flex;align-items:flex-end;padding-bottom:10px;"><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-success-hide-text" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide heading &amp; subtitle</label></div>
               </div>
               <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-success-hide-card" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide guest name card</label>
               <div>
@@ -758,6 +778,10 @@
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-notfound-title-size" type="number" min="20" max="120" placeholder="default"/></div>
                 <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-notfound-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div><label class="form-label">Text position (% from top)</label><input class="form-input" id="ks-notfound-text-top" type="number" min="0" max="90" placeholder="centered"/></div>
+                <div style="display:flex;align-items:flex-end;padding-bottom:10px;"><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-notfound-hide-text" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide heading &amp; subtitle</label></div>
               </div>
               <div>
                 <label class="form-label">Background Image</label>
@@ -818,6 +842,10 @@
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div><label class="form-label">Heading size (px)</label><input class="form-input" id="ks-already-title-size" type="number" min="20" max="120" placeholder="default"/></div>
                 <div><label class="form-label">Subtitle size (px)</label><input class="form-input" id="ks-already-sub-size" type="number" min="12" max="60" placeholder="default"/></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div><label class="form-label">Text position (% from top)</label><input class="form-input" id="ks-already-text-top" type="number" min="0" max="90" placeholder="centered"/></div>
+                <div style="display:flex;align-items:flex-end;padding-bottom:10px;"><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-already-hide-text" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide heading &amp; subtitle</label></div>
               </div>
               <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-already-hide-card" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide guest name card</label>
               <div>
@@ -4162,6 +4190,15 @@ function openKioskStationModal() {
   document.getElementById('ks-comp-checkin').value     = 'inherit';
   document.getElementById('ks-comp-print').value       = 'inherit';
   document.getElementById('ks-comp-search').value      = 'inherit';
+  document.getElementById('ks-font-data').value = '';
+  document.getElementById('ks-font-file').dataset.fileName = '';
+  document.getElementById('ks-font-label').textContent = 'Upload font…';
+  const fclr = document.getElementById('ks-font-clear');
+  fclr.style.display = 'none'; fclr.dataset.hasKey = ''; fclr.dataset.cleared = '';
+  ['welcome','success','notfound','already'].forEach(k => {
+    document.getElementById('ks-' + k + '-hide-text').checked = false;
+    document.getElementById('ks-' + k + '-text-top').value = '';
+  });
   document.getElementById('ks-already-show').checked   = true; // default
   document.getElementById('ks-deny-fields').style.display = 'none';
   document.getElementById('ks-deny-title').value = '';
@@ -4198,6 +4235,13 @@ function editKioskStation(stationId) {
   document.getElementById('ks-comp-checkin').value     = s.companions?.checkinMode  || 'inherit';
   document.getElementById('ks-comp-print').value       = s.companions?.printMode    || 'inherit';
   document.getElementById('ks-comp-search').value      = s.companions?.showInSearch || 'inherit';
+  document.getElementById('ks-font-data').value = '';
+  document.getElementById('ks-font-file').dataset.fileName = '';
+  document.getElementById('ks-font-label').textContent = s.fontKey ? '✓ ' + (s.fontName || 'Font set') : 'Upload font…';
+  const fontClr = document.getElementById('ks-font-clear');
+  fontClr.style.display = s.fontKey ? 'inline-flex' : 'none';
+  fontClr.dataset.hasKey = s.fontKey ? '1' : '';
+  fontClr.dataset.cleared = '';
   const behaviour = s.alreadyCheckedIn?.behaviour || 'show';
   document.getElementById('ks-already-show').checked    = behaviour === 'show';
   document.getElementById('ks-already-reprint').checked = behaviour === 'reprint';
@@ -4239,6 +4283,8 @@ function editKioskStation(stationId) {
     document.getElementById('ks-' + domKey + '-bg-clear').dataset.cleared = '';  // reset on open
     document.getElementById('ks-' + domKey + '-return-secs').value = scr.returnSecs || '';
     document.getElementById('ks-' + domKey + '-bg-top').value = scr.bgImageTop != null ? scr.bgImageTop : '';
+    document.getElementById('ks-' + domKey + '-hide-text').checked = !!scr.hideText;
+    document.getElementById('ks-' + domKey + '-text-top').value = scr.textTop != null ? scr.textTop : '';
   });
   document.getElementById('kiosk-modal').style.display = 'flex';
 }
@@ -4272,11 +4318,14 @@ function ksScreen(domKey, extra = {}) {
   const bgData  = g('ks-' + domKey + '-bg-data').value;
   const cleared = g('ks-' + domKey + '-bg-clear').dataset.cleared === '1';
   const bgTop   = parseInt(g('ks-' + domKey + '-bg-top')?.value);
+  const textTopV = parseFloat(g('ks-' + domKey + '-text-top').value);
   return {
     title:     g('ks-' + domKey + '-title').value,
     subtitle:  g('ks-' + domKey + '-sub').value,
     titleSize: parseInt(g('ks-' + domKey + '-title-size').value) || null,
     subSize:   parseInt(g('ks-' + domKey + '-sub-size').value)   || null,
+    hideText:  g('ks-' + domKey + '-hide-text').checked,
+    textTop:   isNaN(textTopV) ? null : textTopV,
     // data URL if new upload, '' if explicitly cleared, null if unchanged
     bgImage:   bgData ? bgData : (cleared ? '' : null),
     bgImageTop: isNaN(bgTop) ? null : bgTop,
@@ -4310,6 +4359,10 @@ async function saveKioskStation() {
       printMode:    document.getElementById('ks-comp-print').value,
       showInSearch: document.getElementById('ks-comp-search').value,
     },
+    // data URL = new upload, '' = explicitly cleared, null = unchanged
+    fontData: document.getElementById('ks-font-data').value
+      || (document.getElementById('ks-font-clear').dataset.cleared === '1' ? '' : null),
+    fontName: document.getElementById('ks-font-file').dataset.fileName || null,
     welcome:          ksScreen('welcome',  { returnSecs: parseInt(document.getElementById('ks-welcome-return-secs').value)||null }),
     success:          ksScreen('success',  { returnSecs: parseInt(document.getElementById('ks-success-return-secs').value)||null,  hideGuestCard: document.getElementById('ks-success-hide-card').checked }),
     notFound:         ksScreen('notfound', { returnSecs: parseInt(document.getElementById('ks-notfound-return-secs').value)||null }),
@@ -4343,6 +4396,33 @@ function loadKioskAdminScreenBg(input, screenKey) {
     document.getElementById('ks-' + screenKey + '-bg-clear').style.display = 'inline-flex';
   };
   reader.readAsDataURL(file);
+}
+
+function loadKioskFont(input) {
+  const file = input.files[0];
+  if (!file) return;
+  if (!/\.ttf$/i.test(file.name)) { toast('Please choose a .ttf (TrueType) font file', 'error'); input.value = ''; return; }
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('ks-font-data').value = e.target.result;
+    input.dataset.fileName = file.name;
+    document.getElementById('ks-font-label').textContent = '✓ ' + file.name;
+    const clr = document.getElementById('ks-font-clear');
+    clr.style.display = 'inline-flex';
+    clr.dataset.cleared = '';
+  };
+  reader.readAsDataURL(file);
+}
+
+function clearKioskFont() {
+  document.getElementById('ks-font-data').value = '';
+  document.getElementById('ks-font-file').value = '';
+  document.getElementById('ks-font-file').dataset.fileName = '';
+  document.getElementById('ks-font-label').textContent = 'Upload font…';
+  const clr = document.getElementById('ks-font-clear');
+  clr.style.display = 'none';
+  clr.dataset.cleared = '1';
+  clr.dataset.hasKey = '';
 }
 
 function clearKioskAdminScreenBg(screenKey) {
