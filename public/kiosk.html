@@ -1080,6 +1080,9 @@ function applyStation(s, resolvedLogoText) {
     if (titleEl && cfg.titleSize) titleEl.style.fontSize = cfg.titleSize + 'px';
     if (titleEl) titleEl.style.fontWeight = cfg.titleBold === false ? '400' : cfg.titleBold === true ? '800' : '';
     if (subEl   && cfg.subSize)   subEl.style.fontSize   = cfg.subSize   + 'px';
+    // Per-screen text colors — empty string falls back to the theme defaults
+    if (titleEl) titleEl.style.color = cfg.titleColor || '';
+    if (subEl)   subEl.style.color   = cfg.subColor   || '';
     // Per-screen text visibility — BG images may already carry all the wording
     if (titleEl) titleEl.style.display = cfg.hideText ? 'none' : '';
     if (subEl)   subEl.style.display   = cfg.hideText ? 'none' : '';

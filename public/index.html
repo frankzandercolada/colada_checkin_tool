@@ -720,6 +720,20 @@
                 <div><label class="form-label">Text position (% from top)</label><input class="form-input" id="ks-welcome-text-top" type="number" min="0" max="90" placeholder="centered"/></div>
                 <div style="display:flex;align-items:flex-end;padding-bottom:10px;"><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-welcome-hide-text" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide heading &amp; subtitle</label></div>
               </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div><label class="form-label">Heading color</label>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <input class="form-input" id="ks-welcome-title-color" type="color" value="#ffffff" style="height:40px;padding:4px 8px;opacity:0.45;flex:1;" oninput="this.dataset.set='1';this.style.opacity='1'"/>
+                    <button class="btn btn-ghost" style="font-size:12px;padding:4px 8px;" title="Use default color" onclick="resetKsColor('welcome','title')">↺</button>
+                  </div>
+                </div>
+                <div><label class="form-label">Subtitle color</label>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <input class="form-input" id="ks-welcome-sub-color" type="color" value="#9ca3af" style="height:40px;padding:4px 8px;opacity:0.45;flex:1;" oninput="this.dataset.set='1';this.style.opacity='1'"/>
+                    <button class="btn btn-ghost" style="font-size:12px;padding:4px 8px;" title="Use default color" onclick="resetKsColor('welcome','sub')">↺</button>
+                  </div>
+                </div>
+              </div>
               <div>
                 <label class="form-label">Background Image</label>
                 <div style="display:flex;gap:8px;align-items:center;">
@@ -750,6 +764,20 @@
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div><label class="form-label">Text position (% from top)</label><input class="form-input" id="ks-success-text-top" type="number" min="0" max="90" placeholder="centered"/></div>
                 <div style="display:flex;align-items:flex-end;padding-bottom:10px;"><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-success-hide-text" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide heading &amp; subtitle</label></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div><label class="form-label">Heading color</label>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <input class="form-input" id="ks-success-title-color" type="color" value="#ffffff" style="height:40px;padding:4px 8px;opacity:0.45;flex:1;" oninput="this.dataset.set='1';this.style.opacity='1'"/>
+                    <button class="btn btn-ghost" style="font-size:12px;padding:4px 8px;" title="Use default color" onclick="resetKsColor('success','title')">↺</button>
+                  </div>
+                </div>
+                <div><label class="form-label">Subtitle color</label>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <input class="form-input" id="ks-success-sub-color" type="color" value="#9ca3af" style="height:40px;padding:4px 8px;opacity:0.45;flex:1;" oninput="this.dataset.set='1';this.style.opacity='1'"/>
+                    <button class="btn btn-ghost" style="font-size:12px;padding:4px 8px;" title="Use default color" onclick="resetKsColor('success','sub')">↺</button>
+                  </div>
+                </div>
               </div>
               <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-success-hide-card" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide guest name card</label>
               <div>
@@ -782,6 +810,20 @@
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div><label class="form-label">Text position (% from top)</label><input class="form-input" id="ks-notfound-text-top" type="number" min="0" max="90" placeholder="centered"/></div>
                 <div style="display:flex;align-items:flex-end;padding-bottom:10px;"><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-notfound-hide-text" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide heading &amp; subtitle</label></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div><label class="form-label">Heading color</label>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <input class="form-input" id="ks-notfound-title-color" type="color" value="#ffffff" style="height:40px;padding:4px 8px;opacity:0.45;flex:1;" oninput="this.dataset.set='1';this.style.opacity='1'"/>
+                    <button class="btn btn-ghost" style="font-size:12px;padding:4px 8px;" title="Use default color" onclick="resetKsColor('notfound','title')">↺</button>
+                  </div>
+                </div>
+                <div><label class="form-label">Subtitle color</label>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <input class="form-input" id="ks-notfound-sub-color" type="color" value="#9ca3af" style="height:40px;padding:4px 8px;opacity:0.45;flex:1;" oninput="this.dataset.set='1';this.style.opacity='1'"/>
+                    <button class="btn btn-ghost" style="font-size:12px;padding:4px 8px;" title="Use default color" onclick="resetKsColor('notfound','sub')">↺</button>
+                  </div>
+                </div>
               </div>
               <div>
                 <label class="form-label">Background Image</label>
@@ -846,6 +888,20 @@
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div><label class="form-label">Text position (% from top)</label><input class="form-input" id="ks-already-text-top" type="number" min="0" max="90" placeholder="centered"/></div>
                 <div style="display:flex;align-items:flex-end;padding-bottom:10px;"><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-already-hide-text" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide heading &amp; subtitle</label></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+                <div><label class="form-label">Heading color</label>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <input class="form-input" id="ks-already-title-color" type="color" value="#ffffff" style="height:40px;padding:4px 8px;opacity:0.45;flex:1;" oninput="this.dataset.set='1';this.style.opacity='1'"/>
+                    <button class="btn btn-ghost" style="font-size:12px;padding:4px 8px;" title="Use default color" onclick="resetKsColor('already','title')">↺</button>
+                  </div>
+                </div>
+                <div><label class="form-label">Subtitle color</label>
+                  <div style="display:flex;gap:6px;align-items:center;">
+                    <input class="form-input" id="ks-already-sub-color" type="color" value="#9ca3af" style="height:40px;padding:4px 8px;opacity:0.45;flex:1;" oninput="this.dataset.set='1';this.style.opacity='1'"/>
+                    <button class="btn btn-ghost" style="font-size:12px;padding:4px 8px;" title="Use default color" onclick="resetKsColor('already','sub')">↺</button>
+                  </div>
+                </div>
               </div>
               <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;"><input type="checkbox" id="ks-already-hide-card" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide guest name card</label>
               <div>
@@ -4198,6 +4254,8 @@ function openKioskStationModal() {
   ['welcome','success','notfound','already'].forEach(k => {
     document.getElementById('ks-' + k + '-hide-text').checked = false;
     document.getElementById('ks-' + k + '-text-top').value = '';
+    resetKsColor(k, 'title');
+    resetKsColor(k, 'sub');
   });
   document.getElementById('ks-already-show').checked   = true; // default
   document.getElementById('ks-deny-fields').style.display = 'none';
@@ -4285,6 +4343,8 @@ function editKioskStation(stationId) {
     document.getElementById('ks-' + domKey + '-bg-top').value = scr.bgImageTop != null ? scr.bgImageTop : '';
     document.getElementById('ks-' + domKey + '-hide-text').checked = !!scr.hideText;
     document.getElementById('ks-' + domKey + '-text-top').value = scr.textTop != null ? scr.textTop : '';
+    setKsColor(domKey, 'title', scr.titleColor || null);
+    setKsColor(domKey, 'sub',   scr.subColor   || null);
   });
   document.getElementById('kiosk-modal').style.display = 'flex';
 }
@@ -4326,6 +4386,8 @@ function ksScreen(domKey, extra = {}) {
     subSize:   parseInt(g('ks-' + domKey + '-sub-size').value)   || null,
     hideText:  g('ks-' + domKey + '-hide-text').checked,
     textTop:   isNaN(textTopV) ? null : textTopV,
+    titleColor: g('ks-' + domKey + '-title-color').dataset.set === '1' ? g('ks-' + domKey + '-title-color').value : null,
+    subColor:   g('ks-' + domKey + '-sub-color').dataset.set   === '1' ? g('ks-' + domKey + '-sub-color').value   : null,
     // data URL if new upload, '' if explicitly cleared, null if unchanged
     bgImage:   bgData ? bgData : (cleared ? '' : null),
     bgImageTop: isNaN(bgTop) ? null : bgTop,
@@ -4396,6 +4458,22 @@ function loadKioskAdminScreenBg(input, screenKey) {
     document.getElementById('ks-' + screenKey + '-bg-clear').style.display = 'inline-flex';
   };
   reader.readAsDataURL(file);
+}
+
+// Screen text colors: a color input can't be visually 'empty', so dataset.set
+// tracks whether a custom color is active; dimmed = using the theme default.
+function resetKsColor(domKey, which) {
+  const el = document.getElementById(`ks-${domKey}-${which}-color`);
+  if (!el) return;
+  el.dataset.set = '';
+  el.style.opacity = '0.45';
+  el.value = which === 'title' ? '#ffffff' : '#9ca3af';
+}
+function setKsColor(domKey, which, color) {
+  const el = document.getElementById(`ks-${domKey}-${which}-color`);
+  if (!el) return;
+  if (color) { el.value = color; el.dataset.set = '1'; el.style.opacity = '1'; }
+  else resetKsColor(domKey, which);
 }
 
 function loadKioskFont(input) {

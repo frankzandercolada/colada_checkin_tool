@@ -337,6 +337,7 @@ Per kiosk station (station editor):
 - **Custom font** (General → Branding): upload a `.ttf` — applied to all kiosk screen text *and* embedded into the printed ticket PDFs. Cleared with ✕; copied along on station duplicate; travels with project export/import.
 - **Hide heading & subtitle** (per screen tab): blank out the text when the background image already carries the wording. Icon, guest card, and logo keep their own toggles.
 - **Text position (% from top)** (per screen tab): anchor the screen content at a vertical position instead of centering, so text lands in the free area of the background image. Empty = centered (default).
+- **Heading/Subtitle color & size** (per screen tab): color pickers (↺ resets to the theme default) and pixel sizes for heading and subtitle, per screen.
 
 ## API Reference
 
