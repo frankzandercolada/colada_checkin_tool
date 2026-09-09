@@ -338,6 +338,7 @@ Per kiosk station (station editor):
 - **Hide heading & subtitle** (per screen tab): blank out the text when the background image already carries the wording. Icon, guest card, and logo keep their own toggles.
 - **Text position (% from top)** (per screen tab): anchor the screen content at a vertical position instead of centering, so text lands in the free area of the background image. Empty = centered (default).
 - **Heading/Subtitle color & size** (per screen tab): color pickers (↺ resets to the theme default) and pixel sizes for heading and subtitle, per screen.
+- **Hide icon** (per screen tab): hide that screen's icon (QR symbol, check mark, warning, info) individually — e.g. when the background image replaces it. The General-tab "Hide QR Code Icon" toggle still covers the welcome icon globally.
 
 ## API Reference
 

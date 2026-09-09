@@ -718,7 +718,10 @@
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div><label class="form-label">Text position (% from top)</label><input class="form-input" id="ks-welcome-text-top" type="number" min="0" max="90" placeholder="centered"/></div>
-                <div style="display:flex;align-items:flex-end;padding-bottom:10px;"><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-welcome-hide-text" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide heading &amp; subtitle</label></div>
+                <div style="display:flex;flex-direction:column;justify-content:flex-end;gap:8px;padding-bottom:10px;">
+                  <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-welcome-hide-text" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide heading &amp; subtitle</label>
+                  <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-welcome-hide-icon" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide icon</label>
+                </div>
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div><label class="form-label">Heading color</label>
@@ -763,7 +766,10 @@
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div><label class="form-label">Text position (% from top)</label><input class="form-input" id="ks-success-text-top" type="number" min="0" max="90" placeholder="centered"/></div>
-                <div style="display:flex;align-items:flex-end;padding-bottom:10px;"><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-success-hide-text" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide heading &amp; subtitle</label></div>
+                <div style="display:flex;flex-direction:column;justify-content:flex-end;gap:8px;padding-bottom:10px;">
+                  <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-success-hide-text" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide heading &amp; subtitle</label>
+                  <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-success-hide-icon" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide icon</label>
+                </div>
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div><label class="form-label">Heading color</label>
@@ -809,7 +815,10 @@
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div><label class="form-label">Text position (% from top)</label><input class="form-input" id="ks-notfound-text-top" type="number" min="0" max="90" placeholder="centered"/></div>
-                <div style="display:flex;align-items:flex-end;padding-bottom:10px;"><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-notfound-hide-text" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide heading &amp; subtitle</label></div>
+                <div style="display:flex;flex-direction:column;justify-content:flex-end;gap:8px;padding-bottom:10px;">
+                  <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-notfound-hide-text" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide heading &amp; subtitle</label>
+                  <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-notfound-hide-icon" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide icon</label>
+                </div>
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div><label class="form-label">Heading color</label>
@@ -887,7 +896,10 @@
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div><label class="form-label">Text position (% from top)</label><input class="form-input" id="ks-already-text-top" type="number" min="0" max="90" placeholder="centered"/></div>
-                <div style="display:flex;align-items:flex-end;padding-bottom:10px;"><label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-already-hide-text" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide heading &amp; subtitle</label></div>
+                <div style="display:flex;flex-direction:column;justify-content:flex-end;gap:8px;padding-bottom:10px;">
+                  <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-already-hide-text" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide heading &amp; subtitle</label>
+                  <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;margin:0;"><input type="checkbox" id="ks-already-hide-icon" style="width:14px;height:14px;accent-color:var(--accent);"/> Hide icon</label>
+                </div>
               </div>
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div><label class="form-label">Heading color</label>
@@ -4253,6 +4265,7 @@ function openKioskStationModal() {
   fclr.style.display = 'none'; fclr.dataset.hasKey = ''; fclr.dataset.cleared = '';
   ['welcome','success','notfound','already'].forEach(k => {
     document.getElementById('ks-' + k + '-hide-text').checked = false;
+    document.getElementById('ks-' + k + '-hide-icon').checked = false;
     document.getElementById('ks-' + k + '-text-top').value = '';
     resetKsColor(k, 'title');
     resetKsColor(k, 'sub');
@@ -4342,6 +4355,7 @@ function editKioskStation(stationId) {
     document.getElementById('ks-' + domKey + '-return-secs').value = scr.returnSecs || '';
     document.getElementById('ks-' + domKey + '-bg-top').value = scr.bgImageTop != null ? scr.bgImageTop : '';
     document.getElementById('ks-' + domKey + '-hide-text').checked = !!scr.hideText;
+    document.getElementById('ks-' + domKey + '-hide-icon').checked = !!scr.hideIcon;
     document.getElementById('ks-' + domKey + '-text-top').value = scr.textTop != null ? scr.textTop : '';
     setKsColor(domKey, 'title', scr.titleColor || null);
     setKsColor(domKey, 'sub',   scr.subColor   || null);
@@ -4385,6 +4399,7 @@ function ksScreen(domKey, extra = {}) {
     titleSize: parseInt(g('ks-' + domKey + '-title-size').value) || null,
     subSize:   parseInt(g('ks-' + domKey + '-sub-size').value)   || null,
     hideText:  g('ks-' + domKey + '-hide-text').checked,
+    hideIcon:  g('ks-' + domKey + '-hide-icon').checked,
     textTop:   isNaN(textTopV) ? null : textTopV,
     titleColor: g('ks-' + domKey + '-title-color').dataset.set === '1' ? g('ks-' + domKey + '-title-color').value : null,
     subColor:   g('ks-' + domKey + '-sub-color').dataset.set   === '1' ? g('ks-' + domKey + '-sub-color').value   : null,

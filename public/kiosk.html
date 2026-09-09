@@ -1090,6 +1090,11 @@ function applyStation(s, resolvedLogoText) {
     // top instead of centering, so text lands in the free area of the BG image.
     // Inline styles survive the cloneNode() screen transition.
     const screenEl = document.getElementById('screen-' + screenId);
+    // Per-screen icon visibility. Inline style survives the cloneNode() screen
+    // transition; the legacy General-tab "Hide QR Code Icon" toggle still hides
+    // the welcome icon independently via the .hide-icon CSS class.
+    const iconEl = screenEl ? screenEl.querySelector('.icon-ring') : null;
+    if (iconEl) iconEl.style.display = cfg.hideIcon ? 'none' : '';
     if (screenEl) {
       if (cfg.textTop != null && cfg.textTop !== '') {
         screenEl.style.justifyContent = 'flex-start';
