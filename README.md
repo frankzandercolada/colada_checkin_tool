@@ -340,6 +340,15 @@ Per kiosk station (station editor):
 - **Heading/Subtitle color & size** (per screen tab): color pickers (↺ resets to the theme default) and pixel sizes for heading and subtitle, per screen.
 - **Hide icon** (per screen tab): hide that screen's icon (QR symbol, check mark, warning, info) individually — e.g. when the background image replaces it. The General-tab "Hide QR Code Icon" toggle still covers the welcome icon globally.
 
+## Monitor & Connection Watch
+
+- **Direct link**: `/monitor` opens the Monitor page directly (bookmarkable); `/monitor?full=1` boots it chrome-less for a wall display, and the ⛶ button toggles fullscreen at any time.
+- **Internet connection monitoring**: the server probes the Colada API host every 15 s (any HTTP response counts; 10 s timeout) and keeps an hour of samples. State is `ok` / `degraded` / `down` with human-readable warnings — degraded on ≥2 failed checks in 5 min, a 5-min median above 1.5 s, or latency rising to 3× the 15-min median; down after two consecutive failures.
+- The Monitor page shows a connection card (status, latency now/median, failed-check rate, warnings, 60-min latency chart with failures marked red). A warning pill appears in the topbar on **every** backoffice page when the state is degraded or down — clicking it jumps to the Monitor; if the backoffice device itself loses its link to the check-in server, the pill turns red too.
+- `GET /api/netstatus` exposes everything for external monitoring.
+
+---
+
 ## API Reference
 
 ### Projects

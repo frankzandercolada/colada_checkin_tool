@@ -2077,6 +2077,108 @@ app.get('/kiosk/:stationId', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/kiosk.html'));
 });
 
+// ─── Internet connection monitor ──────────────────────────────────────────────
+// Probes the Colada API host every 15 s (HEAD request, 10 s timeout). Any HTTP
+// response counts as connectivity — only network-level failures and timeouts
+// are outages. Keeps 1 h of samples and derives ok / degraded / down plus
+// human-readable warnings for the backoffice.
+const NET_PROBE_INTERVAL_MS = 15000;
+const NET_KEEP = 240; // 1 h of samples at 15 s
+const _net = { samples: [], state: 'unknown', stateSince: Date.now(), target: null, warnings: [] };
+
+function _median(arr) {
+  if (!arr.length) return null;
+  const s = [...arr].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+async function netProbe() {
+  const { apiBase } = getEffectiveCredentials(getActiveProjectId());
+  const target = apiBase || 'https://admin.colada365.com';
+  _net.target = target;
+  const started = Date.now();
+  let ok = false, error = null;
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 10000);
+    // Plain node-fetch on purpose — probes must not show up in the API stats
+    await _nodeFetch(target, { method: 'HEAD', redirect: 'manual', signal: ctrl.signal });
+    clearTimeout(t);
+    ok = true;
+  } catch (e) { error = (e && e.message) || 'network error'; }
+  const ms = Date.now() - started;
+  _net.samples.push({ ts: started, ok, ms: ok ? ms : null, error });
+  if (_net.samples.length > NET_KEEP) _net.samples.splice(0, _net.samples.length - NET_KEEP);
+  evaluateNetState();
+}
+
+function evaluateNetState() {
+  const now = Date.now();
+  const s   = _net.samples;
+  const w5  = s.filter(x => x.ts >= now - 5 * 60000);
+  const w15 = s.filter(x => x.ts >= now - 15 * 60000);
+  const fails5   = w5.filter(x => !x.ok).length;
+  const lat5  = _median(w5.filter(x => x.ok).map(x => x.ms));
+  const lat15 = _median(w15.filter(x => x.ok).map(x => x.ms));
+  const last  = s[s.length - 1];
+  const last2 = s.slice(-2);
+
+  const warnings = [];
+  let state = 'ok';
+  if (s.length < 2) {
+    state = 'unknown';
+  } else if (last2.every(x => !x.ok)) {
+    state = 'down';
+    let i = s.length - 1;
+    while (i > 0 && !s[i - 1].ok) i--;
+    warnings.push(`No connection to ${_net.target} since ${new Date(s[i].ts).toLocaleTimeString()} (${last.error || 'timeout'})`);
+  } else {
+    if (fails5 >= 2) {
+      state = 'degraded';
+      warnings.push(`Unstable connection: ${fails5} of ${w5.length} checks failed in the last 5 minutes`);
+    }
+    if (lat5 != null && lat5 > 1500) {
+      state = 'degraded';
+      warnings.push(`High latency to the Colada API: ${Math.round(lat5)} ms (median, last 5 min)`);
+    } else if (lat5 != null && lat15 != null && lat15 > 0 && lat5 > 3 * lat15 && lat5 > 500) {
+      state = 'degraded';
+      warnings.push(`Latency rising: ${Math.round(lat15)} ms → ${Math.round(lat5)} ms (15-min vs 5-min median)`);
+    }
+    if (last && !last.ok && state === 'ok') {
+      state = 'degraded';
+      warnings.push('Last connectivity check failed — watching');
+    }
+  }
+  if (state !== _net.state) {
+    console.log(`[net] ${_net.state} → ${state}${warnings.length ? ' — ' + warnings[0] : ''}`);
+    _net.state = state;
+    _net.stateSince = now;
+  }
+  _net.warnings = warnings;
+}
+
+setInterval(netProbe, NET_PROBE_INTERVAL_MS);
+setTimeout(netProbe, 3000); // first probe shortly after boot
+
+app.get('/api/netstatus', (req, res) => {
+  const s = _net.samples;
+  const now = Date.now();
+  const w5 = s.filter(x => x.ts >= now - 5 * 60000);
+  res.json({
+    state:      _net.state,
+    stateSince: _net.stateSince,
+    target:     _net.target,
+    warnings:   _net.warnings,
+    current:    s[s.length - 1] || null,
+    latency5m:  _median(w5.filter(x => x.ok).map(x => x.ms)),
+    latency15m: _median(s.filter(x => x.ts >= now - 15 * 60000 && x.ok).map(x => x.ms)),
+    failRate5m: w5.length ? w5.filter(x => !x.ok).length / w5.length : null,
+    probeIntervalMs: NET_PROBE_INTERVAL_MS,
+    samples: s,
+  });
+});
+
 // ─── Sync state ───────────────────────────────────────────────────────────────
 // Cheap polling endpoint for the backoffice: lets each admin session detect
 // changes made by other admins (badge config, stations, projects, live project)

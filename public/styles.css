@@ -775,3 +775,20 @@ html, body {
 .ks-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
 .ks-tab-panel { display: none; }
 .ks-tab-panel.active { display: block; }
+
+/* ── Monitor fullscreen mode (hides all chrome; /monitor?full=1 or ⛶ button) ── */
+body.monitor-full .app { grid-template-rows: 1fr; grid-template-columns: 1fr; }
+body.monitor-full .topbar,
+body.monitor-full .sidebar { display: none; }
+body.monitor-full .main { padding: 20px 24px; }
+
+/* ── Internet connection warning banner (topbar) ── */
+.net-banner {
+  display: none; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
+  padding: 5px 12px; border-radius: 100px; cursor: pointer;
+  max-width: 46vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.net-banner.degraded { display: flex; background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.4); }
+.net-banner.down     { display: flex; background: rgba(239,68,68,0.15);  color: #ef4444; border: 1px solid rgba(239,68,68,0.45); animation: net-pulse 1.6s ease-in-out infinite; }
+@keyframes net-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.55; } }
