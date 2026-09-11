@@ -2077,14 +2077,30 @@ app.get('/kiosk/:stationId', (req, res) => {
   res.sendFile(path.join(__dirname, '../public/kiosk.html'));
 });
 
-// ─── Internet connection monitor ──────────────────────────────────────────────
-// Probes the Colada API host every 15 s (HEAD request, 10 s timeout). Any HTTP
-// response counts as connectivity — only network-level failures and timeouts
-// are outages. Keeps 1 h of samples and derives ok / degraded / down plus
-// human-readable warnings for the backoffice.
-const NET_PROBE_INTERVAL_MS = 15000;
-const NET_KEEP = 240; // 1 h of samples at 15 s
-const _net = { samples: [], state: 'unknown', stateSince: Date.now(), target: null, warnings: [] };
+// ─── Internet & Colada connection monitor ────────────────────────────────────
+// Two probe layers so an outage can be attributed correctly:
+//  - "internet": every 5 s against public connectivity references (Cloudflare/
+//    gstatic/Apple 204 endpoints). A failure only counts when ALL references
+//    fail in that round, so one flaky reference never raises a false alarm.
+//    Override the list with CHECKIN_NET_REFS=url1,url2 (e.g. an internal
+//    reference on venue networks without public internet).
+//  - "colada": every 15 s against the Colada API host (as before).
+// Any HTTP response counts as connectivity; only network failures/timeouts are
+// outages. Each layer keeps 1 h of samples and derives ok/degraded/down.
+const INET_REFS = (process.env.CHECKIN_NET_REFS ||
+  'https://cp.cloudflare.com/generate_204,https://www.gstatic.com/generate_204,http://captive.apple.com/hotspot-detect.html')
+  .split(',').map(sx => sx.trim()).filter(Boolean);
+
+function createNetMonitor(opts) {
+  return { samples: [], state: 'unknown', stateSince: Date.now(), target: null, warnings: [], ...opts };
+}
+// Thresholds per layer: the references are CDN-fast, so the internet layer
+// warns earlier; with 5 s samples, "down" still needs ~15 s of hard failure.
+const _netColada = createNetMonitor({ name: 'Colada API', intervalMs: 15000, keep: 240,
+  latHigh: 1500, latRiseMin: 500, failsDegraded: 2, downAfter: 2 });
+const _netInet   = createNetMonitor({ name: 'Internet',   intervalMs: 5000,  keep: 720,
+  latHigh: 800,  latRiseMin: 300, failsDegraded: 3, downAfter: 3 });
+const _netOverall = { state: 'unknown', stateSince: Date.now() };
 
 function _median(arr) {
   if (!arr.length) return null;
@@ -2093,89 +2109,143 @@ function _median(arr) {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 }
 
-async function netProbe() {
-  const { apiBase } = getEffectiveCredentials(getActiveProjectId());
-  const target = apiBase || 'https://admin.colada365.com';
-  _net.target = target;
+async function _probeUrl(url, timeoutMs) {
   const started = Date.now();
-  let ok = false, error = null;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const ctrl = new AbortController();
-    const t = setTimeout(() => ctrl.abort(), 10000);
     // Plain node-fetch on purpose — probes must not show up in the API stats
-    await _nodeFetch(target, { method: 'HEAD', redirect: 'manual', signal: ctrl.signal });
-    clearTimeout(t);
-    ok = true;
-  } catch (e) { error = (e && e.message) || 'network error'; }
-  const ms = Date.now() - started;
-  _net.samples.push({ ts: started, ok, ms: ok ? ms : null, error });
-  if (_net.samples.length > NET_KEEP) _net.samples.splice(0, _net.samples.length - NET_KEEP);
-  evaluateNetState();
+    await _nodeFetch(url, { method: 'HEAD', redirect: 'manual', signal: ctrl.signal });
+    return { ok: true, ms: Date.now() - started, error: null };
+  } catch (e) {
+    return { ok: false, ms: Date.now() - started, error: (e && e.message) || 'network error' };
+  } finally { clearTimeout(t); }
 }
 
-function evaluateNetState() {
+function _recordSample(mon, sample) {
+  mon.samples.push(sample);
+  if (mon.samples.length > mon.keep) mon.samples.splice(0, mon.samples.length - mon.keep);
+  evaluateNetState(mon);
+  evaluateOverall();
+}
+
+async function probeColada() {
+  const { apiBase } = getEffectiveCredentials(getActiveProjectId());
+  const target = apiBase || 'https://admin.colada365.com';
+  _netColada.target = target;
+  const ts = Date.now();
+  const r = await _probeUrl(target, 10000);
+  _recordSample(_netColada, { ts, ok: r.ok, ms: r.ok ? r.ms : null, error: r.error });
+}
+
+async function probeInternet() {
+  const ts = Date.now();
+  // Try the references in order — the round is OK as soon as one responds.
+  let result = null, usedRef = null, lastError = null;
+  for (const ref of INET_REFS) {
+    const r = await _probeUrl(ref, 4000);
+    if (r.ok) { result = r; usedRef = ref; break; }
+    lastError = r.error;
+  }
+  _netInet.target = usedRef || INET_REFS[0];
+  if (result) _recordSample(_netInet, { ts, ok: true, ms: result.ms, error: null });
+  else        _recordSample(_netInet, { ts, ok: false, ms: null, error: lastError || 'all references unreachable' });
+}
+
+function evaluateNetState(mon) {
   const now = Date.now();
-  const s   = _net.samples;
+  const s   = mon.samples;
   const w5  = s.filter(x => x.ts >= now - 5 * 60000);
   const w15 = s.filter(x => x.ts >= now - 15 * 60000);
-  const fails5   = w5.filter(x => !x.ok).length;
-  const lat5  = _median(w5.filter(x => x.ok).map(x => x.ms));
-  const lat15 = _median(w15.filter(x => x.ok).map(x => x.ms));
-  const last  = s[s.length - 1];
-  const last2 = s.slice(-2);
+  const fails5 = w5.filter(x => !x.ok).length;
+  const lat5   = _median(w5.filter(x => x.ok).map(x => x.ms));
+  const lat15  = _median(w15.filter(x => x.ok).map(x => x.ms));
+  const last   = s[s.length - 1];
+  const lastN  = s.slice(-mon.downAfter);
 
   const warnings = [];
   let state = 'ok';
-  if (s.length < 2) {
+  if (s.length < mon.downAfter) {
     state = 'unknown';
-  } else if (last2.every(x => !x.ok)) {
+  } else if (lastN.every(x => !x.ok)) {
     state = 'down';
     let i = s.length - 1;
     while (i > 0 && !s[i - 1].ok) i--;
-    warnings.push(`No connection to ${_net.target} since ${new Date(s[i].ts).toLocaleTimeString()} (${last.error || 'timeout'})`);
+    warnings.push(`${mon.name}: no connection since ${new Date(s[i].ts).toLocaleTimeString()} (${last.error || 'timeout'})`);
   } else {
-    if (fails5 >= 2) {
+    if (fails5 >= mon.failsDegraded) {
       state = 'degraded';
-      warnings.push(`Unstable connection: ${fails5} of ${w5.length} checks failed in the last 5 minutes`);
+      warnings.push(`${mon.name}: unstable — ${fails5} of ${w5.length} checks failed in the last 5 minutes`);
     }
-    if (lat5 != null && lat5 > 1500) {
+    if (lat5 != null && lat5 > mon.latHigh) {
       state = 'degraded';
-      warnings.push(`High latency to the Colada API: ${Math.round(lat5)} ms (median, last 5 min)`);
-    } else if (lat5 != null && lat15 != null && lat15 > 0 && lat5 > 3 * lat15 && lat5 > 500) {
+      warnings.push(`${mon.name}: high latency — ${Math.round(lat5)} ms (median, last 5 min)`);
+    } else if (lat5 != null && lat15 != null && lat15 > 0 && lat5 > 3 * lat15 && lat5 > mon.latRiseMin) {
       state = 'degraded';
-      warnings.push(`Latency rising: ${Math.round(lat15)} ms → ${Math.round(lat5)} ms (15-min vs 5-min median)`);
+      warnings.push(`${mon.name}: latency rising — ${Math.round(lat15)} ms → ${Math.round(lat5)} ms (15-min vs 5-min median)`);
     }
     if (last && !last.ok && state === 'ok') {
       state = 'degraded';
-      warnings.push('Last connectivity check failed — watching');
+      warnings.push(`${mon.name}: last check failed — watching`);
     }
   }
-  if (state !== _net.state) {
-    console.log(`[net] ${_net.state} → ${state}${warnings.length ? ' — ' + warnings[0] : ''}`);
-    _net.state = state;
-    _net.stateSince = now;
+  if (state !== mon.state) {
+    console.log(`[net] ${mon.name}: ${mon.state} → ${state}${warnings.length ? ' — ' + warnings[0] : ''}`);
+    mon.state = state;
+    mon.stateSince = now;
   }
-  _net.warnings = warnings;
+  mon.warnings = warnings;
 }
 
-setInterval(netProbe, NET_PROBE_INTERVAL_MS);
-setTimeout(netProbe, 3000); // first probe shortly after boot
+// Overall = worst of both layers, with cross-diagnosis so the warning says
+// WHERE the problem is (venue internet vs. the route to Colada).
+const _NET_RANK = { down: 3, degraded: 2, ok: 1, unknown: 0 };
+function evaluateOverall() {
+  const worst = _NET_RANK[_netInet.state] >= _NET_RANK[_netColada.state] ? _netInet.state : _netColada.state;
+  if (worst !== _netOverall.state) { _netOverall.state = worst; _netOverall.stateSince = Date.now(); }
+}
+
+function _combinedWarnings() {
+  const warnings = [..._netInet.warnings, ..._netColada.warnings];
+  if (_netInet.state === 'ok' && (_netColada.state === 'down' || _netColada.state === 'degraded')) {
+    warnings.push('Internet is fine — the problem is between this server and the Colada API');
+  }
+  if (_netInet.state === 'down') {
+    warnings.push('The venue internet connection is down — Colada check-ins cannot work until it returns');
+  }
+  return warnings;
+}
+
+setInterval(probeColada, _netColada.intervalMs);
+setInterval(probeInternet, _netInet.intervalMs);
+setTimeout(probeColada, 3000);   // first probes shortly after boot
+setTimeout(probeInternet, 1000);
+
+function _monPayload(mon) {
+  const now = Date.now();
+  const w5 = mon.samples.filter(x => x.ts >= now - 5 * 60000);
+  return {
+    state:      mon.state,
+    stateSince: mon.stateSince,
+    target:     mon.target,
+    warnings:   mon.warnings,
+    current:    mon.samples[mon.samples.length - 1] || null,
+    latency5m:  _median(w5.filter(x => x.ok).map(x => x.ms)),
+    latency15m: _median(mon.samples.filter(x => x.ts >= now - 15 * 60000 && x.ok).map(x => x.ms)),
+    failRate5m: w5.length ? w5.filter(x => !x.ok).length / w5.length : null,
+    probeIntervalMs: mon.intervalMs,
+    samples: mon.samples,
+  };
+}
 
 app.get('/api/netstatus', (req, res) => {
-  const s = _net.samples;
-  const now = Date.now();
-  const w5 = s.filter(x => x.ts >= now - 5 * 60000);
   res.json({
-    state:      _net.state,
-    stateSince: _net.stateSince,
-    target:     _net.target,
-    warnings:   _net.warnings,
-    current:    s[s.length - 1] || null,
-    latency5m:  _median(w5.filter(x => x.ok).map(x => x.ms)),
-    latency15m: _median(s.filter(x => x.ts >= now - 15 * 60000 && x.ok).map(x => x.ms)),
-    failRate5m: w5.length ? w5.filter(x => !x.ok).length / w5.length : null,
-    probeIntervalMs: NET_PROBE_INTERVAL_MS,
-    samples: s,
+    state:      _netOverall.state,
+    stateSince: _netOverall.stateSince,
+    warnings:   _combinedWarnings(),
+    internet:   _monPayload(_netInet),
+    colada:     _monPayload(_netColada),
+    references: INET_REFS,
   });
 });
 

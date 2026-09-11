@@ -343,7 +343,7 @@ Per kiosk station (station editor):
 ## Monitor & Connection Watch
 
 - **Direct link**: `/monitor` opens the Monitor page directly (bookmarkable); `/monitor?full=1` boots it chrome-less for a wall display, and the ⛶ button toggles fullscreen at any time.
-- **Internet connection monitoring**: the server probes the Colada API host every 15 s (any HTTP response counts; 10 s timeout) and keeps an hour of samples. State is `ok` / `degraded` / `down` with human-readable warnings — degraded on ≥2 failed checks in 5 min, a 5-min median above 1.5 s, or latency rising to 3× the 15-min median; down after two consecutive failures.
+- **Two-layer connection monitoring**: an **internet** layer probes public connectivity references every **5 s** (Cloudflare/gstatic/Apple 204 endpoints; a round only counts as failed when *all* references fail — override with `CHECKIN_NET_REFS=url1,url2`, e.g. an internal reference on closed venue networks), and a **Colada** layer probes the API host every 15 s. Each layer is `ok` / `degraded` / `down` with early warnings (repeated failed checks, high or rising latency); down after ~15 s of hard failure. Cross-diagnosis tells you *where* the problem is: "Internet is fine — the problem is between this server and the Colada API" vs. "The venue internet connection is down".
 - The Monitor page shows a connection card (status, latency now/median, failed-check rate, warnings, 60-min latency chart with failures marked red). A warning pill appears in the topbar on **every** backoffice page when the state is degraded or down — clicking it jumps to the Monitor; if the backoffice device itself loses its link to the check-in server, the pill turns red too.
 - `GET /api/netstatus` exposes everything for external monitoring.
 

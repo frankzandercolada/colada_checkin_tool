@@ -537,21 +537,28 @@
         <button class="btn btn-secondary" id="mon-fullscreen-btn" onclick="toggleMonitorFullscreen()" title="Fullscreen — direct link: /monitor?full=1">⛶ Fullscreen</button>
       </div>
 
-      <!-- Internet connection -->
+      <!-- Internet & Colada connection -->
       <div class="card" style="margin-bottom:16px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-          <div class="card-title" style="margin:0;">Internet Connection <span id="mon-net-target" style="font-size:11px;color:var(--muted);font-family:var(--font-mono);font-weight:400;"></span></div>
-          <span id="mon-net-state" class="badge badge-muted" style="font-size:12px;padding:4px 12px;">—</span>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px;">
+          <div class="card-title" style="margin:0;">Connection Watch <span id="mon-net-target" style="font-size:11px;color:var(--muted);font-family:var(--font-mono);font-weight:400;"></span></div>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span id="mon-net-state-inet" class="badge badge-muted" style="font-size:12px;padding:4px 12px;">Internet —</span>
+            <span id="mon-net-state" class="badge badge-muted" style="font-size:12px;padding:4px 12px;">Colada —</span>
+          </div>
         </div>
         <div class="stats-grid" style="margin-bottom:10px;">
-          <div class="stat-card"><div class="stat-num" id="mon-net-now">—</div><div class="stat-label">Latency (now)</div></div>
-          <div class="stat-card"><div class="stat-num" id="mon-net-med5">—</div><div class="stat-label">Median (5 min)</div></div>
-          <div class="stat-card"><div class="stat-num" id="mon-net-fail">—</div><div class="stat-label">Failed checks (5 min)</div></div>
-          <div class="stat-card"><div class="stat-num" id="mon-net-since">—</div><div class="stat-label">State since</div></div>
+          <div class="stat-card"><div class="stat-num" id="mon-inet-now">—</div><div class="stat-label">Internet latency (now)</div></div>
+          <div class="stat-card"><div class="stat-num" id="mon-inet-med5">—</div><div class="stat-label">Internet median (5 min)</div></div>
+          <div class="stat-card"><div class="stat-num" id="mon-inet-fail">—</div><div class="stat-label">Internet failed (5 min)</div></div>
+          <div class="stat-card"><div class="stat-num" id="mon-net-now">—</div><div class="stat-label">Colada latency (now)</div></div>
+          <div class="stat-card"><div class="stat-num" id="mon-net-med5">—</div><div class="stat-label">Colada median (5 min)</div></div>
+          <div class="stat-card"><div class="stat-num" id="mon-net-fail">—</div><div class="stat-label">Colada failed (5 min)</div></div>
         </div>
         <div id="mon-net-warnings" style="display:none;margin-bottom:10px;padding:10px 14px;border-radius:8px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.35);font-size:13px;line-height:1.6;"></div>
-        <div class="card-title" style="margin:4px 0 8px;font-size:12px;">Latency to Colada API (ms, last 60 min — red marks = failed checks)</div>
-        <canvas id="mon-chart-net" height="55"></canvas>
+        <div class="card-title" style="margin:4px 0 8px;font-size:12px;">Internet latency (ms, 5-s checks, last 60 min — red marks = failed checks)</div>
+        <canvas id="mon-chart-inet" height="45"></canvas>
+        <div class="card-title" style="margin:14px 0 8px;font-size:12px;">Colada API latency (ms, 15-s checks, last 60 min — red marks = failed checks)</div>
+        <canvas id="mon-chart-net" height="45"></canvas>
       </div>
 
       <!-- Colada API summary -->
@@ -3354,6 +3361,7 @@ function stopDashboardRefresh() {
 
 // ── Internet connection status ────────────────────────────────────────────────
 let _monChartNet = null;
+let _monChartInet = null;
 
 const NET_STATE_LABELS = { ok: '● ONLINE', degraded: '● DEGRADED', down: '● OFFLINE', unknown: '● CHECKING…' };
 const NET_STATE_BADGES = { ok: 'badge-green', degraded: 'badge-orange', down: 'badge-red', unknown: 'badge-muted' };
@@ -3362,22 +3370,28 @@ async function loadNetStatus() {
   try {
     const d = await fetch('/api/netstatus').then(r => r.json());
 
-    // Status badge + summary numbers
-    const stateEl = document.getElementById('mon-net-state');
-    if (stateEl) {
-      stateEl.className = 'badge ' + (NET_STATE_BADGES[d.state] || 'badge-muted');
-      stateEl.style.cssText = 'font-size:12px;padding:4px 12px;';
-      stateEl.textContent = NET_STATE_LABELS[d.state] || d.state;
-    }
-    const tgt = document.getElementById('mon-net-target');
-    if (tgt) tgt.textContent = d.target ? '→ ' + d.target.replace(/^https?:\/\//, '') : '';
-    const setNum = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
-    setNum('mon-net-now',  d.current && d.current.ok ? Math.round(d.current.ms) + ' ms' : (d.current ? '✕ failed' : '—'));
-    setNum('mon-net-med5', d.latency5m != null ? Math.round(d.latency5m) + ' ms' : '—');
-    setNum('mon-net-fail', d.failRate5m != null ? Math.round(d.failRate5m * 100) + ' %' : '—');
-    setNum('mon-net-since', d.stateSince ? new Date(d.stateSince).toLocaleTimeString() : '—');
+    const setBadge = (id, prefix, state) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.className = 'badge ' + (NET_STATE_BADGES[state] || 'badge-muted');
+      el.style.cssText = 'font-size:12px;padding:4px 12px;';
+      el.textContent = prefix + ' ' + (NET_STATE_LABELS[state] || state);
+    };
+    setBadge('mon-net-state-inet', 'Internet', d.internet.state);
+    setBadge('mon-net-state',      'Colada',   d.colada.state);
 
-    // Warnings box
+    const tgt = document.getElementById('mon-net-target');
+    if (tgt) tgt.textContent = d.colada.target ? '→ ' + d.colada.target.replace(/^https?:\/\//, '') : '';
+
+    const setNum = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = v; };
+    const fmtNow = c => c && c.ok ? Math.round(c.ms) + ' ms' : (c ? '✕ failed' : '—');
+    setNum('mon-inet-now',  fmtNow(d.internet.current));
+    setNum('mon-inet-med5', d.internet.latency5m != null ? Math.round(d.internet.latency5m) + ' ms' : '—');
+    setNum('mon-inet-fail', d.internet.failRate5m != null ? Math.round(d.internet.failRate5m * 100) + ' %' : '—');
+    setNum('mon-net-now',   fmtNow(d.colada.current));
+    setNum('mon-net-med5',  d.colada.latency5m != null ? Math.round(d.colada.latency5m) + ' ms' : '—');
+    setNum('mon-net-fail',  d.colada.failRate5m != null ? Math.round(d.colada.failRate5m * 100) + ' %' : '—');
+
     const warnEl = document.getElementById('mon-net-warnings');
     if (warnEl) {
       if (d.warnings && d.warnings.length) {
@@ -3388,40 +3402,44 @@ async function loadNetStatus() {
       }
     }
 
-    // Latency chart — line for successful probes, red dots at 0 for failures
-    const canvas = document.getElementById('mon-chart-net');
-    if (canvas && typeof Chart !== 'undefined') {
-      const th = _monTheme();
-      const samples = d.samples || [];
-      const labels   = samples.map(x => { const t = new Date(x.ts); return `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`; });
-      const latData  = samples.map(x => x.ok ? x.ms : null);
-      const failData = samples.map(x => x.ok ? null : 0);
-      if (_monChartNet) {
-        _monChartNet.data.labels = labels;
-        _monChartNet.data.datasets[0].data = latData;
-        _monChartNet.data.datasets[1].data = failData;
-        Object.assign(_monChartNet.options.scales.x.ticks, { color: th.tickColor });
-        Object.assign(_monChartNet.options.scales.x.grid,  { color: th.gridColor });
-        Object.assign(_monChartNet.options.scales.y.ticks, { color: th.tickColor });
-        Object.assign(_monChartNet.options.scales.y.grid,  { color: th.gridColor });
-        _monChartNet.update('none');
-      } else {
-        _monChartNet = new Chart(canvas.getContext('2d'), {
-          type: 'line',
-          data: { labels, datasets: [
-            { label: 'Latency (ms)', data: latData, borderColor: 'rgba(74,222,128,0.9)', backgroundColor: 'rgba(74,222,128,0.08)',
-              borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.3, spanGaps: false },
-            { label: 'Failed check', data: failData, borderColor: 'rgba(239,68,68,0)', backgroundColor: 'rgba(239,68,68,0.95)',
-              borderWidth: 0, pointRadius: 4, pointStyle: 'rectRot', showLine: false },
-          ]},
-          options: { responsive: true, animation: false,
-            plugins: { legend: { display: false } },
-            scales: { x: { ticks: { maxTicksLimit: 12, color: th.tickColor, font: { size: 10 } }, grid: { color: th.gridColor } },
-                      y: { beginAtZero: true, ticks: { color: th.tickColor, font: { size: 10 } }, grid: { color: th.gridColor } } } }
-        });
-      }
-    }
+    _monChartInet = _renderNetChart('mon-chart-inet', _monChartInet, d.internet.samples, 'rgba(74,222,128,0.9)', 'rgba(74,222,128,0.08)');
+    _monChartNet  = _renderNetChart('mon-chart-net',  _monChartNet,  d.colada.samples,  'rgba(99,102,241,0.9)', 'rgba(99,102,241,0.1)');
   } catch(e) { /* server unreachable — the browser itself is offline; banner poll handles it */ }
+}
+
+// Latency line + red fail marks for one probe layer
+function _renderNetChart(canvasId, chart, samples, lineColor, fillColor) {
+  const canvas = document.getElementById(canvasId);
+  if (!canvas || typeof Chart === 'undefined') return chart;
+  const th = _monTheme();
+  samples = samples || [];
+  const labels   = samples.map(x => { const t = new Date(x.ts); return `${String(t.getHours()).padStart(2,'0')}:${String(t.getMinutes()).padStart(2,'0')}`; });
+  const latData  = samples.map(x => x.ok ? x.ms : null);
+  const failData = samples.map(x => x.ok ? null : 0);
+  if (chart) {
+    chart.data.labels = labels;
+    chart.data.datasets[0].data = latData;
+    chart.data.datasets[1].data = failData;
+    Object.assign(chart.options.scales.x.ticks, { color: th.tickColor });
+    Object.assign(chart.options.scales.x.grid,  { color: th.gridColor });
+    Object.assign(chart.options.scales.y.ticks, { color: th.tickColor });
+    Object.assign(chart.options.scales.y.grid,  { color: th.gridColor });
+    chart.update('none');
+    return chart;
+  }
+  return new Chart(canvas.getContext('2d'), {
+    type: 'line',
+    data: { labels, datasets: [
+      { label: 'Latency (ms)', data: latData, borderColor: lineColor, backgroundColor: fillColor,
+        borderWidth: 1.5, pointRadius: 0, fill: true, tension: 0.3, spanGaps: false },
+      { label: 'Failed check', data: failData, borderColor: 'rgba(239,68,68,0)', backgroundColor: 'rgba(239,68,68,0.95)',
+        borderWidth: 0, pointRadius: 4, pointStyle: 'rectRot', showLine: false },
+    ]},
+    options: { responsive: true, animation: false,
+      plugins: { legend: { display: false } },
+      scales: { x: { ticks: { maxTicksLimit: 12, color: th.tickColor, font: { size: 10 } }, grid: { color: th.gridColor } },
+                y: { beginAtZero: true, ticks: { color: th.tickColor, font: { size: 10 } }, grid: { color: th.gridColor } } } }
+  });
 }
 
 // Global warning banner (all pages) — polls independently of the monitor page
@@ -3513,6 +3531,7 @@ function stopMonitorRefresh() {
   if (_monChartCalls) { _monChartCalls.destroy(); _monChartCalls = null; }
   if (_monChartBw)    { _monChartBw.destroy();    _monChartBw    = null; }
   if (_monChartNet)   { _monChartNet.destroy();   _monChartNet   = null; }
+  if (_monChartInet)  { _monChartInet.destroy();  _monChartInet  = null; }
 }
 
 async function loadMonitor() {
@@ -3821,6 +3840,7 @@ function toggleTheme() {
   if (_monChartCalls) { _monChartCalls.destroy(); _monChartCalls = null; }
   if (_monChartBw)    { _monChartBw.destroy();    _monChartBw    = null; }
   if (_monChartNet)   { _monChartNet.destroy();   _monChartNet   = null; }
+  if (_monChartInet)  { _monChartInet.destroy();  _monChartInet  = null; }
   // Re-draw immediately if monitor page is active
   if (document.getElementById('page-monitor')?.classList.contains('active')) loadMonitor();
 }
