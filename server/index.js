@@ -1824,9 +1824,57 @@ app.post('/api/kiosk/checkin-companion', async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// Kiosk name search — searches across all project events in parallel.
+// ─── Kiosk name search ────────────────────────────────────────────────────────
+// Colada's filter[name] proved unreliable on the guests endpoint (it can be
+// ignored entirely, returning an arbitrary first page — so only the first few
+// guests of the raw list were ever findable). The kiosk search therefore
+// fetches the FULL guest list per event and filters locally, with a short
+// server-side cache so per-keystroke searches stay fast and API load low.
+const GUEST_CACHE_TTL_MS = 45000;
+const _guestListCache = {}; // eventId -> { ts, guests, inflight }
+
+async function fetchAllGuests(apiBase, token, eid) {
+  const base = `${apiBase}/_gw/s-events-guests/external-api/events/${eid}/guests`;
+  const PAGE = 500;
+  const r = await fetch(base, { headers: { Authorization: `Bearer ${token}`, Range: `guests 0-${PAGE - 1}` } });
+  if (!r.ok) throw new Error(`API error ${r.status}`);
+  const first = await r.json();
+  const arr = Array.isArray(first) ? first : [];
+  const total = parseInt((r.headers.get('Content-Range') || '').split('/')[1]) || arr.length;
+  if (total > arr.length) {
+    const pages = [];
+    for (let f = PAGE; f < total; f += PAGE) pages.push({ from: f, to: Math.min(f + PAGE - 1, total - 1) });
+    arr.push(...(await Promise.all(pages.map(({ from, to }) =>
+      fetch(base, { headers: { Authorization: `Bearer ${token}`, Range: `guests ${from}-${to}` } })
+        .then(r2 => r2.json()).then(d => Array.isArray(d) ? d : [])
+    ))).flat());
+  }
+  return arr;
+}
+
+// Stale-while-revalidate: concurrent keystrokes share one in-flight fetch, and
+// a stale list is served immediately while the refresh runs in the background.
+async function getGuestsCached(apiBase, token, eid) {
+  const c = _guestListCache[eid];
+  const now = Date.now();
+  if (c && c.guests && now - c.ts < GUEST_CACHE_TTL_MS) return c.guests;
+  if (c && c.inflight) return c.guests || c.inflight;
+  const p = fetchAllGuests(apiBase, token, eid)
+    .then(guests => { _guestListCache[eid] = { ts: Date.now(), guests, inflight: null }; return guests; })
+    .catch(err => { const cc = _guestListCache[eid]; if (cc) cc.inflight = null; throw err; });
+  _guestListCache[eid] = { ts: c ? c.ts : 0, guests: c ? c.guests : null, inflight: p };
+  return (c && c.guests) ? c.guests : p;
+}
+
+// Fold case + accents so "muller" finds "Müller" and "helene" finds "Hélène"
+function foldText(v) {
+  return String(v || '').toLowerCase().replace(/ß/g, 'ss')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+}
+
 // GET /api/kiosk/search?q=name&stationId=...
-// Returns up to 10 guests (deduplicated by id) with _matchedEventId injected.
+// Every whitespace-separated term must match somewhere in first/last name,
+// company or email. Returns up to 15 guests with _matchedEventId injected.
 app.get('/api/kiosk/search', async (req, res) => {
   try {
     const pid = getActiveProjectId();
@@ -1840,36 +1888,23 @@ app.get('/api/kiosk/search', async (req, res) => {
     const eventIds = getProjectEventIds(project);
     if (!eventIds.length) return res.json([]);
 
-    // Search each event in parallel
-    const results = await Promise.allSettled(
-      eventIds.map(eid =>
-        fetch(`${apiBase}/_gw/s-events-guests/external-api/events/${eid}/guests?filter[name]=${encodeURIComponent(q)}`,
-          { headers: { Authorization: `Bearer ${token}`, Range: 'guests 0-9' } })
-          .then(r => r.ok ? r.json() : [])
-          .then(data => {
-            const arr = Array.isArray(data) ? data : [];
-            // Inject _matchedEventId and filter by name client-side as fallback
-            const term = q.toLowerCase();
-            return arr
-              .filter(g => {
-                const a = g.attributes || g.properties || {};
-                const full = [a.contact_firstName, a.contact_lastName,
-                  (a.contact_firstName||'')+' '+(a.contact_lastName||''),
-                  a.contact_x_companyName, a.contact_email].join(' ').toLowerCase();
-                return full.includes(term);
-              })
-              .map(g => {
-                const attrs = g.attributes || g.properties || {};
-                attrs._matchedEventId = eid;
-                if (g.attributes) g.attributes = attrs;
-                else g.properties = attrs;
-                return g;
-              });
-          })
-      )
-    );
+    const terms = foldText(q).split(/\s+/).filter(Boolean);
 
-    // Merge, deduplicate by guest id, limit to 10
+    const results = await Promise.allSettled(eventIds.map(async eid => {
+      const guests = await getGuestsCached(apiBase, token, eid);
+      return guests
+        .filter(g => {
+          const a = g.attributes || g.properties || {};
+          const hay = foldText([a.contact_firstName, a.contact_lastName, a.contact_x_companyName, a.contact_email].join(' '));
+          return terms.every(t => hay.includes(t));
+        })
+        .map(g => {
+          const attrs = { ...(g.attributes || g.properties || {}), _matchedEventId: eid };
+          return g.attributes ? { ...g, attributes: attrs } : { ...g, properties: attrs };
+        });
+    }));
+
+    // Merge, deduplicate by guest id, limit to 15
     const seen = new Set();
     const merged = [];
     for (const r of results) {
@@ -1877,9 +1912,9 @@ app.get('/api/kiosk/search', async (req, res) => {
       for (const g of r.value) {
         const id = g.id || g.uid;
         if (id && !seen.has(id)) { seen.add(id); merged.push(g); }
-        if (merged.length >= 10) break;
+        if (merged.length >= 15) break;
       }
-      if (merged.length >= 10) break;
+      if (merged.length >= 15) break;
     }
     _recordKiosk(req.query.stationId || null, null, 'search');
     res.json(merged);
