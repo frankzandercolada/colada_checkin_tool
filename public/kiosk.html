@@ -2541,7 +2541,17 @@ function renderKioskSearchResults(guests) {
       <div>
         <div style="font-size:clamp(15px,3vmin,26px);font-weight:700;color:var(--text);">${escKiosk(first)} ${escKiosk(last)}</div>
         ${company ? `<div style="font-size:clamp(11px,2vmin,18px);color:var(--muted);">${escKiosk(company)}</div>` : ''}
-        ${compNames.length ? `<div style="font-size:clamp(10px,1.8vmin,16px);color:var(--muted);margin-top:3px;">👥 +${compNames.length}: ${escKiosk(compNames.join(', '))}</div>` : ''}
+        ${compNames.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;align-items:center;">
+          <span style="font-size:clamp(10px,1.8vmin,16px);color:var(--muted);">👥</span>
+          ${(g.companions || []).map(c => {
+            const cname = [c.firstName, c.lastName].filter(Boolean).join(' ');
+            return cname && c.guestId ? `<button class="comp-chip" data-gid="${escKiosk(c.guestId)}"
+              style="background:transparent;border:1px solid var(--border-tint);color:var(--text);border-radius:100px;
+                     padding:clamp(3px,0.8vmin,7px) clamp(10px,2vmin,18px);font-size:clamp(10px,1.9vmin,16px);
+                     font-family:var(--font);cursor:pointer;">${escKiosk(cname)}</button>` : '';
+          }).join('')}
+          <span style="font-size:clamp(9px,1.5vmin,13px);color:var(--muted);">tap to check in individually</span>
+        </div>` : ''}
       </div>
       <div style="font-size:clamp(10px,1.8vmin,15px);font-family:var(--mono);color:${statusColor};flex-shrink:0;margin-left:12px;">${escKiosk(statusLabel)}</div>
     </div>`;
@@ -2551,6 +2561,23 @@ function renderKioskSearchResults(guests) {
   // Using addEventListener (not inline onclick) lets us call preventDefault()
   // on touchend to stop the reFocus handler from stealing focus mid-selection.
   el._results = guests;
+  // Companion chips: check in exactly that companion (no cascade). Listeners
+  // attach before the row handlers and stop propagation so a chip tap never
+  // triggers the main row's whole-party check-in.
+  el.querySelectorAll('.comp-chip').forEach(chip => {
+    const handler = e => {
+      e.preventDefault();
+      e.stopPropagation();
+      const row = chip.closest('[data-idx]');
+      const g   = el._results[parseInt(row.dataset.idx, 10)];
+      const a   = (g && (g.attributes || g.properties)) || {};
+      checkinCompanionSingle(a._matchedEventId, chip.dataset.gid);
+    };
+    chip.addEventListener('touchend', handler, { passive: false });
+    chip.addEventListener('click', e => {
+      if (e.isTrusted && navigator.maxTouchPoints === 0) handler(e);
+    });
+  });
   el.querySelectorAll('[data-idx]').forEach(row => {
     const idx = parseInt(row.dataset.idx, 10);
     // Touch devices: handle on touchend with preventDefault
@@ -2566,6 +2593,45 @@ function renderKioskSearchResults(guests) {
       }
     });
   });
+}
+
+// Check in ONE companion found via the main guest's search row — no cascade,
+// single ticket with the companion's own seat and template.
+async function checkinCompanionSingle(eventId, guestId) {
+  if (isProcessing || !eventId || !guestId) return;
+  isProcessing = true;
+  cancelReturn();
+  showScreen('processing');
+  try {
+    const res = await fetch('/api/kiosk/checkin-companion', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ guestId, eventId, stationId }),
+    });
+    const data = await res.json();
+    if (data.error) { showError(data.error); return; }
+    switch (data.result) {
+      case 'success':
+        await handleSuccess(data); // fires signal, shows name, prints ONE ticket
+        break;
+      case 'already_checked_in':
+        handleAlready(data);
+        break;
+      case 'not_found':
+        handleNotFound(data.reason === 'no_seat' ? 'No seat allocated.' : 'Guest not found.');
+        break;
+      case 'invalid_status':
+        handleNotFound(`Status: ${data.status || 'not eligible'}`);
+        break;
+      default:
+        showError('Unexpected response.');
+    }
+  } catch(e) {
+    showError(e.message || 'Network error');
+  } finally {
+    isProcessing = false;
+    refocusScanInput();
+  }
 }
 
 // Fire-and-forget stats recording for events that bypass the scan route
@@ -2632,7 +2698,15 @@ async function selectKioskSearchResult(idx) {
       body: JSON.stringify({ ...guest, stationId }),
     });
     const data = await r.json();
-    if (!r.ok) throw new Error(data.error || `HTTP ${r.status}`);
+    if (!r.ok) {
+      if (data && data.error === 'no_seat') {
+        recordKioskEvent('scan_failed');
+        fireSignal('failed');
+        handleNotFound('No seat allocated.');
+        return;
+      }
+      throw new Error(data.error || `HTTP ${r.status}`);
+    }
 
     recordKioskEvent('scan_success');
     fireSignal('success');

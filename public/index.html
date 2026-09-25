@@ -273,6 +273,12 @@
               <input id="cfg-comp-seatfield" class="form-input" placeholder="guest_x_designer_seat" style="font-family:var(--font-mono);font-size:11px;"/>
               <span class="hint">Attribute whose values are printed comma-separated for the whole party on the main ticket</span>
             </div>
+            <div class="field">
+              <label class="form-label" style="flex-direction:row;align-items:center;gap:8px;cursor:pointer;">
+                <input type="checkbox" id="cfg-comp-require-seat" style="width:14px;height:14px;accent-color:var(--accent);"/> Require seat for check-in
+              </label>
+              <span class="hint">Guests without a value in the seat field are NOT checked in and NO ticket is printed — the kiosk shows its Not Found screen instead. Applies to scans, search check-ins and companions.</span>
+            </div>
           </div>
         </div>
       </div>
@@ -1095,6 +1101,7 @@ async function loadSettings() {
     document.getElementById('cfg-comp-checkin').value   = comp.checkinMode || 'separate';
     document.getElementById('cfg-comp-print').value     = comp.printMode   || 'main';
     document.getElementById('cfg-comp-search').value    = comp.showInSearch || 'hide';
+    document.getElementById('cfg-comp-require-seat').checked = comp.requireSeat === true;
     document.getElementById('cfg-comp-seatfield').value = comp.seatField && comp.seatField !== 'guest_x_designer_seat' ? comp.seatField : '';
   } catch(e) { toast('Failed to load config', 'error'); }
 }
@@ -1118,6 +1125,7 @@ async function saveSettings() {
       printMode:    document.getElementById('cfg-comp-print').value,
       showInSearch: document.getElementById('cfg-comp-search').value,
       seatField:    document.getElementById('cfg-comp-seatfield').value.trim(),
+      requireSeat:  document.getElementById('cfg-comp-require-seat').checked,
     },
   };
   const projSecret = document.getElementById('cfg-clientSecret').value.trim();

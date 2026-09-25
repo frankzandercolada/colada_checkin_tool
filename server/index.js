@@ -228,7 +228,15 @@ function resolveCompanionSettings(project, station) {
     printMode:    pick(st.printMode,    proj.printMode,    'main'),
     showInSearch: pick(st.showInSearch, proj.showInSearch, 'hide'),
     seatField:    (proj.seatField || '').trim() || DEFAULT_SEAT_FIELD,
+    // Seat gate: when enabled, guests without a value in seatField are NOT
+    // checked in and NO ticket is printed — the kiosk shows Not Found instead.
+    requireSeat:  proj.requireSeat === true,
   };
+}
+
+function hasSeat(attrs, seatField) {
+  const v = attrs ? attrs[seatField] : null;
+  return v !== undefined && v !== null && String(v).trim() !== '' && v !== false;
 }
 
 function isCheckedInAttrs(attrs, checkinSchema) {
@@ -247,7 +255,7 @@ function isCheckedInAttrs(attrs, checkinSchema) {
 // companion problem must never block the main guest's check-in.
 // Returns { companions: [...], seatingAll } where seatingAll is the
 // comma-separated seatField values of the main guest plus all companions.
-async function processCompanions({ apiBase, token, eventId, guest, mainAttrs, checkinSchema, stationId, seatField, mode }) {
+async function processCompanions({ apiBase, token, eventId, guest, mainAttrs, checkinSchema, stationId, seatField, mode, requireSeat }) {
   const refs = getCompanionRefs(guest);
   if (!refs.length) return { companions: [], seatingAll: '' };
   const base    = `${apiBase}/_gw/s-events-guests/external-api/events/${eventId}/guests`;
@@ -262,7 +270,9 @@ async function processCompanions({ apiBase, token, eventId, guest, mainAttrs, ch
       const cg    = await r.json();
       const attrs = cg.attributes || cg.properties || {};
       const status    = cg.status || attrs.status || '';
-      const eligible  = status === 'REGISTERED' || status === 'PENDING';
+      // Seat gate applies to cascaded companions too: no seat -> not checked in
+      const seatOk    = !requireSeat || hasSeat(attrs, seatField);
+      const eligible  = (status === 'REGISTERED' || status === 'PENDING') && seatOk;
       const alreadyIn = isCheckedInAttrs(attrs, checkinSchema);
       let checkedIn = alreadyIn;
 
@@ -630,6 +640,7 @@ app.patch('/api/projects/:id', (req, res) => {
       printMode:    c.printMode    === 'all'      ? 'all'      : 'main',
       showInSearch: c.showInSearch === 'show'     ? 'show'     : 'hide',
       seatField:    (c.seatField || '').trim() || DEFAULT_SEAT_FIELD,
+      requireSeat:  c.requireSeat === true,
     };
   }
   saveProjects(projects);
@@ -1207,6 +1218,12 @@ app.post('/api/guests/:eventId/:guestId/checkin', async (req, res) => {
     const guest = req.body;
     const stationId = req.body.stationId || null;
     const existingAttrs = guest.attributes || guest.properties || {};
+
+    // Seat gate — same rule as the kiosk scan: no seat, no check-in, no ticket
+    const seatGate = resolveCompanionSettings(project, null);
+    if (seatGate.requireSeat && !hasSeat(existingAttrs, seatGate.seatField)) {
+      return res.status(422).json({ error: 'no_seat', message: `No value in ${seatGate.seatField} — guest is not checked in and no ticket is printed` });
+    }
     const { _matchedEventId: _omit, ...cleanAttrs } = existingAttrs;
     let patchAttrs;
     if (checkinSchema === 'assistant') {
@@ -1241,7 +1258,7 @@ app.post('/api/guests/:eventId/:guestId/checkin', async (req, res) => {
         } catch(e) {}
       }
       if (getCompanionRefs(compSrc).length) {
-        companionData = await processCompanions({ apiBase, token, eventId: req.params.eventId, guest: compSrc, mainAttrs: patchAttrs, checkinSchema, stationId, seatField: compSettings.seatField, mode: 'checkin' });
+        companionData = await processCompanions({ apiBase, token, eventId: req.params.eventId, guest: compSrc, mainAttrs: patchAttrs, checkinSchema, stationId, seatField: compSettings.seatField, mode: 'checkin', requireSeat: compSettings.requireSeat });
       }
     }
 
@@ -1741,6 +1758,72 @@ app.post('/api/kiosk/stations/:stationId/duplicate', (req, res) => {
   res.json({ ok: true, station: copy });
 });
 
+// Single-companion check-in from the kiosk search: checks in EXACTLY one
+// guest (no cascade), prints their own ticket. Used when a companion arrives
+// separately and the hostess finds them via the main guest's search row.
+// POST /api/kiosk/checkin-companion  body: { guestId, eventId, stationId }
+app.post('/api/kiosk/checkin-companion', async (req, res) => {
+  try {
+    const pid = getActiveProjectId();
+    const token = await getToken(pid);
+    const { apiBase } = getEffectiveCredentials(pid);
+    const projects = loadProjects();
+    const project = projects.find(p => p.id === pid);
+    const checkinSchema = getCheckinSchema(project);
+    const { guestId, eventId, stationId } = req.body || {};
+    if (!guestId || !eventId) return res.status(400).json({ error: 'guestId and eventId required' });
+
+    const scanStation  = stationId ? loadKioskStations(pid).find(st => st.id === stationId) : null;
+    const compSettings = resolveCompanionSettings(project, scanStation);
+
+    const base = `${apiBase}/_gw/s-events-guests/external-api/events/${eventId}/guests`;
+    const gr = await fetch(`${base}/${encodeURIComponent(guestId)}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+    if (!gr.ok) return res.json({ result: 'not_found' });
+    const cg = await gr.json();
+    const attrs = { ...(cg.attributes || cg.properties || {}), _matchedEventId: eventId };
+
+    const status = cg.status || attrs.status || '';
+    if (!(status === 'REGISTERED' || status === 'PENDING')) {
+      _recordKiosk(stationId || null, null, 'scan_failed');
+      return res.json({ result: 'invalid_status', status, guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '' } });
+    }
+    if (compSettings.requireSeat && !hasSeat(attrs, compSettings.seatField)) {
+      _recordKiosk(stationId || null, null, 'scan_failed');
+      return res.json({ result: 'not_found', reason: 'no_seat' });
+    }
+
+    const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
+    const selectedTemplate = selectTemplateKey(attrs, badgeCfg);
+    const guestOut = { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', id: cg.id || guestId, attributes: attrs };
+    const badgeOut = { templates: badgeCfg.templates, eventGroups: badgeCfg.eventGroups, rules: badgeCfg.rules, fallback: badgeCfg.fallback, _selectedTemplate: selectedTemplate };
+
+    if (isCheckedInAttrs(attrs, checkinSchema)) {
+      _recordKiosk(stationId || null, null, 'scan_already');
+      const checkedInAt = checkinSchema === 'assistant' ? attrs.guest_x_assistant_checkedin : attrs.guest_x_checkedinat;
+      return res.json({ result: 'already_checked_in', matchedEventId: eventId, guest: { ...guestOut, checkedInAt }, badgeConfig: badgeOut });
+    }
+
+    // Check in ONLY this guest — deliberately no companion cascade here
+    const now   = assistantNow();
+    const today = now.split('T')[0];
+    const { _matchedEventId: _omit, ...cleanAttrs } = attrs;
+    let patchAttrs;
+    if (checkinSchema === 'assistant') {
+      patchAttrs = { ...cleanAttrs, guest_x_assistant_checkedin: now, guest_x_assistant_scanner_checkin_id: stationId || '' };
+    } else {
+      patchAttrs = { ...cleanAttrs, guest_x_checkedin: true, guest_x_checkedinat: today };
+    }
+    const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Accept: 'application/json' };
+    const rev = cg.revision || attrs.revision;
+    if (rev) headers['If-Match'] = rev;
+    const pr = await fetch(`${base}/${encodeURIComponent(guestId)}`, { method: 'PATCH', headers, body: JSON.stringify({ attributes: patchAttrs }) });
+    if (!pr.ok) throw new Error(`Check-in failed: ${pr.status}`);
+
+    _recordKiosk(stationId || null, null, 'companion_checkin');
+    res.json({ result: 'success', matchedEventId: eventId, guest: guestOut, badgeConfig: badgeOut });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // Kiosk name search — searches across all project events in parallel.
 // GET /api/kiosk/search?q=name&stationId=...
 // Returns up to 10 guests (deduplicated by id) with _matchedEventId injected.
@@ -1928,6 +2011,15 @@ app.post('/api/kiosk/scan', async (req, res) => {
       return payload;
     }
 
+    // Seat gate: tickets carry only seating info at some events — a guest
+    // without a seat must NOT be checked in and NO ticket printed. The kiosk
+    // shows its Not Found screen ("…no Seat allocated").
+    if (compSettings.requireSeat && !hasSeat(attrs, compSettings.seatField)) {
+      console.log(`[scan] no_seat — guest id=${guest.id} (${attrs.contact_firstName || ''} ${attrs.contact_lastName || ''}) has no value in ${compSettings.seatField}`);
+      _recordKiosk(scanStationId, null, 'scan_failed');
+      return res.json({ result: 'not_found', reason: 'no_seat' });
+    }
+
     // Already-checked-in detection — schema-aware
     const alreadyIn = isCheckedInAttrs(attrs, checkinSchema);
 
@@ -1974,7 +2066,7 @@ app.post('/api/kiosk/scan', async (req, res) => {
     // Together mode: also check in every companion referenced by this guest
     let companionData = null;
     if (hasCompanions) {
-      companionData = await processCompanions({ apiBase, token, eventId: matchedEventId, guest, mainAttrs: attrs, checkinSchema, stationId: scanStationId, seatField: compSettings.seatField, mode: 'checkin' });
+      companionData = await processCompanions({ apiBase, token, eventId: matchedEventId, guest, mainAttrs: attrs, checkinSchema, stationId: scanStationId, seatField: compSettings.seatField, mode: 'checkin', requireSeat: compSettings.requireSeat });
       companionData.companions
         .filter(c => c.checkedIn && !c.alreadyCheckedIn)
         .forEach(() => _recordKiosk(scanStationId, null, 'companion_checkin'));
