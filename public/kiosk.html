@@ -2740,12 +2740,14 @@ async function selectKioskSearchResult(idx) {
   }
 
   if (checkedIn) {
-    recordKioskEvent('scan_already');
     // The station may be configured to REPRINT on already-checked-in — that
     // needs the badge config and companion/seating data, which this client-side
     // branch doesn't have. Fetch the scan-shaped payload from the server
-    // (read-only); fall back to a minimal object if that fails.
+    // (read-only). It also reports the LIVE state: the search list comes from
+    // a short cache, so 'checked in' here may be stale — in that case fall
+    // through to a normal check-in below instead of reprinting.
     let alreadyData = null;
+    let staleNotCheckedIn = false;
     try {
       const rr = await fetch('/api/kiosk/reprint-data', {
         method: 'POST',
@@ -2754,19 +2756,24 @@ async function selectKioskSearchResult(idx) {
       });
       const rd = await rr.json();
       if (rr.ok && rd.result === 'already_checked_in') alreadyData = rd;
+      else if (rr.ok && rd.result === 'not_checked_in') staleNotCheckedIn = true;
     } catch(e) { console.warn('[search already] reprint-data failed:', e); }
-    isProcessing = false;
-    await handleAlready(alreadyData || {
-      result: 'already_checked_in',
-      guest: {
-        firstName:  a.contact_firstName || '',
-        lastName:   a.contact_lastName  || '',
-        company:    a.contact_x_companyName || '',
-        checkedInAt: a.guest_x_checkedinat || a.guest_x_assistant_checkedin,
-        attributes: a,
-      },
-    });
-    return;
+    if (!staleNotCheckedIn) {
+      recordKioskEvent('scan_already');
+      isProcessing = false;
+      await handleAlready(alreadyData || {
+        result: 'already_checked_in',
+        guest: {
+          firstName:  a.contact_firstName || '',
+          lastName:   a.contact_lastName  || '',
+          company:    a.contact_x_companyName || '',
+          checkedInAt: a.guest_x_checkedinat || a.guest_x_assistant_checkedin,
+          attributes: a,
+        },
+      });
+      return;
+    }
+    // stale cache — guest is actually NOT checked in: continue to check-in
   }
 
   // Check in the guest

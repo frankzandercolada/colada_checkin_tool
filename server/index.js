@@ -1839,6 +1839,11 @@ app.post('/api/kiosk/reprint-data', async (req, res) => {
     const guest = await gr.json();
     const attrs = { ...(guest.attributes || guest.properties || {}), _matchedEventId: eventId };
 
+    // The search list is served from a short cache — the guest may have been
+    // un-checked (or never checked in) since. Report the live truth so the
+    // kiosk can fall back to a real check-in instead of reprinting.
+    if (!isCheckedInAttrs(attrs, checkinSchema)) return res.json({ result: 'not_checked_in' });
+
     const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
     const checkedInAt = checkinSchema === 'assistant' ? attrs.guest_x_assistant_checkedin : attrs.guest_x_checkedinat;
     // Read (don't touch) companions so the reprint reproduces the combined ticket
