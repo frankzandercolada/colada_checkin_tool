@@ -2519,11 +2519,13 @@ function renderKioskSearchResults(guests) {
     return;
   }
   const showCompanions = station?._effectiveCompanions?.showInSearch === 'show';
+  const seatField = station?._effectiveCompanions?.seatField || 'guest_x_designer_seat';
   el.innerHTML = guests.map((g, idx) => {
     const a        = g.attributes || g.properties || {};
     const first    = a.contact_firstName || '';
     const last     = a.contact_lastName  || '';
     const company  = a.contact_x_companyName || '';
+    const seat     = String(a[seatField] || '').trim();
     const compNames = showCompanions ? (g.companions || [])
       .map(c => [c.firstName, c.lastName].filter(Boolean).join(' ')).filter(Boolean) : [];
     const status   = g.status || a.status || '';
@@ -2541,14 +2543,16 @@ function renderKioskSearchResults(guests) {
       <div>
         <div style="font-size:clamp(15px,3vmin,26px);font-weight:700;color:var(--text);">${escKiosk(first)} ${escKiosk(last)}</div>
         ${company ? `<div style="font-size:clamp(11px,2vmin,18px);color:var(--muted);">${escKiosk(company)}</div>` : ''}
+        ${seat ? `<div style="font-size:clamp(11px,2.1vmin,19px);color:var(--accent);font-weight:600;margin-top:2px;">💺 ${escKiosk(seat)}</div>` : ''}
         ${compNames.length ? `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:7px;align-items:center;">
           <span style="font-size:clamp(10px,1.8vmin,16px);color:var(--muted);">👥</span>
           ${(g.companions || []).map(c => {
             const cname = [c.firstName, c.lastName].filter(Boolean).join(' ');
+            const cseat = String(c._seat || '').trim();
             return cname && c.guestId ? `<button class="comp-chip" data-gid="${escKiosk(c.guestId)}"
               style="background:transparent;border:1px solid var(--border-tint);color:var(--text);border-radius:100px;
                      padding:clamp(3px,0.8vmin,7px) clamp(10px,2vmin,18px);font-size:clamp(10px,1.9vmin,16px);
-                     font-family:var(--font);cursor:pointer;">${escKiosk(cname)}</button>` : '';
+                     font-family:var(--font);cursor:pointer;">${escKiosk(cname)}${cseat ? ` <span style="color:var(--accent);font-weight:600;">💺 ${escKiosk(cseat)}</span>` : ''}</button>` : '';
           }).join('')}
           <span style="font-size:clamp(9px,1.5vmin,13px);color:var(--muted);">tap to check in individually</span>
         </div>` : ''}

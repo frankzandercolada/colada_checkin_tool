@@ -1200,7 +1200,21 @@ app.get('/api/guests/:eventId', async (req, res) => {
       const pages=[]; for(let f=PAGE;f<total;f+=PAGE) pages.push({from:f,to:Math.min(f+PAGE-1,total-1)});
       arr.push(...(await Promise.all(pages.map(({from,to})=>fetch(base,{headers:{Authorization:`Bearer ${token}`,Range:`guests ${from}-${to}`}}).then(r2=>r2.json()).then(d=>Array.isArray(d)?d:[])))).flat());
     }
-    if (searchTerm) return res.json(arr.filter(g=>{const a=g.attributes||g.properties||{};return [a.contact_firstName||'',a.contact_lastName||'',(a.contact_firstName||'')+' '+(a.contact_lastName||''),a.contact_x_companyName||'',a.contact_email||''].some(f=>f.toLowerCase().includes(searchTerm));}));
+    if (searchTerm) {
+      const matches = arr.filter(g=>{const a=g.attributes||g.properties||{};return [a.contact_firstName||'',a.contact_lastName||'',(a.contact_firstName||'')+' '+(a.contact_lastName||''),a.contact_x_companyName||'',a.contact_email||''].some(f=>f.toLowerCase().includes(searchTerm));});
+      // Seat display in search results: companions carry no attributes, so
+      // resolve each one's seat from the full guest list and inject it as _seat.
+      const seatField = resolveCompanionSettings(loadProjects().find(p=>p.id===pid), null).seatField;
+      const byId = new Map(arr.map(g => [String(g.id || g.uid), g]));
+      return res.json(matches.map(g => {
+        if (!Array.isArray(g.companions) || !g.companions.length) return g;
+        return { ...g, companions: g.companions.map(c => {
+          const cg = c && c.guestId != null ? byId.get(String(c.guestId)) : null;
+          const ca = cg ? (cg.attributes || cg.properties || {}) : {};
+          return { ...c, _seat: String(ca[seatField] || '').trim() };
+        }) };
+      }));
+    }
     res.json(arr);
   } catch(e) { res.status(500).json({ error:e.message }); }
 });
@@ -1890,8 +1904,14 @@ app.get('/api/kiosk/search', async (req, res) => {
 
     const terms = foldText(q).split(/\s+/).filter(Boolean);
 
+    // Seat display: companions carry no attributes of their own, so look each
+    // one up in the cached guest list and inject its seat value as _seat.
+    const searchStation = loadKioskStations(pid).find(s => s.id === req.query.stationId) || null;
+    const seatField = resolveCompanionSettings(project, searchStation).seatField;
+
     const results = await Promise.allSettled(eventIds.map(async eid => {
       const guests = await getGuestsCached(apiBase, token, eid);
+      const byId = new Map(guests.map(g => [String(g.id || g.uid), g]));
       return guests
         .filter(g => {
           const a = g.attributes || g.properties || {};
@@ -1900,7 +1920,15 @@ app.get('/api/kiosk/search', async (req, res) => {
         })
         .map(g => {
           const attrs = { ...(g.attributes || g.properties || {}), _matchedEventId: eid };
-          return g.attributes ? { ...g, attributes: attrs } : { ...g, properties: attrs };
+          const out = g.attributes ? { ...g, attributes: attrs } : { ...g, properties: attrs };
+          if (Array.isArray(out.companions) && out.companions.length) {
+            out.companions = out.companions.map(c => {
+              const cg = c && c.guestId != null ? byId.get(String(c.guestId)) : null;
+              const ca = cg ? (cg.attributes || cg.properties || {}) : {};
+              return { ...c, _seat: String(ca[seatField] || '').trim() };
+            });
+          }
+          return out;
         });
     }));
 
