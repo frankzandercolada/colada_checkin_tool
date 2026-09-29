@@ -929,6 +929,12 @@ html, body {
 
 <script>
 // ── State ─────────────────────────────────────────────────────────────────────
+// iOS Safari reuses cached API GETs stored before Cache-Control: no-store
+// existed, starving long-lived tabs of fresh data (and of the auto-reload
+// signal). A unique query param makes every poll bypass any cache entry.
+function freshUrl(u) { return u + (u.includes('?') ? '&' : '?') + '_=' + Date.now(); }
+
+const PAGE_BUILD = '__PAGE_BUILD__'; // injected by the server at delivery
 let station = null;         // loaded station config
 let stationId = null;       // from URL
 let scanBuffer = '';
@@ -959,7 +965,7 @@ async function init() {
   }
 
   // Load stations from API
-  const stations = await fetch('/api/kiosk/stations').then(r => r.json()).catch(() => []);
+  const stations = await fetch(freshUrl('/api/kiosk/stations')).then(r => r.json()).catch(() => []);
   station = stations.find(s => s.id === stationId);
 
   if (!station) {
@@ -971,7 +977,7 @@ async function init() {
   let resolvedLogoText = null;
   if (!station.logoText) {
     try {
-      const cfg = await fetch('/api/config').then(r => r.json());
+      const cfg = await fetch(freshUrl('/api/config')).then(r => r.json());
       if (cfg.eventId) {
         const ev = await fetch(`/api/event/${cfg.eventId}`).then(r => r.json()).catch(() => null);
         const eventTitle = ev?.title || ev?.name || null;
@@ -1647,7 +1653,7 @@ function showPrintWarning(show) {
   if (!el) return;
   el.style.display = show ? 'block' : 'none';
   el.textContent = '\u26a0\ufe0f Ticket could not be printed \u2014 please contact staff'
-    + (show ? ` (${_lastPrintError || 'unknown'})` : '');
+    + (show ? ` (${_lastPrintError || 'unknown'} \u00b7 page ${PAGE_BUILD})` : '');
 }
 
 async function printKioskBadge(data) {
@@ -1867,7 +1873,7 @@ function cancelAdminHold() {
 
 // ── Station selector ──────────────────────────────────────────────────────────
 async function showStationSelector() {
-  const stations = await fetch('/api/kiosk/stations').then(r => r.json()).catch(() => []);
+  const stations = await fetch(freshUrl('/api/kiosk/stations')).then(r => r.json()).catch(() => []);
   const list = document.getElementById('station-list');
   list.innerHTML = '';
 
@@ -1985,7 +1991,7 @@ async function saveConfig() {
   let resolvedLogoText = null;
   if (!station.logoText) {
     try {
-      const cfg = await fetch('/api/config').then(r => r.json());
+      const cfg = await fetch(freshUrl('/api/config')).then(r => r.json());
       if (cfg.eventId) {
         const ev = await fetch(`/api/event/${cfg.eventId}`).then(r => r.json()).catch(() => null);
         const eventTitle = ev?.title || ev?.name || null;
@@ -2030,7 +2036,7 @@ let _appVersion = null;
 async function refreshStationConfig() {
   if (!stationId || !station) return;
   try {
-    const resp = await fetch('/api/kiosk/stations');
+    const resp = await fetch(freshUrl('/api/kiosk/stations'));
     // Auto-reload long-running kiosk tabs after a server deploy: compare the
     // app version on every poll and reload once the page is idle on Welcome.
     const v = resp.headers.get('X-App-Version');
@@ -2783,7 +2789,7 @@ async function selectKioskSearchResult(idx) {
     // check-in endpoint itself (a separate GET here was vulnerable to stale
     // iOS Safari caches — kept only as fallback for older servers).
     try {
-      const badgeCfg = data._badgeConfig || await fetch('/api/badge-config').then(r => r.json());
+      const badgeCfg = data._badgeConfig || await fetch(freshUrl('/api/badge-config')).then(r => r.json());
       await printKioskBadge({
         guest: {
           firstName:  first,
@@ -2869,5 +2875,8 @@ function kioskKbAction(action) {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 init();
 </script>
+<div id="page-build-stamp" style="position:fixed; bottom:4px; right:8px; z-index:50;
+     font-size:9px; font-family:monospace; color:rgba(128,128,128,0.45); pointer-events:none;"></div>
+<script>document.getElementById('page-build-stamp').textContent = 'v' + PAGE_BUILD;</script>
 </body>
 </html>

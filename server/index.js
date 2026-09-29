@@ -164,6 +164,17 @@ try {
     .digest('hex').slice(0, 8);
   APP_VERSION += '+' + h;
 } catch(e) {}
+// Serve the kiosk page with its build stamped in and caching disabled, so a
+// reloading tab always gets current JS and can display which build it runs.
+function sendKioskPage(res) {
+  try {
+    const html = fs.readFileSync(path.join(__dirname, '../public/kiosk.html'), 'utf-8')
+      .replace('__PAGE_BUILD__', APP_VERSION);
+    res.set('Cache-Control', 'no-store').type('html').send(html);
+  } catch(e) {
+    sendKioskPage(res);
+  }
+}
 
 // ─── uuid helper (no extra dep) ───────────────────────────────────────────────
 function uuidv4() {
@@ -2217,7 +2228,7 @@ app.get('/api/kiosk/badge-image/:key', (req, res) => {
 });
 
 app.get('/kiosk', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/kiosk.html'));
+  sendKioskPage(res);
 });
 // ─── Print proxy ──────────────────────────────────────────────────────────────
 // Forwards base64-encoded PDF from the kiosk to the configured print endpoint.
@@ -2294,7 +2305,7 @@ app.post('/api/kiosk/record-event', express.json(), (req, res) => {
 });
 
 app.get('/kiosk/:stationId', (req, res) => {
-  res.sendFile(path.join(__dirname, '../public/kiosk.html'));
+  sendKioskPage(res);
 });
 
 // ─── Internet & Colada connection monitor ────────────────────────────────────
