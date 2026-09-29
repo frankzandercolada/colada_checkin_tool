@@ -1,6 +1,6 @@
 {
   "name": "colada365-checkin",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "description": "Self-Service Check-in App based on Colada365 Node-RED flow",
   "main": "server/index.js",
   "scripts": {
