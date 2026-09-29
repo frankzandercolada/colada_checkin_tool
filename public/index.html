@@ -95,6 +95,8 @@
               <input id="search-input" class="scan-input" type="text" placeholder="e.g. Müller, Swissrail…" autocomplete="off" style="font-size:16px; padding:14px 16px;"/>
             </div>
             <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+              <button id="refresh-guest-cache" class="btn" style="font-size:11px; padding:4px 10px;" onclick="refreshGuestCache()"
+                title="Force-refresh the server's cached guest lists so kiosk searches see the latest Colada365 data immediately">↻ Refresh guest lists</button>
               <span id="search-status" style="font-size:12px; font-family:var(--font-mono); color:var(--muted);"></span>
             </div>
             <div id="search-results" style="display:none; margin-top:10px; max-height:320px; overflow-y:auto; border:1px solid var(--border2); border-radius:8px; background:var(--surface2);"></div>
@@ -217,6 +219,11 @@
           <div class="field">
             <label>Token Refresh Interval (seconds)</label>
             <input id="cfg-tokenRefreshInterval" type="number" min="60" max="3600" placeholder="240"/>
+          </div>
+          <div class="field">
+            <label>Guest List Cache (seconds)</label>
+            <input id="cfg-guestCacheTtl" type="number" min="5" max="3600" placeholder="45"/>
+            <span class="hint">How long the server keeps a fetched guest list for the kiosk search before refreshing it from Colada365 — changes in Colada (new guests, seat corrections) reach the kiosk search after at most this long. The backoffice search always queries live.</span>
           </div>
         </div>
         <div style="margin-top:16px;">
@@ -1089,6 +1096,7 @@ async function loadSettings() {
     document.getElementById('cfg-global-apiBase').value = cfgRes.apiBase || '';
 
     document.getElementById('cfg-tokenRefreshInterval').value = cfgRes.tokenRefreshInterval || 240;
+    document.getElementById('cfg-guestCacheTtl').value = cfgRes.guestCacheTtlSeconds || 45;
     document.getElementById('cfg-qwertyCorrection').checked = !!cfgRes.qwertyCorrection;
 
     // Check-in schema is stored per-project
@@ -1134,6 +1142,7 @@ async function saveSettings() {
   // Global fallback patch
   const globalCfg = {
     tokenRefreshInterval: parseInt(document.getElementById('cfg-tokenRefreshInterval').value) || 240,
+    guestCacheTtlSeconds: Math.min(3600, Math.max(5, parseInt(document.getElementById('cfg-guestCacheTtl').value) || 45)),
     qwertyCorrection: document.getElementById('cfg-qwertyCorrection').checked,
     clientId:  document.getElementById('cfg-global-clientId').value.trim(),
     tokenUrl:  document.getElementById('cfg-global-tokenUrl').value.trim(),
@@ -1502,6 +1511,26 @@ async function searchGuests(term) {
   } catch(e) {
     document.getElementById('search-status').textContent = '✕ Error';
   }
+}
+
+// Force-refresh the server-side guest list cache (used by the kiosk search),
+// then re-run the current backoffice search against the fresh data.
+async function refreshGuestCache() {
+  const btn    = document.getElementById('refresh-guest-cache');
+  const status = document.getElementById('search-status');
+  btn.disabled = true;
+  status.textContent = 'Refreshing guest lists…';
+  try {
+    const r = await fetch(withPid('/api/guest-cache/refresh'), { method: 'POST' });
+    const d = await r.json();
+    if (!r.ok || d.error) throw new Error(d.error || `HTTP ${r.status}`);
+    status.textContent = `✓ ${d.guests} guest${d.guests !== 1 ? 's' : ''} refreshed (${(d.ms / 1000).toFixed(1)}s)`;
+    const term = document.getElementById('search-input').value.trim();
+    if (term.length >= 2) searchGuests(term);
+  } catch(e) {
+    status.textContent = '✕ Refresh failed: ' + e.message;
+  }
+  btn.disabled = false;
 }
 
 function selectSearchResult(idx) {

@@ -1844,7 +1844,12 @@ app.post('/api/kiosk/checkin-companion', async (req, res) => {
 // guests of the raw list were ever findable). The kiosk search therefore
 // fetches the FULL guest list per event and filters locally, with a short
 // server-side cache so per-keystroke searches stay fast and API load low.
-const GUEST_CACHE_TTL_MS = 45000;
+// TTL is configurable (Settings → Guest List Cache); 45 s when unset.
+const GUEST_CACHE_TTL_DEFAULT_S = 45;
+function guestCacheTtlMs() {
+  const s = parseInt(config.guestCacheTtlSeconds);
+  return (Number.isFinite(s) && s >= 5 && s <= 3600 ? s : GUEST_CACHE_TTL_DEFAULT_S) * 1000;
+}
 const _guestListCache = {}; // eventId -> { ts, guests, inflight }
 
 async function fetchAllGuests(apiBase, token, eid) {
@@ -1871,11 +1876,14 @@ async function fetchAllGuests(apiBase, token, eid) {
 async function getGuestsCached(apiBase, token, eid) {
   const c = _guestListCache[eid];
   const now = Date.now();
-  if (c && c.guests && now - c.ts < GUEST_CACHE_TTL_MS) return c.guests;
+  if (c && c.guests && now - c.ts < guestCacheTtlMs()) return c.guests;
   if (c && c.inflight) return c.guests || c.inflight;
   const p = fetchAllGuests(apiBase, token, eid)
     .then(guests => { _guestListCache[eid] = { ts: Date.now(), guests, inflight: null }; return guests; })
     .catch(err => { const cc = _guestListCache[eid]; if (cc) cc.inflight = null; throw err; });
+  // When a stale list is served below, nobody awaits p — a failed background
+  // refresh (e.g. internet outage) must not become an unhandled rejection.
+  p.catch(() => {});
   _guestListCache[eid] = { ts: c ? c.ts : 0, guests: c ? c.guests : null, inflight: p };
   return (c && c.guests) ? c.guests : p;
 }
@@ -1895,7 +1903,10 @@ app.get('/api/kiosk/search', async (req, res) => {
     const q   = (req.query.q || '').trim();
     if (!q || q.length < 2) return res.json([]);
 
-    const token = await getToken(pid);
+    // Token fetch may fail while the internet is down — the cached guest
+    // lists below still serve, so search keeps working through an outage.
+    let token = null;
+    try { token = await getToken(pid); } catch(e) {}
     const { apiBase } = getEffectiveCredentials(pid);
     const projects = loadProjects();
     const project  = projects.find(p => p.id === pid);
@@ -1946,6 +1957,28 @@ app.get('/api/kiosk/search', async (req, res) => {
     }
     _recordKiosk(req.query.stationId || null, null, 'search');
     res.json(merged);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// POST /api/guest-cache/refresh — force-refetch the cached guest lists for the
+// requesting project's events (backoffice "Refresh" button next to the search).
+// Kiosk searches see the fresh lists immediately, without waiting for the TTL.
+app.post('/api/guest-cache/refresh', async (req, res) => {
+  try {
+    const pid = resolveProjectId(req);
+    const token = await getToken(pid);
+    const { apiBase } = getEffectiveCredentials(pid);
+    const project  = loadProjects().find(p => p.id === pid);
+    const eventIds = getProjectEventIds(project);
+    if (!eventIds.length) return res.status(400).json({ error: 'no event configured' });
+    const t0 = Date.now();
+    const counts = {};
+    await Promise.all(eventIds.map(async eid => {
+      const guests = await fetchAllGuests(apiBase, token, eid);
+      _guestListCache[eid] = { ts: Date.now(), guests, inflight: null };
+      counts[eid] = guests.length;
+    }));
+    res.json({ ok: true, events: counts, guests: Object.values(counts).reduce((a, b) => a + b, 0), ms: Date.now() - t0 });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
