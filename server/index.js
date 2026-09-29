@@ -147,6 +147,11 @@ const DATA_DIR = process.env.CHECKIN_DATA_DIR
   : path.join(__dirname, '../data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 
+// App version, exposed to kiosk pages so long-running tabs (hostess iPads,
+// station displays) can auto-reload after a deploy instead of serving stale JS.
+let APP_VERSION = 'dev';
+try { APP_VERSION = require('../package.json').version || 'dev'; } catch(e) {}
+
 // ─── uuid helper (no extra dep) ───────────────────────────────────────────────
 function uuidv4() {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
@@ -1596,6 +1601,7 @@ app.get('/api/kiosk/stations/status', (req, res) => {
 });
 
 app.get('/api/kiosk/stations', (req, res) => {
+  res.set('X-App-Version', APP_VERSION);
   const id = resolveProjectId(req);
   if (!id) return res.json([]);
   const project = loadProjects().find(p => p.id === id);

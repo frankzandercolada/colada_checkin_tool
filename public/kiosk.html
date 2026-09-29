@@ -1430,6 +1430,7 @@ async function handleSuccess(data) {
   try {
     await printKioskBadge(data);
   } catch(e) {
+    _lastPrintError = 'print: ' + (e.message || e);
     console.warn('Badge print error:', e);
     showPrintWarning(true);
   }
@@ -1448,7 +1449,7 @@ async function handleAlready(data) {
     setText('success-company', g.company || '');
     updateSuccessCompanions(data.companions);
     showScreen('success');
-    try { await printKioskBadge(data); } catch(e) { console.warn('Reprint error:', e); showPrintWarning(true); }
+    try { await printKioskBadge(data); } catch(e) { _lastPrintError = 'print: ' + (e.message || e); console.warn('Reprint error:', e); showPrintWarning(true); }
     applyScreenBg(station?.success);
     startReturn('success', getReturnSecs(station?.success));
     return;
@@ -1646,13 +1647,13 @@ function showPrintWarning(show) {
   if (!el) return;
   el.style.display = show ? 'block' : 'none';
   el.textContent = '\u26a0\ufe0f Ticket could not be printed \u2014 please contact staff'
-    + (show && _lastPrintError ? ` (${_lastPrintError})` : '');
+    + (show ? ` (${_lastPrintError || 'unknown'})` : '');
 }
 
 async function printKioskBadge(data) {
   showPrintWarning(false);
   const { guest, badgeConfig } = data;
-  if (!guest || !badgeConfig) { showPrintWarning(true); return; }
+  if (!guest || !badgeConfig) { _lastPrintError = 'no ' + (!guest ? 'guest' : 'badge config') + ' in response'; showPrintWarning(true); return; }
   const comp     = Array.isArray(data.companions) ? data.companions : [];
   const together = data.companionSettings?.checkinMode === 'together' && comp.length > 0;
 
@@ -1664,7 +1665,7 @@ async function printKioskBadge(data) {
   }
   try {
     allOk = (await printSingleKioskBadge(mainGuest, badgeConfig, badgeConfig._selectedTemplate)) && allOk;
-  } catch(e) { console.error('Badge print error:', e); allOk = false; }
+  } catch(e) { _lastPrintError = 'ticket build: ' + (e.message || e); console.error('Badge print error:', e); allOk = false; }
 
   if (together && data.companionSettings?.printMode === 'all') {
     for (const c of comp) {
@@ -1673,7 +1674,7 @@ async function printKioskBadge(data) {
         allOk = (await printSingleKioskBadge(
           { firstName: c.firstName, lastName: c.lastName, company: c.company, attributes: c.attributes || {} },
           badgeConfig, c._selectedTemplate)) && allOk;
-      } catch(e) { console.error('Companion badge print error:', e); allOk = false; }
+      } catch(e) { _lastPrintError = 'companion ticket: ' + (e.message || e); console.error('Companion badge print error:', e); allOk = false; }
     }
   }
   showPrintWarning(!allOk);
@@ -1720,7 +1721,7 @@ async function printSingleKioskBadge(guest, badgeConfig, tplKeyOverride) {
   // Use server-pre-selected template when available, otherwise evaluate locally
   const tplKey = tplKeyOverride || selectTemplate(guest, badgeConfig);
   const tpl    = templates.find(t => t.key === tplKey) || templates[0];
-  if (!tpl) { console.warn('No badge template found'); return false; }
+  if (!tpl) { _lastPrintError = 'no badge template'; console.warn('No badge template found'); return false; }
 
   const bgImage      = await getBadgeImg(tpl.key);
   const pageW        = tpl.width  || 580.83;
@@ -2025,10 +2026,24 @@ function startHeartbeat() {
 // visuals are re-applied only while idle on the welcome screen so a guest
 // mid-interaction never sees the UI change under them.
 let _stationJson = null;
+let _appVersion = null;
 async function refreshStationConfig() {
   if (!stationId || !station) return;
   try {
-    const stations = await fetch('/api/kiosk/stations').then(r => r.json());
+    const resp = await fetch('/api/kiosk/stations');
+    // Auto-reload long-running kiosk tabs after a server deploy: compare the
+    // app version on every poll and reload once the page is idle on Welcome.
+    const v = resp.headers.get('X-App-Version');
+    if (v) {
+      if (_appVersion === null) _appVersion = v;
+      else if (v !== _appVersion && !isProcessing
+               && document.querySelector('.screen.active')?.id === 'screen-welcome') {
+        console.log(`[station] app updated ${_appVersion} -> ${v}, reloading`);
+        location.reload();
+        return;
+      }
+    }
+    const stations = await resp.json();
     const fresh = Array.isArray(stations) ? stations.find(s => s.id === stationId) : null;
     if (!fresh) return;
     const freshJson = JSON.stringify(fresh);
@@ -2464,7 +2479,7 @@ async function submitRegistration() {
     startReturn('success', getReturnSecs(station?.success));
 
     // Print badge
-    try { await printKioskBadge(data); } catch(e) { console.warn('[reg] badge error:', e); showPrintWarning(true); }
+    try { await printKioskBadge(data); } catch(e) { _lastPrintError = 'print: ' + (e.message || e); console.warn('[reg] badge error:', e); showPrintWarning(true); }
   } catch(e) {
     showError('Registration failed: ' + (e.message || 'Unknown error'));
   }
@@ -2780,7 +2795,7 @@ async function selectKioskSearchResult(idx) {
         seatingAll:        data._seatingAll,
         companionSettings: data._companionSettings,
       });
-    } catch(e) { console.warn('[search checkin] badge error:', e); showPrintWarning(true); }
+    } catch(e) { _lastPrintError = 'print: ' + (e.message || e); console.warn('[search checkin] badge error:', e); showPrintWarning(true); }
   } catch(e) {
     recordKioskEvent('scan_failed');
     fireSignal('failed');
