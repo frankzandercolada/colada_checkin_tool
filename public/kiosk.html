@@ -2740,9 +2740,23 @@ async function selectKioskSearchResult(idx) {
   }
 
   if (checkedIn) {
-    isProcessing = false;
     recordKioskEvent('scan_already');
-    handleAlready({
+    // The station may be configured to REPRINT on already-checked-in — that
+    // needs the badge config and companion/seating data, which this client-side
+    // branch doesn't have. Fetch the scan-shaped payload from the server
+    // (read-only); fall back to a minimal object if that fails.
+    let alreadyData = null;
+    try {
+      const rr = await fetch('/api/kiosk/reprint-data', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ guestId, eventId: matchedEid, stationId }),
+      });
+      const rd = await rr.json();
+      if (rr.ok && rd.result === 'already_checked_in') alreadyData = rd;
+    } catch(e) { console.warn('[search already] reprint-data failed:', e); }
+    isProcessing = false;
+    await handleAlready(alreadyData || {
       result: 'already_checked_in',
       guest: {
         firstName:  a.contact_firstName || '',

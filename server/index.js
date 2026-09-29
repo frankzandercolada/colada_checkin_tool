@@ -1815,6 +1815,55 @@ app.post('/api/kiosk/stations/:stationId/duplicate', (req, res) => {
 // guest (no cascade), prints their own ticket. Used when a companion arrives
 // separately and the hostess finds them via the main guest's search row.
 // POST /api/kiosk/checkin-companion  body: { guestId, eventId, stationId }
+// POST /api/kiosk/reprint-data { guestId, eventId, stationId } — READ-ONLY.
+// The kiosk search flow detects "already checked in" client-side and never
+// hits a check-in route, so it has no badge config or companion data for the
+// station's reprint behaviour. This endpoint supplies the same scan-shaped
+// already_checked_in payload the scan route builds, without writing anything.
+app.post('/api/kiosk/reprint-data', async (req, res) => {
+  try {
+    const pid = getActiveProjectId();
+    const token = await getToken(pid);
+    const { apiBase } = getEffectiveCredentials(pid);
+    const project = loadProjects().find(p => p.id === pid);
+    const checkinSchema = getCheckinSchema(project);
+    const { guestId, eventId, stationId } = req.body || {};
+    if (!guestId || !eventId) return res.status(400).json({ error: 'guestId and eventId required' });
+
+    const scanStation  = stationId ? loadKioskStations(pid).find(st => st.id === stationId) : null;
+    const compSettings = resolveCompanionSettings(project, scanStation);
+
+    const base = `${apiBase}/_gw/s-events-guests/external-api/events/${eventId}/guests`;
+    const gr = await fetch(`${base}/${encodeURIComponent(guestId)}`, { headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' } });
+    if (!gr.ok) return res.json({ result: 'not_found' });
+    const guest = await gr.json();
+    const attrs = { ...(guest.attributes || guest.properties || {}), _matchedEventId: eventId };
+
+    const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
+    const checkedInAt = checkinSchema === 'assistant' ? attrs.guest_x_assistant_checkedin : attrs.guest_x_checkedinat;
+    // Read (don't touch) companions so the reprint reproduces the combined ticket
+    const companionData = getCompanionRefs(guest).length
+      ? await processCompanions({ apiBase, token, eventId, guest, mainAttrs: attrs, checkinSchema, stationId: stationId || null, seatField: compSettings.seatField, mode: 'none' })
+      : null;
+
+    const payload = {
+      result: 'already_checked_in',
+      matchedEventId: eventId,
+      guest: { firstName: attrs.contact_firstName || '', lastName: attrs.contact_lastName || '', company: attrs.contact_x_companyName || '', id: guest.id, attributes: attrs, checkedInAt },
+      badgeConfig: { templates: badgeCfg.templates, eventGroups: badgeCfg.eventGroups, rules: badgeCfg.rules, fallback: badgeCfg.fallback, _selectedTemplate: selectTemplateKey(attrs, badgeCfg) },
+    };
+    if (companionData) {
+      payload.companions = companionData.companions.map(c => ({
+        ...c,
+        _selectedTemplate: selectTemplateKey({ ...c.attributes, _matchedEventId: eventId }, badgeCfg),
+      }));
+      payload.seatingAll        = companionData.seatingAll;
+      payload.companionSettings = compSettings;
+    }
+    res.json(payload);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 app.post('/api/kiosk/checkin-companion', async (req, res) => {
   try {
     const pid = getActiveProjectId();
