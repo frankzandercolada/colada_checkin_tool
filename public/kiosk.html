@@ -1640,9 +1640,13 @@ async function getBadgeImg(key) {
 //   companion with their own seat and their own routing-rule template.
 // Print failures must be visible to staff: a checked-in guest whose ticket
 // silently didn't print walks off without a seat. Shown on the success screen.
+let _lastPrintError = '';
 function showPrintWarning(show) {
   const el = document.getElementById('print-warning');
-  if (el) el.style.display = show ? 'block' : 'none';
+  if (!el) return;
+  el.style.display = show ? 'block' : 'none';
+  el.textContent = '\u26a0\ufe0f Ticket could not be printed \u2014 please contact staff'
+    + (show && _lastPrintError ? ` (${_lastPrintError})` : '');
 }
 
 async function printKioskBadge(data) {
@@ -1827,13 +1831,19 @@ async function printSingleKioskBadge(guest, badgeConfig, tplKeyOverride) {
               body: b64,
             });
             printed = res.ok;
-            if (!res.ok) console.error('Print proxy returned', res.status);
+            if (!res.ok) {
+              _lastPrintError = 'HTTP ' + res.status;
+              try { const b = await res.json(); if (b && b.error) _lastPrintError += ': ' + b.error; } catch(e2) {}
+              console.error('Print proxy returned', res.status);
+            }
           } catch(e) {
+            _lastPrintError = 'network: ' + (e.message || e);
             console.error('Print proxy error:', e);
           }
           resolve();
         });
       } catch(e) {
+        _lastPrintError = 'pdf: ' + (e.message || e);
         console.error('PDF generation error:', e);
         resolve();
       }

@@ -2204,9 +2204,13 @@ app.post('/api/kiosk/print', express.text({ limit: '20mb' }), async (req, res) =
   if (!station?.printEndpoint) return res.status(400).json({ error: 'no print endpoint configured' });
 
   const b64 = req.body;
-  if (!b64) return res.status(400).json({ error: 'no body' });
+  if (!b64 || typeof b64 !== 'string') {
+    console.warn(`[print] station=${station.name} EMPTY BODY (type=${typeof b64}, content-type=${req.headers['content-type']}) from ${req.ip}`);
+    return res.status(400).json({ error: 'no body' });
+  }
 
   try {
+    console.log(`[print] station=${station.name} ${b64.length} bytes b64 from ${req.ip} -> ${station.printEndpoint}`);
     const pr = await fetch(station.printEndpoint, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/pdf', 'X-Encoding': 'base64' },
