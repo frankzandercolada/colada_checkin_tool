@@ -2779,10 +2779,11 @@ async function selectKioskSearchResult(idx) {
     applyScreenBg(station?.success);
     startReturn('success', getReturnSecs(station?.success));
 
-    // Print badge — companion data comes back from the check-in endpoint
+    // Print badge — badge config and companion data come back from the
+    // check-in endpoint itself (a separate GET here was vulnerable to stale
+    // iOS Safari caches — kept only as fallback for older servers).
     try {
-      const badgeRes = await fetch('/api/badge-config');
-      const badgeCfg = await badgeRes.json();
+      const badgeCfg = data._badgeConfig || await fetch('/api/badge-config').then(r => r.json());
       await printKioskBadge({
         guest: {
           firstName:  first,

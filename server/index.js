@@ -137,6 +137,10 @@ app.get('/caddy-root.crt', (req, res) => {
     if (err) res.status(404).send('Certificate not found. Copy caddy-root.crt to the public folder.');
   });
 });
+// iOS Safari aggressively caches GET responses without explicit headers and
+// can serve stale API data (old badge configs, station lists) to long-lived
+// kiosk tabs. API responses are dynamic state — never cache them.
+app.use('/api', (req, res, next) => { res.set('Cache-Control', 'no-store'); next(); });
 app.use(express.static(path.join(__dirname, '../public')));
 
 // Packaged installs (single-binary builds) set CHECKIN_DATA_DIR to a writable
@@ -1283,9 +1287,18 @@ app.post('/api/guests/:eventId/:guestId/checkin', async (req, res) => {
 
     let parsed = { ok: true };
     try { const p = JSON.parse(text); if (p && typeof p === 'object' && !Array.isArray(p)) parsed = p; } catch(e) {}
+    // Ship the badge config + pre-routed template in the response, like the
+    // scan and checkin-companion routes do — the kiosk search flow used to
+    // fetch /api/badge-config separately, and a stale cached copy of that GET
+    // (iOS Safari) broke printing with "no badge template".
+    const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
+    parsed._badgeConfig = {
+      templates: badgeCfg.templates, eventGroups: badgeCfg.eventGroups,
+      rules: badgeCfg.rules, fallback: badgeCfg.fallback,
+      _selectedTemplate: selectTemplateKey({ ...patchAttrs, _matchedEventId: req.params.eventId }, badgeCfg),
+    };
     if (companionData) {
       // Pre-select each companion's badge template via the normal routing rules
-      const badgeCfg = loadProjectBadgeConfigWithDefaults(pid);
       parsed._companions = companionData.companions.map(c => ({
         ...c,
         _selectedTemplate: selectTemplateKey({ ...c.attributes, _matchedEventId: req.params.eventId }, badgeCfg),
