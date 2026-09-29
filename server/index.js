@@ -155,6 +155,15 @@ if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 // station displays) can auto-reload after a deploy instead of serving stale JS.
 let APP_VERSION = 'dev';
 try { APP_VERSION = require('../package.json').version || 'dev'; } catch(e) {}
+// Append a content fingerprint of the kiosk page so auto-reload fires on ANY
+// deploy that changes it, not only on version bumps (git-pull deploys often
+// restart with the same package.json version).
+try {
+  const h = require('crypto').createHash('sha1')
+    .update(fs.readFileSync(path.join(__dirname, '../public/kiosk.html')))
+    .digest('hex').slice(0, 8);
+  APP_VERSION += '+' + h;
+} catch(e) {}
 
 // ─── uuid helper (no extra dep) ───────────────────────────────────────────────
 function uuidv4() {
