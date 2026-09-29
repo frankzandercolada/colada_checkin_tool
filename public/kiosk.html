@@ -740,6 +740,11 @@ html, body {
       <div class="guest-company" id="success-companions" style="display:none;"></div>
       <span class="guest-badge-label badge-success">✓ Badge printing</span>
     </div>
+    <div id="print-warning" style="display:none; margin-top:clamp(10px,2vmin,18px); padding:clamp(10px,2vmin,16px) clamp(16px,3vmin,26px);
+         background:rgba(251,146,60,0.15); border:1.5px solid #fb923c; border-radius:12px;
+         color:#fb923c; font-weight:700; font-size:clamp(13px,2.6vmin,21px); text-align:center;">
+      ⚠️ Ticket could not be printed — please contact staff
+    </div>
     <div class="return-bar" id="success-return">
       <div class="return-track"><div class="return-fill" id="success-fill" style="width:100%"></div></div>
       <div class="return-label" id="success-timer">Returning in 8s</div>
@@ -1426,6 +1431,7 @@ async function handleSuccess(data) {
     await printKioskBadge(data);
   } catch(e) {
     console.warn('Badge print error:', e);
+    showPrintWarning(true);
   }
 
   applyScreenBg(station?.success);
@@ -1442,7 +1448,7 @@ async function handleAlready(data) {
     setText('success-company', g.company || '');
     updateSuccessCompanions(data.companions);
     showScreen('success');
-    try { await printKioskBadge(data); } catch(e) { console.warn('Reprint error:', e); }
+    try { await printKioskBadge(data); } catch(e) { console.warn('Reprint error:', e); showPrintWarning(true); }
     applyScreenBg(station?.success);
     startReturn('success', getReturnSecs(station?.success));
     return;
@@ -1632,27 +1638,41 @@ async function getBadgeImg(key) {
 //   field carries the combined, comma-separated seats of the whole party.
 // - 'together' + printMode 'all':  the combined main ticket PLUS one ticket per
 //   companion with their own seat and their own routing-rule template.
+// Print failures must be visible to staff: a checked-in guest whose ticket
+// silently didn't print walks off without a seat. Shown on the success screen.
+function showPrintWarning(show) {
+  const el = document.getElementById('print-warning');
+  if (el) el.style.display = show ? 'block' : 'none';
+}
+
 async function printKioskBadge(data) {
+  showPrintWarning(false);
   const { guest, badgeConfig } = data;
-  if (!guest || !badgeConfig) return;
+  if (!guest || !badgeConfig) { showPrintWarning(true); return; }
   const comp     = Array.isArray(data.companions) ? data.companions : [];
   const together = data.companionSettings?.checkinMode === 'together' && comp.length > 0;
 
+  let allOk = true;
   let mainGuest = guest;
   if (together && data.seatingAll) {
     const seatField = data.companionSettings?.seatField || 'guest_x_designer_seat';
     mainGuest = { ...guest, attributes: { ...(guest.attributes || {}), [seatField]: data.seatingAll } };
   }
-  await printSingleKioskBadge(mainGuest, badgeConfig, badgeConfig._selectedTemplate);
+  try {
+    allOk = (await printSingleKioskBadge(mainGuest, badgeConfig, badgeConfig._selectedTemplate)) && allOk;
+  } catch(e) { console.error('Badge print error:', e); allOk = false; }
 
   if (together && data.companionSettings?.printMode === 'all') {
     for (const c of comp) {
       if (!(c.checkedIn || c.alreadyCheckedIn)) continue; // skip ineligible/failed companions
-      await printSingleKioskBadge(
-        { firstName: c.firstName, lastName: c.lastName, company: c.company, attributes: c.attributes || {} },
-        badgeConfig, c._selectedTemplate);
+      try {
+        allOk = (await printSingleKioskBadge(
+          { firstName: c.firstName, lastName: c.lastName, company: c.company, attributes: c.attributes || {} },
+          badgeConfig, c._selectedTemplate)) && allOk;
+      } catch(e) { console.error('Companion badge print error:', e); allOk = false; }
     }
   }
+  showPrintWarning(!allOk);
 }
 
 // Register the station's custom font with pdfMake so printed tickets embed it.
@@ -1678,8 +1698,10 @@ function ensurePdfCustomFont() {
   }
 }
 
+// Returns true when the ticket reached the print endpoint (or the browser
+// print dialog was opened), false on any failure — callers surface it.
 async function printSingleKioskBadge(guest, badgeConfig, tplKeyOverride) {
-  if (!guest || !badgeConfig) return;
+  if (!guest || !badgeConfig) return false;
 
   const pdfFont = ensurePdfCustomFont();
 
@@ -1694,7 +1716,7 @@ async function printSingleKioskBadge(guest, badgeConfig, tplKeyOverride) {
   // Use server-pre-selected template when available, otherwise evaluate locally
   const tplKey = tplKeyOverride || selectTemplate(guest, badgeConfig);
   const tpl    = templates.find(t => t.key === tplKey) || templates[0];
-  if (!tpl) { console.warn('No badge template found'); return; }
+  if (!tpl) { console.warn('No badge template found'); return false; }
 
   const bgImage      = await getBadgeImg(tpl.key);
   const pageW        = tpl.width  || 580.83;
@@ -1794,23 +1816,32 @@ async function printSingleKioskBadge(guest, badgeConfig, tplKeyOverride) {
     // (mixed content). The proxy at /api/kiosk/print forwards to the endpoint
     // server-side where mixed content rules don't apply.
     // Awaited so multi-ticket prints (companions) reach the printer in order.
+    let printed = false;
     await new Promise(resolve => {
-      pdfMake.createPdf(dd).getBase64(async (b64) => {
-        try {
-          const res = await fetch(`/api/kiosk/print?stationId=${encodeURIComponent(stationId)}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'text/plain' },
-            body: b64,
-          });
-          if (!res.ok) console.error('Print proxy returned', res.status);
-        } catch(e) {
-          console.error('Print proxy error:', e);
-        }
+      try {
+        pdfMake.createPdf(dd).getBase64(async (b64) => {
+          try {
+            const res = await fetch(`/api/kiosk/print?stationId=${encodeURIComponent(stationId)}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'text/plain' },
+              body: b64,
+            });
+            printed = res.ok;
+            if (!res.ok) console.error('Print proxy returned', res.status);
+          } catch(e) {
+            console.error('Print proxy error:', e);
+          }
+          resolve();
+        });
+      } catch(e) {
+        console.error('PDF generation error:', e);
         resolve();
-      });
+      }
     });
+    return printed;
   } else {
     pdfMake.createPdf(dd).print();
+    return true;
   }
 }
 
@@ -2423,7 +2454,7 @@ async function submitRegistration() {
     startReturn('success', getReturnSecs(station?.success));
 
     // Print badge
-    try { await printKioskBadge(data); } catch(e) { console.warn('[reg] badge error:', e); }
+    try { await printKioskBadge(data); } catch(e) { console.warn('[reg] badge error:', e); showPrintWarning(true); }
   } catch(e) {
     showError('Registration failed: ' + (e.message || 'Unknown error'));
   }
@@ -2739,7 +2770,7 @@ async function selectKioskSearchResult(idx) {
         seatingAll:        data._seatingAll,
         companionSettings: data._companionSettings,
       });
-    } catch(e) { console.warn('[search checkin] badge error:', e); }
+    } catch(e) { console.warn('[search checkin] badge error:', e); showPrintWarning(true); }
   } catch(e) {
     recordKioskEvent('scan_failed');
     fireSignal('failed');
