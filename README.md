@@ -348,6 +348,8 @@ Per kiosk station (station editor):
 - **Text position (% from top)** (per screen tab): anchor the screen content at a vertical position instead of centering, so text lands in the free area of the background image. Empty = centered (default).
 - **Heading/Subtitle color & size** (per screen tab): color pickers (↺ resets to the theme default) and pixel sizes for heading and subtitle, per screen.
 - **Hide icon** (per screen tab): hide that screen's icon (QR symbol, check mark, warning, info) individually — e.g. when the background image replaces it. The General-tab "Hide QR Code Icon" toggle still covers the welcome icon globally.
+- **Image fit** (per screen tab): how the background image is sized — *Fit* (whole image visible, default), *Fill screen* (covers the whole display, crops the edges, centred), *Full width*, or *Stretch to screen*. "Image top offset" still shifts the image vertically in every mode.
+- **Fill empty area with image edge colour** (per screen tab): paints the area the image doesn't cover in the dominant colour of the image's border (median, so small elements near the edge don't tint it) — artwork on a white background gets a seamless white surround instead of dark bars, without cropping anything. Transparent borders are ignored.
 
 ## Monitor & Connection Watch
 

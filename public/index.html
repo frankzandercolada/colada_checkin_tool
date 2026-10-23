@@ -793,6 +793,18 @@
                 <div><label class="form-label">Auto-return (seconds)</label><input class="form-input" id="ks-welcome-return-secs" type="number" min="3" max="60" placeholder="8"/></div>
                 <div><label class="form-label">Image top offset (px)</label><input class="form-input" id="ks-welcome-bg-top" type="number" min="-2000" max="2000" placeholder="0"/></div>
               </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end;">
+                <div><label class="form-label">Image fit</label>
+                  <select class="form-input" id="ks-welcome-bg-fit">
+                    <option value="contain">Fit — whole image visible</option>
+                    <option value="cover">Fill screen — crop edges</option>
+                    <option value="width">Full width</option>
+                    <option value="stretch">Stretch to screen</option>
+                  </select></div>
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;padding-bottom:8px;"
+                  title="Paints any area the image doesn't cover in the colour of the image's border — e.g. white artwork gets a white surround instead of dark bars">
+                  <input type="checkbox" id="ks-welcome-bg-edge-fill"/> Fill empty area with image edge colour</label>
+              </div>
             </div>
           </div>
 
@@ -842,6 +854,18 @@
                 <div><label class="form-label">Auto-return (seconds)</label><input class="form-input" id="ks-success-return-secs" type="number" min="3" max="60" placeholder="8"/></div>
                 <div><label class="form-label">Image top offset (px)</label><input class="form-input" id="ks-success-bg-top" type="number" min="-2000" max="2000" placeholder="0"/></div>
               </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end;">
+                <div><label class="form-label">Image fit</label>
+                  <select class="form-input" id="ks-success-bg-fit">
+                    <option value="contain">Fit — whole image visible</option>
+                    <option value="cover">Fill screen — crop edges</option>
+                    <option value="width">Full width</option>
+                    <option value="stretch">Stretch to screen</option>
+                  </select></div>
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;padding-bottom:8px;"
+                  title="Paints any area the image doesn't cover in the colour of the image's border — e.g. white artwork gets a white surround instead of dark bars">
+                  <input type="checkbox" id="ks-success-bg-edge-fill"/> Fill empty area with image edge colour</label>
+              </div>
             </div>
           </div>
 
@@ -889,6 +913,18 @@
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div><label class="form-label">Auto-return (seconds)</label><input class="form-input" id="ks-notfound-return-secs" type="number" min="3" max="60" placeholder="8"/></div>
                 <div><label class="form-label">Image top offset (px)</label><input class="form-input" id="ks-notfound-bg-top" type="number" min="-2000" max="2000" placeholder="0"/></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end;">
+                <div><label class="form-label">Image fit</label>
+                  <select class="form-input" id="ks-notfound-bg-fit">
+                    <option value="contain">Fit — whole image visible</option>
+                    <option value="cover">Fill screen — crop edges</option>
+                    <option value="width">Full width</option>
+                    <option value="stretch">Stretch to screen</option>
+                  </select></div>
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;padding-bottom:8px;"
+                  title="Paints any area the image doesn't cover in the colour of the image's border — e.g. white artwork gets a white surround instead of dark bars">
+                  <input type="checkbox" id="ks-notfound-bg-edge-fill"/> Fill empty area with image edge colour</label>
               </div>
             </div>
           </div>
@@ -971,6 +1007,18 @@
               <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
                 <div><label class="form-label">Auto-return (seconds)</label><input class="form-input" id="ks-already-return-secs" type="number" min="3" max="60" placeholder="8"/></div>
                 <div><label class="form-label">Image top offset (px)</label><input class="form-input" id="ks-already-bg-top" type="number" min="-2000" max="2000" placeholder="0"/></div>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;align-items:end;">
+                <div><label class="form-label">Image fit</label>
+                  <select class="form-input" id="ks-already-bg-fit">
+                    <option value="contain">Fit — whole image visible</option>
+                    <option value="cover">Fill screen — crop edges</option>
+                    <option value="width">Full width</option>
+                    <option value="stretch">Stretch to screen</option>
+                  </select></div>
+                <label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted);cursor:pointer;padding-bottom:8px;"
+                  title="Paints any area the image doesn't cover in the colour of the image's border — e.g. white artwork gets a white surround instead of dark bars">
+                  <input type="checkbox" id="ks-already-bg-edge-fill"/> Fill empty area with image edge colour</label>
               </div>
             </div>
           </div>
@@ -4475,6 +4523,10 @@ function openKioskStationModal() {
   ['ks-welcome-bg-top','ks-success-bg-top','ks-notfound-bg-top','ks-already-bg-top'].forEach(id => { const el = document.getElementById(id); if(el) el.value = ''; });
   ['welcome','success','notfound','already'].forEach(k => { const b = document.getElementById('ks-'+k+'-bg-clear'); if(b) { b.dataset.hasKey=''; b.dataset.cleared=''; } }); if (el) el.value = '';
   });
+  ['welcome','success','notfound','already'].forEach(k => {
+    document.getElementById('ks-' + k + '-bg-fit').value = 'contain';
+    document.getElementById('ks-' + k + '-bg-edge-fill').checked = false;
+  });
   document.getElementById('ks-accent').value = '#d3222a';
   document.getElementById('ks-bg').value = '#0a0a0a';
   document.getElementById('ks-bg-light').value = '#f0f0f0';
@@ -4583,6 +4635,8 @@ function editKioskStation(stationId) {
     document.getElementById('ks-' + domKey + '-bg-clear').dataset.cleared = '';  // reset on open
     document.getElementById('ks-' + domKey + '-return-secs').value = scr.returnSecs || '';
     document.getElementById('ks-' + domKey + '-bg-top').value = scr.bgImageTop != null ? scr.bgImageTop : '';
+    document.getElementById('ks-' + domKey + '-bg-fit').value = scr.bgFit || 'contain';
+    document.getElementById('ks-' + domKey + '-bg-edge-fill').checked = !!scr.bgEdgeFill;
     document.getElementById('ks-' + domKey + '-hide-text').checked = !!scr.hideText;
     document.getElementById('ks-' + domKey + '-hide-icon').checked = !!scr.hideIcon;
     document.getElementById('ks-' + domKey + '-text-top').value = scr.textTop != null ? scr.textTop : '';
@@ -4635,6 +4689,8 @@ function ksScreen(domKey, extra = {}) {
     // data URL if new upload, '' if explicitly cleared, null if unchanged
     bgImage:   bgData ? bgData : (cleared ? '' : null),
     bgImageTop: isNaN(bgTop) ? null : bgTop,
+    bgFit:      g('ks-' + domKey + '-bg-fit').value || 'contain',
+    bgEdgeFill: g('ks-' + domKey + '-bg-edge-fill').checked,
     ...extra,
   };
 }

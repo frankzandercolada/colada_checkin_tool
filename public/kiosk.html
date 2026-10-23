@@ -1031,18 +1031,66 @@ async function resolveScreenBg(screenCfg) {
   } catch(e) { _screenBgCache[key] = null; return null; }
 }
 
+const BG_FIT_SIZE = { contain: 'contain', cover: 'cover', width: '100% auto', stretch: '100% 100%' };
+
+// Dominant colour of the image's outer border (per-channel median, so logos or
+// markers near the edge don't tint it), used to paint the area a 'contain' /
+// 'width' image leaves uncovered (white artwork -> white surround).
+// Returns null for (mostly) transparent borders.
+const _bgEdgeColorCache = {};
+function sampleEdgeColor(src) {
+  if (src in _bgEdgeColorCache) return Promise.resolve(_bgEdgeColorCache[src]);
+  return new Promise(resolve => {
+    const im = new Image();
+    im.onload = () => {
+      try {
+        const N = 48;
+        const c = document.createElement('canvas');
+        c.width = N; c.height = N;
+        const ctx = c.getContext('2d');
+        ctx.drawImage(im, 0, 0, N, N);
+        const px = ctx.getImageData(0, 0, N, N).data;
+        const ch = [[], [], [], []];
+        for (let y = 0; y < N; y++) for (let x = 0; x < N; x++) {
+          if (x > 1 && x < N - 2 && y > 1 && y < N - 2) continue;
+          const i = (y * N + x) * 4;
+          for (let k = 0; k < 4; k++) ch[k].push(px[i + k]);
+        }
+        const [r, g, b, a] = ch.map(v => v.sort((p, q) => p - q)[v.length >> 1]);
+        const col = a < 128 ? null : `rgb(${r}, ${g}, ${b})`;
+        resolve(_bgEdgeColorCache[src] = col);
+      } catch(e) { resolve(_bgEdgeColorCache[src] = null); }
+    };
+    im.onerror = () => resolve(_bgEdgeColorCache[src] = null);
+    im.src = src;
+  });
+}
+
+let _bgApplySeq = 0;
 async function applyScreenBg(screenCfg) {
   const kiosk = document.getElementById('kiosk');
+  // Screens change quickly (scan -> success -> welcome); a slow image load for
+  // an earlier screen must not paint over the current one.
+  const seq = ++_bgApplySeq;
   const img = await resolveScreenBg(screenCfg);
+  const edge = img && screenCfg?.bgEdgeFill ? await sampleEdgeColor(img) : null;
+  if (seq !== _bgApplySeq) return;
   if (img) {
+    const fit = BG_FIT_SIZE[screenCfg?.bgFit] ? screenCfg.bgFit : 'contain';
     kiosk.style.backgroundImage = `url(${img})`;
-    kiosk.style.backgroundSize = 'contain';
-    const topOffset = screenCfg?.bgImageTop != null ? `${screenCfg.bgImageTop}px` : '0px';
-    kiosk.style.backgroundPosition = `center ${topOffset}`;
+    kiosk.style.backgroundSize = BG_FIT_SIZE[fit];
+    // Explicit top offset wins; otherwise 'Fill screen' crops evenly from the
+    // centre while the other modes keep the image pinned to the top as before.
+    const y = screenCfg?.bgImageTop != null ? `${screenCfg.bgImageTop}px`
+            : (fit === 'cover' ? 'center' : '0px');
+    kiosk.style.backgroundPosition = `center ${y}`;
     kiosk.style.backgroundRepeat = 'no-repeat';
+    kiosk.style.backgroundColor = edge || '';
   } else {
     kiosk.style.backgroundImage = '';
     kiosk.style.backgroundPosition = '';
+    kiosk.style.backgroundSize = '';
+    kiosk.style.backgroundColor = '';
   }
 }
 
@@ -1960,7 +2008,13 @@ async function saveConfig() {
   const gv = id => document.getElementById(id)?.value || '';
   const gvn = id => parseInt(document.getElementById(id)?.value) || null;
   const gvc = id => document.getElementById(id)?.checked || false;
+  // This panel edits only a subset of station settings. Start from the
+  // existing station (and each existing screen) so a save here doesn't wipe
+  // settings managed in the backoffice (fit mode, colours, search, companions…).
+  const base = (!_configIsNew && station) ? station : {};
+  const keep = k => base[k] || {};
   const payload = {
+    ...base,
     id:            (!_configIsNew && station?.id) ? station.id : undefined,
     name:          gv('cfg-name'),
     logoText:      gv('cfg-logo'),
@@ -1968,10 +2022,10 @@ async function saveConfig() {
     accentColor:   gv('cfg-accent'),
     bgColor:       gv('cfg-bg'),
     printEndpoint: gv('cfg-print-endpoint') || null,
-    welcome:          { title: gv('cfg-welcome-title'),  subtitle: gv('cfg-welcome-sub'),  titleSize: gvn('cfg-welcome-title-size'),  subSize: gvn('cfg-welcome-sub-size'),  bgImage: gv('cfg-welcome-bg-data')||null,  returnSecs: gvn('cfg-welcome-return-secs'),  bgImageTop: gvn('cfg-welcome-bg-top') },
-    success:          { title: gv('cfg-success-title'),  subtitle: gv('cfg-success-sub'),  titleSize: gvn('cfg-success-title-size'),  subSize: gvn('cfg-success-sub-size'),  bgImage: gv('cfg-success-bg-data')||null,  returnSecs: gvn('cfg-success-return-secs'),  bgImageTop: gvn('cfg-success-bg-top'),  hideGuestCard: gvc('cfg-success-hide-card') },
-    notFound:         { title: gv('cfg-notfound-title'), subtitle: gv('cfg-notfound-sub'), titleSize: gvn('cfg-notfound-title-size'), subSize: gvn('cfg-notfound-sub-size'), bgImage: gv('cfg-notfound-bg-data')||null, returnSecs: gvn('cfg-notfound-return-secs'), bgImageTop: gvn('cfg-notfound-bg-top') },
-    alreadyCheckedIn: { title: gv('cfg-already-title'),  subtitle: gv('cfg-already-sub'),  titleSize: gvn('cfg-already-title-size'),  subSize: gvn('cfg-already-sub-size'),  bgImage: gv('cfg-already-bg-data')||null,  returnSecs: gvn('cfg-already-return-secs'),  bgImageTop: gvn('cfg-already-bg-top'),  hideGuestCard: gvc('cfg-already-hide-card') },
+    welcome:          { ...keep('welcome'), title: gv('cfg-welcome-title'),  subtitle: gv('cfg-welcome-sub'),  titleSize: gvn('cfg-welcome-title-size'),  subSize: gvn('cfg-welcome-sub-size'),  bgImage: gv('cfg-welcome-bg-data')||null,  returnSecs: gvn('cfg-welcome-return-secs'),  bgImageTop: gvn('cfg-welcome-bg-top') },
+    success:          { ...keep('success'), title: gv('cfg-success-title'),  subtitle: gv('cfg-success-sub'),  titleSize: gvn('cfg-success-title-size'),  subSize: gvn('cfg-success-sub-size'),  bgImage: gv('cfg-success-bg-data')||null,  returnSecs: gvn('cfg-success-return-secs'),  bgImageTop: gvn('cfg-success-bg-top'),  hideGuestCard: gvc('cfg-success-hide-card') },
+    notFound:         { ...keep('notFound'), title: gv('cfg-notfound-title'), subtitle: gv('cfg-notfound-sub'), titleSize: gvn('cfg-notfound-title-size'), subSize: gvn('cfg-notfound-sub-size'), bgImage: gv('cfg-notfound-bg-data')||null, returnSecs: gvn('cfg-notfound-return-secs'), bgImageTop: gvn('cfg-notfound-bg-top') },
+    alreadyCheckedIn: { ...keep('alreadyCheckedIn'), title: gv('cfg-already-title'),  subtitle: gv('cfg-already-sub'),  titleSize: gvn('cfg-already-title-size'),  subSize: gvn('cfg-already-sub-size'),  bgImage: gv('cfg-already-bg-data')||null,  returnSecs: gvn('cfg-already-return-secs'),  bgImageTop: gvn('cfg-already-bg-top'),  hideGuestCard: gvc('cfg-already-hide-card') },
   };
   if (!payload.name) { alert('Station name is required.'); return; }
 
