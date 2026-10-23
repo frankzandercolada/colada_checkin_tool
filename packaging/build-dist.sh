@@ -41,9 +41,11 @@ BIN_OUT_ABS="$(pwd)/$BIN_OUT"
 rm -rf "$BUILD_SRC"; mkdir -p "$BUILD_SRC"
 cp -R server public package.json "$BUILD_SRC/"
 ln -sfn "$(pwd)/node_modules" "$BUILD_SRC/node_modules"
-# --public/--public-packages ship plain JS instead of V8 bytecode — bytecode
-# is host-specific and cross-compiled binaries would crash on the target OS.
-(cd "$BUILD_SRC" && npx -y @yao-pkg/pkg . --public --public-packages "*" --targets "$TARGET_CSV" --out-path "$BIN_OUT_ABS")
+# --no-bytecode (+ --public/--public-packages, which it requires) ships plain
+# JS instead of V8 bytecode — bytecode is host-specific and cross-compiled
+# binaries would crash on the target OS. It also skips pkg's bytecode step,
+# which runs the target-arch node and so needed Rosetta for the x64 targets.
+(cd "$BUILD_SRC" && npx -y @yao-pkg/pkg . --no-bytecode --public --public-packages "*" --targets "$TARGET_CSV" --out-path "$BIN_OUT_ABS")
 rm -rf "$BUILD_SRC"
 
 # Guard: abort if any credential from the local config/data ended up in a binary
