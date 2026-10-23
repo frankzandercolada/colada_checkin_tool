@@ -738,7 +738,7 @@ html, body {
       <div class="guest-name" id="success-name">—</div>
       <div class="guest-company" id="success-company">—</div>
       <div class="guest-company" id="success-companions" style="display:none;"></div>
-      <span class="guest-badge-label badge-success">✓ Badge printing</span>
+      <span class="guest-badge-label badge-success" id="success-badge-label">✓ Badge printing</span>
     </div>
     <div id="print-warning" style="display:none; margin-top:clamp(10px,2vmin,18px); padding:clamp(10px,2vmin,16px) clamp(16px,3vmin,26px);
          background:rgba(251,146,60,0.15); border:1.5px solid #fb923c; border-radius:12px;
@@ -1696,6 +1696,11 @@ async function getBadgeImg(key) {
 // Print failures must be visible to staff: a checked-in guest whose ticket
 // silently didn't print walks off without a seat. Shown on the success screen.
 let _lastPrintError = '';
+function showBadgePrintingLabel(show) {
+  const el = document.getElementById('success-badge-label');
+  if (el) el.style.display = show ? '' : 'none';
+}
+
 function showPrintWarning(show) {
   const el = document.getElementById('print-warning');
   if (!el) return;
@@ -1706,8 +1711,12 @@ function showPrintWarning(show) {
 
 async function printKioskBadge(data) {
   showPrintWarning(false);
+  showBadgePrintingLabel(true);
   const { guest, badgeConfig } = data;
   if (!guest || !badgeConfig) { _lastPrintError = 'no ' + (!guest ? 'guest' : 'badge config') + ' in response'; showPrintWarning(true); return; }
+  // No ticket templates set up = this event doesn't print tickets. Nothing
+  // failed, so no warning — and don't claim a badge is printing.
+  if (!(badgeConfig.templates || []).length) { showBadgePrintingLabel(false); return; }
   const comp     = Array.isArray(data.companions) ? data.companions : [];
   const together = data.companionSettings?.checkinMode === 'together' && comp.length > 0;
 
